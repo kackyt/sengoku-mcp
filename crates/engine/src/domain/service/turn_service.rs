@@ -1,9 +1,11 @@
 use crate::domain::model::kuni::Kuni;
+use crate::domain::model::value_objects::Amount;
 use rand::Rng;
 
 pub struct TurnService;
 
 impl TurnService {
+    #[allow(clippy::manual_is_multiple_of)]
     pub fn process_season(turn: u32, mut kunis: Vec<Kuni>) -> Vec<Kuni> {
         let mut rng = rand::thread_rng();
 
@@ -28,7 +30,7 @@ impl TurnService {
             }
 
             // Population growth (turn % 4 == 0)
-            if turn.is_multiple_of(4) {
+            if turn % 4 == 0 {
                 let growth: u32 = rng.gen_range(10..=12);
                 let jinko_gain = kuni.resource.jinko.value() * growth / 100;
                 kuni.modify_jinko(jinko_gain as i32);
@@ -49,7 +51,11 @@ impl TurnService {
                     + jinko * rng.gen_range(10..=14) / 100
                     + kokudaka * rng.gen_range(25..=39) / 100;
 
-                kuni.add_resource(kin_gain, 0, kome_gain);
+                kuni.add_resource(
+                    Amount::new(kin_gain),
+                    Amount::new(0),
+                    Amount::new(kome_gain),
+                );
             }
         }
 

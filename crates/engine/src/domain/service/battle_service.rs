@@ -1,5 +1,6 @@
 use crate::domain::error::DomainError;
 use crate::domain::model::kuni::Kuni;
+use crate::domain::model::value_objects::Amount;
 
 /// 戦闘時の策
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,19 +78,26 @@ impl BattleService {
             }
             (Tactic::Fire, Tactic::Fire) => {
                 // 火計同士で自軍に被害
-                let loss = (attacker.resource.hei.value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
-                let _ = attacker.consume_resource(0, loss, 0);
+                let loss =
+                    (attacker.resource.hei.value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
+                let _ =
+                    attacker.consume_resource(Amount::new(0), Amount::new(loss), Amount::new(0));
                 attacker.modify_tyu(-Self::MORALE_CHANGE);
+                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
             (Tactic::Fire, _) => {
                 // 火計成功
-                let loss = (defender.resource.kome.value() * Self::FIRE_KOME_LOSS_RATE) / Self::PERCENT_BASE;
-                let _ = defender.consume_resource(0, 0, loss);
+                let loss = (defender.resource.kome.value() * Self::FIRE_KOME_LOSS_RATE)
+                    / Self::PERCENT_BASE;
+                let _ =
+                    defender.consume_resource(Amount::new(0), Amount::new(0), Amount::new(loss));
                 defender.modify_tyu(-Self::MORALE_CHANGE);
                 attacker.modify_tyu(Self::MORALE_CHANGE);
+                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
             (_, Tactic::Inspire) => {
                 defender.modify_tyu(15);
+                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
             _ => {
                 base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
@@ -97,11 +105,15 @@ impl BattleService {
         }
 
         // ダメージ適用
-        let _ = defender.consume_resource(0, base_damage, 0);
+        let base_damage = base_damage.min(defender.resource.hei.value());
+        let _ = defender.consume_resource(Amount::new(0), Amount::new(base_damage), Amount::new(0));
 
         // --- 兵糧消費 ---
         let food_cost = (attacker_troops * Self::FOOD_CONSUMPTION_RATE) / Self::PERCENT_BASE;
-        if attacker.consume_resource(0, 0, food_cost).is_err() {
+        if attacker
+            .consume_resource(Amount::new(0), Amount::new(0), Amount::new(food_cost))
+            .is_err()
+        {
             attacker.modify_tyu(-40); // 兵糧切れによる士気激減
         }
 
@@ -123,9 +135,9 @@ impl BattleService {
         // --- 勝利時のリソース接収 ---
         if winner == Some(BattleSide::Attacker) {
             attacker.add_resource(
-                0,
-                defender.resource.hei.value(),
-                defender.resource.kome.value(),
+                Amount::new(0),
+                defender.resource.hei,
+                defender.resource.kome,
             );
         }
 

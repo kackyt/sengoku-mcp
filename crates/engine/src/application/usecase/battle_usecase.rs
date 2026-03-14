@@ -1,5 +1,5 @@
 use crate::domain::{
-    model::value_objects::KuniId,
+    model::value_objects::{Amount, KuniId},
     repository::kuni_repository::KuniRepository,
     service::battle_service::{BattleResult, BattleService, Tactic},
 };
@@ -24,7 +24,7 @@ impl<R: KuniRepository> BattleUseCase<R> {
         defender_id: KuniId,
         attacker_tactic: Tactic,
         defender_tactic: Tactic,
-        attacker_troops: u32,
+        attacker_troops: Amount,
     ) -> Result<BattleResult, anyhow::Error> {
         let attacker = self
             .kuni_repo
@@ -37,7 +37,7 @@ impl<R: KuniRepository> BattleUseCase<R> {
             .await?
             .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません: {:?}", defender_id))?;
 
-        if attacker_troops > attacker.resource.hei.value() {
+        if attacker_troops.value() > attacker.resource.hei.value() {
             return Err(anyhow::anyhow!("攻撃側の兵数が不足しています"));
         }
 
@@ -46,7 +46,7 @@ impl<R: KuniRepository> BattleUseCase<R> {
             defender,
             attacker_tactic,
             defender_tactic,
-            attacker_troops,
+            attacker_troops.value(),
         )?;
 
         // 戦闘後の状態を保存

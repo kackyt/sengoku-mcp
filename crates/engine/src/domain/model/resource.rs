@@ -25,26 +25,28 @@ impl Resource {
     }
 
     /// 指定された資源を消費可能かチェックします
-    pub fn can_consume(&self, kin: u32, hei: u32, kome: u32) -> bool {
-        self.kin.value() >= kin && self.hei.value() >= hei && self.kome.value() >= kome
+    pub fn can_consume(&self, kin: Amount, hei: Amount, kome: Amount) -> bool {
+        self.kin.value() >= kin.value()
+            && self.hei.value() >= hei.value()
+            && self.kome.value() >= kome.value()
     }
 
     /// 資源を消費します。不足している場合はエラーを返します。
-    pub fn consume(&mut self, kin: u32, hei: u32, kome: u32) -> Result<(), &'static str> {
+    pub fn consume(&mut self, kin: Amount, hei: Amount, kome: Amount) -> Result<(), &'static str> {
         if !self.can_consume(kin, hei, kome) {
             return Err("Insufficient resources");
         }
-        self.kin = self.kin.sub(Amount::new(kin));
-        self.hei = self.hei.sub(Amount::new(hei));
-        self.kome = self.kome.sub(Amount::new(kome));
+        self.kin = self.kin.sub(kin);
+        self.hei = self.hei.sub(hei);
+        self.kome = self.kome.sub(kome);
         Ok(())
     }
 
     /// 資源を追加します
-    pub fn add(&mut self, kin: u32, hei: u32, kome: u32) {
-        self.kin = self.kin.add(Amount::new(kin));
-        self.hei = self.hei.add(Amount::new(hei));
-        self.kome = self.kome.add(Amount::new(kome));
+    pub fn add(&mut self, kin: Amount, hei: Amount, kome: Amount) {
+        self.kin = self.kin.add(kin);
+        self.hei = self.hei.add(hei);
+        self.kome = self.kome.add(kome);
     }
 }
 

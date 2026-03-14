@@ -1,5 +1,5 @@
 use crate::domain::{
-    model::value_objects::{IninFlag, KuniId},
+    model::value_objects::{Amount, IninFlag, KuniId},
     repository::kuni_repository::KuniRepository,
 };
 use std::sync::Arc;
@@ -17,7 +17,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 米を売却します
-    pub async fn sell_rice(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn sell_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -30,7 +30,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 米を購入します
-    pub async fn buy_rice(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn buy_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -43,7 +43,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 開墾を行います
-    pub async fn develop_land(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn develop_land(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -56,7 +56,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 町作りを行います
-    pub async fn build_town(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn build_town(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -69,7 +69,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 兵を徴募します
-    pub async fn recruit(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn recruit(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -82,7 +82,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 兵を解雇します
-    pub async fn dismiss(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn dismiss(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -95,7 +95,7 @@ impl<R: KuniRepository> DomesticUseCase<R> {
     }
 
     /// 施しを行います
-    pub async fn give_charity(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
+    pub async fn give_charity(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -112,9 +112,9 @@ impl<R: KuniRepository> DomesticUseCase<R> {
         &self,
         from_kuni_id: KuniId,
         to_kuni_id: KuniId,
-        kin: u32,
-        hei: u32,
-        kome: u32,
+        kin: Amount,
+        hei: Amount,
+        kome: Amount,
     ) -> Result<(), anyhow::Error> {
         let mut from_kuni = self
             .kuni_repo
