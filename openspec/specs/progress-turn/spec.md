@@ -1,0 +1,16 @@
+# progress-turn Specification
+
+## Purpose
+TBD - created by archiving change implement-domain-logic. Update Purpose after archive.
+## Requirements
+### Requirement: ターンフェーズと季節イベント
+システムは、ターンベースのループを処理し、すべての領地に対して季節イベントを適用しなければならない (MUST)。
+
+#### Scenario: 資源生成の季節
+- **WHEN** ターンが終了し、ターン数を4で割った余りが2の場合
+- **THEN** すべての領地で忠誠度、人口、町の数に基づいて金が生成され、忠誠度、人口、石高に基づいて米が生成される
+
+#### Scenario: ランダムな災害
+- **WHEN** 新しいターンが開始された時
+- **THEN** 各領地はそれぞれ1/40の確率で災害（疫病または飢饉）に見舞われ、人口、資源、および士気が減少する
+
