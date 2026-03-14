@@ -1,0 +1,8 @@
+[package]
+name = "infrastructure"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+engine = { path = "../engine" }
+async-trait = "0.1"

@@ -6,5 +6,5 @@
 
 ## Project Conventions
 
-view AGENTS.md
+view @/.agent/rules/project.md
 

@@ -1,0 +1,12 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 依存関係は最小限
+uuid = { version = "1.11", features = ["v4", "v7"] }
+serde = { version = "1.0", features = ["derive"] }
+async-trait = "0.1"
+anyhow = "1.0.102"
+rand = "0.8.5"
