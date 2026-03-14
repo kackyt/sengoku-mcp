@@ -3,7 +3,7 @@ mod tests {
     use crate::domain::model::{
         kuni::Kuni,
         resource::{DevelopmentStats, Resource},
-        value_objects::{DaimyoId, KuniId},
+        value_objects::{DaimyoId, IninFlag, KuniId},
     };
     use crate::domain::service::battle_service::{BattleService, BattleSide, Tactic};
     use uuid::Uuid;
@@ -14,7 +14,7 @@ mod tests {
             DaimyoId(Uuid::new_v4()),
             Resource::new(1000, hei, kome, 10000),
             DevelopmentStats::new(100, 100, tyu),
-            false,
+            IninFlag::new(false),
         )
     }
 
@@ -88,10 +88,9 @@ mod tests {
     #[test]
     fn test_battle_victory_condition() {
         let attacker = create_test_kuni(1000, 1000, 50);
-        // Weak defender about to run out of troops
         let defender = create_test_kuni(1000, 1000, 50);
-
-        // Attacker deals 1800 damage, defender has 1000 troops, so it goes to 0
+        // 攻撃側の兵1000人で攻撃。1.8倍ダメージで1800ダメージ。
+        // 防御側の兵は1000人なので、0になるはず。
         let result =
             BattleService::calculate_turn(attacker, defender, Tactic::Normal, Tactic::Normal, 1000)
                 .unwrap();

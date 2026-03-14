@@ -1,85 +1,111 @@
+use crate::domain::error::DomainError;
 use crate::domain::model::kuni::Kuni;
 
+/// 戦闘時の策
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tactic {
+    /// 通常
     Normal,
+    /// 奇襲
     Surprise,
+    /// 火計
     Fire,
+    /// 鼓舞
     Inspire,
 }
 
+/// 戦闘結果
 #[derive(Debug)]
 pub struct BattleResult {
+    /// 攻撃側の国（戦闘後の状態）
     pub attacker_kuni: Kuni,
+    /// 防御側の国（戦闘後の状態）
     pub defender_kuni: Kuni,
-    pub winner: Option<BattleSide>, // None if battle still ongoing
+    /// 勝者
+    pub winner: Option<BattleSide>, // 決着がつかない場合は None
 }
 
+/// 戦闘の陣営
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleSide {
+    /// 攻撃側
     Attacker,
+    /// 防御側
     Defender,
 }
 
+/// 戦闘計算を行うドメインサービス
 pub struct BattleService;
 
 impl BattleService {
+    // 戦闘バランス調整用の定数
+    const DMG_NORMAL: u32 = 180;
+    const DMG_SURPRISE_SUCCESS: u32 = 300;
+    const DMG_SURPRISE_FAIL: u32 = 40;
+    const DMG_DEFAULT: u32 = 60;
+    const PERCENT_BASE: u32 = 100;
+    const MORALE_CHANGE: i32 = 10;
+    const FOOD_CONSUMPTION_RATE: u32 = 30;
+    const FIRE_HEI_LOSS_RATE: u32 = 30;
+    const FIRE_KOME_LOSS_RATE: u32 = 50;
+
+    /// 1ターンの戦闘計算を行います
     pub fn calculate_turn(
         mut attacker: Kuni,
         mut defender: Kuni,
         attacker_tactic: Tactic,
         defender_tactic: Tactic,
         attacker_troops: u32,
-    ) -> Result<BattleResult, anyhow::Error> {
-        // Implement tactics effects
-
-        // Simplified damage calculation based on PRD
+    ) -> Result<BattleResult, DomainError> {
+        // --- ダメージ計算と策の効果 ---
         let mut base_damage = attacker_troops;
 
         match (attacker_tactic, defender_tactic) {
             (Tactic::Normal, Tactic::Normal) => {
-                base_damage = (base_damage * 180) / 100;
+                base_damage = (base_damage * Self::DMG_NORMAL) / Self::PERCENT_BASE;
             }
             (Tactic::Surprise, Tactic::Normal) => {
-                base_damage = (base_damage * 40) / 100;
-                defender.modify_tyu(-10); // Morale drop (simplified using tyu as morale for now)
-                attacker.modify_tyu(10);
+                // 奇襲失敗（簡易的な判定）
+                base_damage = (base_damage * Self::DMG_SURPRISE_FAIL) / Self::PERCENT_BASE;
+                defender.modify_tyu(-Self::MORALE_CHANGE);
+                attacker.modify_tyu(Self::MORALE_CHANGE);
             }
             (Tactic::Surprise, Tactic::Surprise) => {
-                base_damage = (base_damage * 300) / 100;
-                attacker.modify_tyu(-10);
+                // 奇襲成功
+                base_damage = (base_damage * Self::DMG_SURPRISE_SUCCESS) / Self::PERCENT_BASE;
+                attacker.modify_tyu(-Self::MORALE_CHANGE);
             }
             (Tactic::Fire, Tactic::Fire) => {
-                // Attacker loses troops
-                let loss = (attacker.resource.hei.value() * 30) / 100;
-                let _ = attacker.resource.consume(0, loss, 0);
-                attacker.modify_tyu(-10);
+                // 火計同士で自軍に被害
+                let loss = (attacker.resource.hei.value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
+                let _ = attacker.consume_resource(0, loss, 0);
+                attacker.modify_tyu(-Self::MORALE_CHANGE);
             }
             (Tactic::Fire, _) => {
-                // Defender loses food
-                let loss = (defender.resource.kome.value() * 50) / 100;
-                let _ = defender.resource.consume(0, 0, loss);
-                defender.modify_tyu(-10);
-                attacker.modify_tyu(10);
+                // 火計成功
+                let loss = (defender.resource.kome.value() * Self::FIRE_KOME_LOSS_RATE) / Self::PERCENT_BASE;
+                let _ = defender.consume_resource(0, 0, loss);
+                defender.modify_tyu(-Self::MORALE_CHANGE);
+                attacker.modify_tyu(Self::MORALE_CHANGE);
             }
             (_, Tactic::Inspire) => {
                 defender.modify_tyu(15);
             }
             _ => {
-                base_damage = (base_damage * 60) / 100;
+                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
         }
 
-        // Apply damage
-        let _ = defender.resource.consume(0, base_damage, 0);
+        // ダメージ適用
+        let _ = defender.consume_resource(0, base_damage, 0);
 
-        // 30% food consumption for troops
-        let food_cost = (attacker_troops * 30) / 100;
-        if attacker.resource.consume(0, 0, food_cost).is_err() {
-            attacker.modify_tyu(-40); // Large morale drop on starvation
+        // --- 兵糧消費 ---
+        let food_cost = (attacker_troops * Self::FOOD_CONSUMPTION_RATE) / Self::PERCENT_BASE;
+        if attacker.consume_resource(0, 0, food_cost).is_err() {
+            attacker.modify_tyu(-40); // 兵糧切れによる士気激減
         }
 
-        // Check victory conditions
+        // --- 勝敗判定 ---
         let winner = if defender.resource.hei.value() == 0
             || defender.resource.kome.value() == 0
             || defender.stats.tyu.value() == 0
@@ -94,14 +120,13 @@ impl BattleService {
             None
         };
 
-        // If attacker wins, they take the territory and remaining resources
+        // --- 勝利時のリソース接収 ---
         if winner == Some(BattleSide::Attacker) {
             attacker.add_resource(
                 0,
                 defender.resource.hei.value(),
                 defender.resource.kome.value(),
             );
-            // In a real implementation, ownership of the kuni would transfer here via UseCase
         }
 
         Ok(BattleResult {

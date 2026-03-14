@@ -1,141 +1,113 @@
-use crate::domain::{model::value_objects::KuniId, repository::kuni_repository::KuniRepository};
-use rand::Rng;
+use crate::domain::{
+    model::value_objects::{IninFlag, KuniId},
+    repository::kuni_repository::KuniRepository,
+};
 use std::sync::Arc;
 
+/// 内政に関するユースケース
 #[allow(dead_code)]
 pub struct DomesticUseCase<R: KuniRepository> {
     kuni_repo: Arc<R>,
 }
 
 impl<R: KuniRepository> DomesticUseCase<R> {
+    /// 新しい内政ユースケースを作成します
     pub fn new(kuni_repo: Arc<R>) -> Self {
         Self { kuni_repo }
     }
 
+    /// 米を売却します
     pub async fn sell_rice(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
-        let bias: u32 = rand::thread_rng().gen_range(10..=20); // 1.0 to 2.0 multiplier mapped as 10 to 20
-        let gain = (amount * bias) / 10;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.consume_resource(0, 0, amount)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        kuni.add_resource(gain, 0, 0);
+        kuni.sell_rice(amount)?;
 
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 米を購入します
     pub async fn buy_rice(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
-        let bias: u32 = rand::thread_rng().gen_range(10..=20);
-        let cost = (amount * bias) / 10;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.consume_resource(cost, 0, 0)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        kuni.add_resource(0, 0, amount);
+        kuni.buy_rice(amount)?;
 
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 開墾を行います
     pub async fn develop_land(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
-        let multiplier: u32 = rand::thread_rng().gen_range(45..=54);
-        let gain = amount * multiplier;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.consume_resource(amount, 0, 0)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        kuni.stats.kokudaka = kuni
-            .stats
-            .kokudaka
-            .add(crate::domain::model::value_objects::Amount::new(gain));
+        kuni.develop_land(amount)?;
 
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 町作りを行います
     pub async fn build_town(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
-        let multiplier: u32 = rand::thread_rng().gen_range(45..=54);
-        let gain = amount * multiplier;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.consume_resource(amount, 0, 0)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        kuni.stats.machi = kuni
-            .stats
-            .machi
-            .add(crate::domain::model::value_objects::Amount::new(gain));
+        kuni.build_town(amount)?;
 
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 兵を徴募します
     pub async fn recruit(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
-        let cost = amount / 2;
-        let population_cost = amount;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        if kuni.resource.jinko.value() < population_cost {
-            return Err(anyhow::anyhow!("Insufficient population"));
-        }
+        kuni.recruit_troops(amount)?;
 
-        kuni.consume_resource(cost, 0, 0)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        kuni.modify_jinko(-(population_cost as i32));
-        kuni.modify_tyu(-((amount / 2) as i32));
-        kuni.add_resource(0, amount, 0);
-
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 兵を解雇します
     pub async fn dismiss(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.consume_resource(0, amount, 0)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        kuni.modify_jinko(amount as i32);
-        kuni.modify_tyu((amount / 2) as i32);
+        kuni.dismiss_troops(amount)?;
 
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 施しを行います
     pub async fn give_charity(&self, kuni_id: KuniId, amount: u32) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.consume_resource(0, 0, amount)
-            .map_err(|e| anyhow::anyhow!(e))?;
+        kuni.give_charity(amount)?;
 
-        let multiplier: u32 = rand::thread_rng().gen_range(5..=10); // 0.5 to 1.0 mapped as 5 to 10
-        let tyu_gain = (amount * multiplier) / 10;
-        kuni.modify_tyu(tyu_gain as i32);
-
-        self.kuni_repo.save(&kuni).await
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 
+    /// 輸送を行います
     pub async fn transport(
         &self,
         from_kuni_id: KuniId,
@@ -148,22 +120,21 @@ impl<R: KuniRepository> DomesticUseCase<R> {
             .kuni_repo
             .find_by_id(&from_kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Source Kuni not found"))?;
+            .ok_or_else(|| anyhow::anyhow!("送り元の国が見つかりません: {:?}", from_kuni_id))?;
         let mut to_kuni = self
             .kuni_repo
             .find_by_id(&to_kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Target Kuni not found"))?;
+            .ok_or_else(|| anyhow::anyhow!("送り先の国が見つかりません: {:?}", to_kuni_id))?;
 
-        from_kuni
-            .consume_resource(kin, hei, kome)
-            .map_err(|e| anyhow::anyhow!(e))?;
+        from_kuni.consume_resource(kin, hei, kome)?;
         to_kuni.add_resource(kin, hei, kome);
 
         self.kuni_repo.save(&from_kuni).await?;
-        self.kuni_repo.save(&to_kuni).await
+        self.kuni_repo.save(&to_kuni).await.map_err(|e| e.into())
     }
 
+    /// 委任状態を設定します
     pub async fn set_delegation(
         &self,
         kuni_id: KuniId,
@@ -173,8 +144,8 @@ impl<R: KuniRepository> DomesticUseCase<R> {
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("Kuni not found"))?;
-        kuni.set_inin(delegate);
-        self.kuni_repo.save(&kuni).await
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
+        kuni.set_inin(IninFlag::new(delegate));
+        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
     }
 }

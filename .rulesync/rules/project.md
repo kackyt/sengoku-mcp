@@ -101,6 +101,11 @@ impl<R: UnitRepository> MoveUnitUseCase<R> {
 - SOLID原則、DRY原則を意識すること
 - 依存性の注入(DI)を適切に行うこと
 - メモリのライフサイクルを意識すること。無駄なコピーやcloneは避ける。解放タイミングが不明なBoxを定義しない。
+- DDDとオニオンアーキテクチャ、ヘキサゴナルアーキテクチャを意識したプログラミングや設計をすること
+
+[参考:DDDとクリーンアーキテクチャをはじめよう-Rust編](https://zenn.dev/poporo/articles/20251011_1_start_ddd_and_clean_architecture_rust)
+
+[参考:DDDのパターンをRustで表現する ~ Value Object編 ~](https://caddi.tech/archives/1373)
 
 ### Architecture Patterns
 オニオンアーキテクチャを採用する

@@ -1,5 +1,6 @@
 use std::fmt;
 
+/// 金額、人数、量などを表す基本単位
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Amount(pub u32);
 
@@ -31,6 +32,7 @@ impl fmt::Display for Amount {
     }
 }
 
+/// 割合（0-100%）を表す型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rate(pub u32);
 
@@ -44,6 +46,21 @@ impl Rate {
     }
 }
 
+/// 委任状態を表す型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct IninFlag(pub bool);
+
+impl IninFlag {
+    pub fn new(val: bool) -> Self {
+        Self(val)
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.0
+    }
+}
+
+/// ユニットの識別子
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UnitId(pub uuid::Uuid);
 
@@ -59,6 +76,7 @@ impl UnitId {
     }
 }
 
+/// 国の識別子
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KuniId(pub uuid::Uuid);
 
@@ -74,6 +92,7 @@ impl KuniId {
     }
 }
 
+/// 大名の識別子
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DaimyoId(pub uuid::Uuid);
 

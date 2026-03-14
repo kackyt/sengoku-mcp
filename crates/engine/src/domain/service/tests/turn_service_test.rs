@@ -3,7 +3,7 @@ mod tests {
     use crate::domain::model::{
         kuni::Kuni,
         resource::{DevelopmentStats, Resource},
-        value_objects::{DaimyoId, KuniId},
+        value_objects::{DaimyoId, IninFlag, KuniId},
     };
     use crate::domain::service::turn_service::TurnService;
     use uuid::Uuid;
@@ -14,7 +14,7 @@ mod tests {
             DaimyoId(Uuid::new_v4()),
             Resource::new(1000, 1000, 1000, jinko),
             DevelopmentStats::new(100, 100, tyu),
-            false,
+            IninFlag::new(false),
         )
     }
 
