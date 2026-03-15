@@ -46,7 +46,7 @@ impl HitPoint {
 }
 
 - エンティティの参照は「ポインタ」ではなく「ID」で行う
-戦略ゲームでは、「マップ上のこの位置に、このユニットがいる」という関係性が発生します。ここで Unit の実体（参照）を Map に持たせると、借用チェッカーとの終わりのない戦いが始まります。必ずIDで関連付けを行ってください。
+戦略ゲームでは、「マップ上のこの城はこの大名の領地」という関係性が発生します。ここで Unit の実体（参照）を Map に持たせると、借用チェッカーとの終わりのない戦いが始まります。必ずIDで関連付けを行ってください。
 
 Rust
 // domain/model/map.rs
@@ -110,24 +110,24 @@ impl<R: UnitRepository> MoveUnitUseCase<R> {
 ### Architecture Patterns
 オニオンアーキテクチャを採用する
 
-├─crates
-│  ├─engine
-│  │  └─src
-│  │      ├─application
-│  │      │  ├─dto 入出力用データ構造。
-│  │      │  └─usecase **Application Service (Usecase)**。model内のtraitやserviceを使ってドメインを操作
-│  │      └─domain
-│  │          ├─model  (例: 大名、領地、資源)。所有権を用いて不変条件を保護。
-│  │          ├─repository **Repository Interface (Trait)** (例: `KuniRepository`, `DaimyoRepository`)。
-│  │          └─service **Domain Service** (例: 複数のモデルにまたがる戦闘計算)。
-│  ├─infrastructure
-│  │  └─src
-│  │      └─persistence: `engine/domain/repository` で定義された **Repositoryの実装（具体例: ファイルI/O, SQLx等）**。
-│  │          ゲーム外の関心事（外部ストレージとのやり取り）を担当。
-│  └─mcp-server
-│      └─src
-│          └─presentation : MCPのプロトコルマッピング。
-│          └─main.ts : **Composition Root**。ユースケースに infrastructure の具象リポジトリを注入して起動。
+
+├─engine
+│  └─src
+│      ├─application
+│      │  ├─dto 入出力用データ構造。
+│      │  └─usecase **Application Service (Usecase)**。model内のtraitやserviceを使ってドメインを操作
+│      └─domain
+│          ├─model  (例: 大名、領地、資源)。所有権を用いて不変条件を保護。
+│          ├─repository **Repository Interface (Trait)** (例: `KuniRepository`, `DaimyoRepository`)。
+│          └─service **Domain Service** (例: 複数のモデルにまたがる戦闘計算)。
+├─infrastructure
+│  └─src
+│      └─persistence: `engine/domain/repository` で定義された **Repositoryの実装（具体例: ファイルI/O, SQLx等）**。
+│          ゲーム外の関心事（外部ストレージとのやり取り）を担当。
+├─mcp-server
+│  └─src
+│      └─presentation : MCPのプロトコルマッピング。
+│      └─main.ts : **Composition Root**。ユースケースに infrastructure の具象リポジトリを注入して起動。
 ├─ static : マスターデータ等
 └─ Cargo.toml ワークスペース管理
 
