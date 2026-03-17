@@ -1,6 +1,6 @@
+use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::value_objects::{Amount, DaimyoId};
-use crate::domain::model::daimyo::Daimyo;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -8,17 +8,14 @@ pub struct TurnService;
 
 impl TurnService {
     /// ターンの行動順序（大名のIDの配列）をランダムに決定する
-    pub fn determine_action_order(daimyos: &[Daimyo]) -> Vec<DaimyoId> {
+    pub fn determine_action_order(daimyos: &[Daimyo], rng: &mut impl Rng) -> Vec<DaimyoId> {
         let mut order: Vec<DaimyoId> = daimyos.iter().map(|d| d.id).collect();
-        let mut rng = rand::thread_rng();
-        order.shuffle(&mut rng);
+        order.shuffle(rng);
         order
     }
 
     #[allow(clippy::manual_is_multiple_of)]
-    pub fn process_season(turn: u32, mut kunis: Vec<Kuni>) -> Vec<Kuni> {
-        let mut rng = rand::thread_rng();
-
+    pub fn process_season(turn: u32, mut kunis: Vec<Kuni>, rng: &mut impl Rng) -> Vec<Kuni> {
         for kuni in &mut kunis {
             // Disaster check (1/40 chance)
             if rng.gen_range(0..40) == 0 {

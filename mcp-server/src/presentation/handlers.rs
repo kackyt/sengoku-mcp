@@ -5,6 +5,7 @@ use engine::domain::repository::{
 };
 use std::sync::Arc;
 
+#[allow(dead_code)]
 pub struct McpHandlers<
     KR: KuniRepository + 'static,
     DR: DaimyoRepository + 'static,
@@ -14,6 +15,7 @@ pub struct McpHandlers<
     turn_progression_usecase: Arc<TurnProgressionUseCase<KR, DR, GSR, ED>>,
 }
 
+#[allow(dead_code)]
 impl<KR, DR, GSR, ED> McpHandlers<KR, DR, GSR, ED>
 where
     KR: KuniRepository,
@@ -31,6 +33,9 @@ where
     pub async fn handle_progress_turn(&self) -> Result<String, anyhow::Error> {
         self.turn_progression_usecase.progress().await?;
         // 今回の仕様ではイベントとして状態を送信するため、戻り値は簡易な完了メッセージとする
-        Ok("ゲームの進行処理（１ステップ）を実行しました。イベントを確認してください。".to_string())
+        Ok(
+            "ゲームの進行処理（１ステップ）を実行しました。イベントを確認してください。"
+                .to_string(),
+        )
     }
 }

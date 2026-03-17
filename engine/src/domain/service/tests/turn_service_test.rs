@@ -21,7 +21,8 @@ mod tests {
     #[test]
     fn test_process_season_no_action_turns() {
         let kunis = vec![create_test_kuni(10000, 50)];
-        let result = TurnService::process_season(3, kunis);
+        let mut rng = rand::thread_rng();
+        let result = TurnService::process_season(3, kunis, &mut rng);
 
         // Most likely unchanged based on random rng disaster constraints,
         // unless disaster happens (1/40 chance).
@@ -39,7 +40,8 @@ mod tests {
         let initial_kome = kunis[0].resource.kome.value();
 
         // Turn 2 is a harvest turn (turn % 4 == 2)
-        let result = TurnService::process_season(2, kunis);
+        let mut rng = rand::thread_rng();
+        let result = TurnService::process_season(2, kunis, &mut rng);
 
         assert_eq!(result.len(), 1);
         let k = &result[0];
@@ -55,7 +57,8 @@ mod tests {
         let initial_jinko = kunis[0].resource.jinko.value();
 
         // Turn 4 is a population growth turn (turn % 4 == 0)
-        let result = TurnService::process_season(4, kunis);
+        let mut rng = rand::thread_rng();
+        let result = TurnService::process_season(4, kunis, &mut rng);
 
         assert_eq!(result.len(), 1);
         let k = &result[0];

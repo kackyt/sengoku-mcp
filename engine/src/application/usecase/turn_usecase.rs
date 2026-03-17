@@ -20,7 +20,8 @@ impl<R: KuniRepository> TurnUseCase<R> {
             return Ok(());
         }
 
-        let updated_kunis = TurnService::process_season(current_turn, kunis);
+        let mut rng = rand::thread_rng();
+        let updated_kunis = TurnService::process_season(current_turn, kunis, &mut rng);
 
         for kuni in updated_kunis {
             self.kuni_repo.save(&kuni).await?;

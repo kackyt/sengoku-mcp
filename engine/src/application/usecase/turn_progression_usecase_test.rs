@@ -3,7 +3,7 @@ mod tests {
     use crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
     use crate::domain::error::DomainError;
     use crate::domain::model::{
-        daimyo::{Daimyo, DaimyoName},
+        daimyo::Daimyo,
         event::GameEvent,
         game_state::GameState,
         kuni::Kuni,
@@ -16,7 +16,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use tokio::sync::RwLock;
     use uuid::Uuid;
 
@@ -27,7 +27,9 @@ mod tests {
     }
     impl MockKuniRepository {
         fn new() -> Self {
-            Self { kunis: Arc::new(RwLock::new(HashMap::new())) }
+            Self {
+                kunis: Arc::new(RwLock::new(HashMap::new())),
+            }
         }
         async fn setup(&self, kuni: Kuni) {
             self.kunis.write().await.insert(kuni.id, kuni);
@@ -39,7 +41,14 @@ mod tests {
             Ok(self.kunis.read().await.get(id).cloned())
         }
         async fn find_by_daimyo_id(&self, daimyo_id: &DaimyoId) -> Result<Vec<Kuni>, DomainError> {
-            Ok(self.kunis.read().await.values().filter(|k| k.daimyo_id == *daimyo_id).cloned().collect())
+            Ok(self
+                .kunis
+                .read()
+                .await
+                .values()
+                .filter(|k| k.daimyo_id == *daimyo_id)
+                .cloned()
+                .collect())
         }
         async fn save(&self, kuni: &Kuni) -> Result<(), DomainError> {
             self.kunis.write().await.insert(kuni.id, kuni.clone());
@@ -55,7 +64,9 @@ mod tests {
     }
     impl MockDaimyoRepository {
         fn new() -> Self {
-            Self { daimyos: Arc::new(RwLock::new(HashMap::new())) }
+            Self {
+                daimyos: Arc::new(RwLock::new(HashMap::new())),
+            }
         }
         async fn setup(&self, daimyo: Daimyo) {
             self.daimyos.write().await.insert(daimyo.id, daimyo);
@@ -80,7 +91,9 @@ mod tests {
     }
     impl MockGameStateRepository {
         fn new() -> Self {
-            Self { state: Arc::new(RwLock::new(None)) }
+            Self {
+                state: Arc::new(RwLock::new(None)),
+            }
         }
     }
     #[async_trait]
@@ -99,7 +112,9 @@ mod tests {
     }
     impl MockEventDispatcher {
         fn new() -> Self {
-            Self { events: Arc::new(RwLock::new(Vec::new())) }
+            Self {
+                events: Arc::new(RwLock::new(Vec::new())),
+            }
         }
         async fn get_events(&self) -> Vec<GameEvent> {
             self.events.read().await.clone()
@@ -139,7 +154,7 @@ mod tests {
 
         let daimyo1 = create_test_daimyo("織田信長");
         let daimyo2 = create_test_daimyo("武田信玄");
-        
+
         let kuni1 = create_test_kuni(daimyo1.id);
         let kuni2 = create_test_kuni(daimyo2.id);
 
@@ -157,33 +172,40 @@ mod tests {
 
         // 1. 初回進行: ターン1の開始をセットアップし、最初の大名が行動
         usecase.progress().await.expect("進行成功");
-        
+
         let state = state_repo.get().await.unwrap().unwrap();
-        assert_eq!(state.current_turn, 1);
-        assert_eq!(state.action_order.len(), 2);
-        assert_eq!(state.current_action_index, 1); // 一人行動済み
+        assert_eq!(state.current_turn().value(), 1);
+        assert_eq!(state.action_order().len(), 2);
+        assert!(state.current_daimyo().is_some());
 
         // 一人目の行動イベントが発火していることを確認
         let events = event_dispatcher.get_events().await;
-        assert!(events.iter().any(|e| matches!(e, GameEvent::TurnStarted { turn: 1 })));
-        assert!(events.iter().any(|e| matches!(e, GameEvent::DaimyoActionStarted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, GameEvent::TurnStarted { turn } if turn.value() == 1)));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, GameEvent::DaimyoActionStarted { .. })));
 
         // 2. 2番目の大名が行動
         usecase.progress().await.expect("進行成功");
-        
+
         let state2 = state_repo.get().await.unwrap().unwrap();
-        assert_eq!(state2.current_action_index, 2); // 全員行動済み
         assert!(state2.is_turn_completed());
 
         // 3. ターンの終了処理（季節処理と次ターンへの移行）
         usecase.progress().await.expect("進行成功");
 
         let state3 = state_repo.get().await.unwrap().unwrap();
-        assert_eq!(state3.current_turn, 2); // ターンが進んでいる
-        assert_eq!(state3.current_action_index, 0); // リセットされている
+        assert_eq!(state3.current_turn().value(), 2); // ターンが進んでいる
+        assert!(state3.current_daimyo().is_some());
 
         let final_events = event_dispatcher.get_events().await;
-        assert!(final_events.iter().any(|e| matches!(e, GameEvent::SeasonPassed { turn: 1 })));
-        assert!(final_events.iter().any(|e| matches!(e, GameEvent::TurnStarted { turn: 2 })));
+        assert!(final_events
+            .iter()
+            .any(|e| matches!(e, GameEvent::SeasonPassed { turn } if turn.value() == 1)));
+        assert!(final_events
+            .iter()
+            .any(|e| matches!(e, GameEvent::TurnStarted { turn } if turn.value() == 2)));
     }
 }

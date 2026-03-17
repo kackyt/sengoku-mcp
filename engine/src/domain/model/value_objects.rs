@@ -107,3 +107,45 @@ impl DaimyoId {
         Self(uuid::Uuid::new_v4())
     }
 }
+
+/// 経過ターン数を表す型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TurnNumber(pub u32);
+
+impl TurnNumber {
+    pub fn new(val: u32) -> Self {
+        Self(val)
+    }
+
+    pub fn value(&self) -> u32 {
+        self.0
+    }
+}
+
+/// 行動順のインデックスを表す型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ActionOrderIndex(pub usize);
+
+impl ActionOrderIndex {
+    pub fn new(val: usize) -> Self {
+        Self(val)
+    }
+
+    pub fn value(&self) -> usize {
+        self.0
+    }
+}
+
+/// イベントの詳細やログメッセージを表す型
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EventMessage(pub String);
+
+impl EventMessage {
+    pub fn new(val: impl Into<String>) -> Self {
+        Self(val.into())
+    }
+
+    pub fn value(&self) -> &str {
+        &self.0
+    }
+}

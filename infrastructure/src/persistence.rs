@@ -1,8 +1,8 @@
 use engine::domain::error::DomainError;
-use engine::domain::model::game_state::GameState;
-use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::model::event::GameEvent;
+use engine::domain::model::game_state::GameState;
 use engine::domain::repository::event_dispatcher::EventDispatcher;
+use engine::domain::repository::game_state_repository::GameStateRepository;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
