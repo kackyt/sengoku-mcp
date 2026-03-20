@@ -1,3 +1,4 @@
+use crate::domain::error::DomainError;
 use crate::domain::model::value_objects::{ActionOrderIndex, DaimyoId, TurnNumber};
 
 /// ゲームの進行状態全体を表すドメインモデル
@@ -17,12 +18,17 @@ impl GameState {
         current_turn: TurnNumber,
         action_order: Vec<DaimyoId>,
         current_action_index: ActionOrderIndex,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, DomainError> {
+        if current_action_index.value() > action_order.len() {
+            return Err(DomainError::ValidationError(
+                "current_action_index must be <= action_order.len()".to_string(),
+            ));
+        }
+        Ok(Self {
             current_turn,
             action_order,
             current_action_index,
-        }
+        })
     }
 
     pub fn current_turn(&self) -> TurnNumber {

@@ -122,8 +122,9 @@ mod tests {
     }
     #[async_trait]
     impl EventDispatcher for MockEventDispatcher {
-        async fn dispatch(&self, event: GameEvent) {
+        async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError> {
             self.events.write().await.push(event);
+            Ok(())
         }
     }
 

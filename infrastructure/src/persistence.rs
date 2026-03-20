@@ -70,7 +70,8 @@ impl Default for InMemoryEventDispatcher {
 
 #[async_trait::async_trait]
 impl EventDispatcher for InMemoryEventDispatcher {
-    async fn dispatch(&self, event: GameEvent) {
+    async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError> {
         self.events.write().await.push(event);
+        Ok(())
     }
 }

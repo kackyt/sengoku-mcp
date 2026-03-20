@@ -6,6 +6,8 @@ mod tests {
         value_objects::{DaimyoId, IninFlag, KuniId},
     };
     use crate::domain::service::turn_service::TurnService;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use uuid::Uuid;
 
     fn create_test_kuni(jinko: u32, tyu: u32) -> Kuni {
@@ -21,7 +23,7 @@ mod tests {
     #[test]
     fn test_process_season_no_action_turns() {
         let kunis = vec![create_test_kuni(10000, 50)];
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(12345);
         let result = TurnService::process_season(3, kunis, &mut rng);
 
         // Most likely unchanged based on random rng disaster constraints,
@@ -40,7 +42,7 @@ mod tests {
         let initial_kome = kunis[0].resource.kome.value();
 
         // Turn 2 is a harvest turn (turn % 4 == 2)
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(12345);
         let result = TurnService::process_season(2, kunis, &mut rng);
 
         assert_eq!(result.len(), 1);
@@ -57,7 +59,7 @@ mod tests {
         let initial_jinko = kunis[0].resource.jinko.value();
 
         // Turn 4 is a population growth turn (turn % 4 == 0)
-        let mut rng = rand::thread_rng();
+        let mut rng = StdRng::seed_from_u64(12345);
         let result = TurnService::process_season(4, kunis, &mut rng);
 
         assert_eq!(result.len(), 1);

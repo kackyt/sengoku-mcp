@@ -58,13 +58,13 @@ where
                 let mut rng = rand::thread_rng();
                 let order = TurnService::determine_action_order(&daimyos, &mut rng);
                 let initial_state =
-                    GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0));
+                    GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))?;
                 self.game_state_repo.save(&initial_state).await?;
                 self.event_dispatcher
                     .dispatch(GameEvent::TurnStarted {
                         turn: TurnNumber::new(1),
                     })
-                    .await;
+                    .await?;
                 initial_state
             }
         };
@@ -79,7 +79,7 @@ where
         if let Some(daimyo_id) = state.current_daimyo() {
             self.event_dispatcher
                 .dispatch(GameEvent::DaimyoActionStarted { daimyo_id })
-                .await;
+                .await?;
 
             // CPUの自動行動を実行
             self.execute_cpu_action(daimyo_id).await?;
@@ -109,7 +109,13 @@ where
                 target_kuni_id,
                 amount,
             } => {
-                let mut target_kuni = kunis.into_iter().find(|k| k.id == target_kuni_id).unwrap();
+                let Some(mut target_kuni) = kunis.into_iter().find(|k| k.id == target_kuni_id)
+                else {
+                    return Err(anyhow::anyhow!(
+                        "対象国が見つかりません: {:?}",
+                        target_kuni_id
+                    ));
+                };
                 if target_kuni.develop_land(amount).is_ok() {
                     self.kuni_repo.save(&target_kuni).await?;
                     "開墾を行いました"
@@ -121,7 +127,13 @@ where
                 target_kuni_id,
                 amount,
             } => {
-                let mut target_kuni = kunis.into_iter().find(|k| k.id == target_kuni_id).unwrap();
+                let Some(mut target_kuni) = kunis.into_iter().find(|k| k.id == target_kuni_id)
+                else {
+                    return Err(anyhow::anyhow!(
+                        "対象国が見つかりません: {:?}",
+                        target_kuni_id
+                    ));
+                };
                 if target_kuni.build_town(amount).is_ok() {
                     self.kuni_repo.save(&target_kuni).await?;
                     "町造りを行いました"
@@ -139,7 +151,7 @@ where
                         target_kuni_id,
                         result_message: EventMessage::new("戦争を行いました（自動）"),
                     })
-                    .await;
+                    .await?;
                 return Ok(());
             }
             CpuActionDecision::Rest => "休息しました",
@@ -151,7 +163,7 @@ where
                 action_name: EventMessage::new("自動内政"),
                 details: EventMessage::new(action_msg),
             })
-            .await;
+            .await?;
 
         Ok(())
     }
@@ -169,17 +181,18 @@ where
             .dispatch(GameEvent::SeasonPassed {
                 turn: state.current_turn(),
             })
-            .await;
+            .await?;
 
         let daimyos = self.daimyo_repo.find_all().await?;
         let new_order = TurnService::determine_action_order(&daimyos, &mut rng);
-        let next_turn = TurnNumber::new(state.current_turn().value() + 1);
         state.start_new_turn(new_order);
         self.game_state_repo.save(&state).await?;
 
         self.event_dispatcher
-            .dispatch(GameEvent::TurnStarted { turn: next_turn })
-            .await;
+            .dispatch(GameEvent::TurnStarted {
+                turn: state.current_turn(),
+            })
+            .await?;
 
         Ok(())
     }
