@@ -154,7 +154,10 @@ where
                     .await?;
                 return Ok(());
             }
-            CpuActionDecision::Battle { target_kuni_id: None, .. } => "攻撃対象が不明なため待機しました",
+            CpuActionDecision::Battle {
+                target_kuni_id: None,
+                ..
+            } => "攻撃対象が不明なため待機しました",
             CpuActionDecision::Rest => "休息しました",
         };
 
