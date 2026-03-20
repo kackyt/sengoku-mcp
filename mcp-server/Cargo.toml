@@ -6,6 +6,5 @@ edition = "2021"
 [dependencies]
 engine = { path = "../engine" }
 infrastructure = { path = "../infrastructure" }
-rust-mcp-server = "0.3.6"
 tokio = "1.50.0"
 anyhow = "1.0"
