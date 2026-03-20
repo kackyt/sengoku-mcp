@@ -34,10 +34,7 @@ gh api repos/:owner/:repo/pulls/:number/comments > inline_comments.json
 
 # 3. スクリプトを実行して Markdown (suggestions.md) に変換
 # リポジトリルートから実行する場合
-[<parse_comments_script>](./scripts/parse_comments.py)
-```bash
-python <parse_comments_script> pr_comments.json inline_comments.json
-```
+python .rulesync/skills/fix-pr-comments/scripts/parse_comments.py pr_comments.json inline_comments.json
 ```
 
 ※もしカレントブランチからPRが特定できない場合は、`gh pr status` 等を用いるか、ユーザーに対象のPR番号やURLを尋ねてください。

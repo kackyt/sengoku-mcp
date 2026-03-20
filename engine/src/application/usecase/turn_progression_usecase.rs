@@ -143,17 +143,18 @@ where
             }
             CpuActionDecision::Battle {
                 attacker_id,
-                target_kuni_id,
+                target_kuni_id: Some(target_id),
             } => {
                 self.event_dispatcher
                     .dispatch(GameEvent::BattleAction {
                         attacker_id,
-                        target_kuni_id,
+                        target_kuni_id: target_id,
                         result_message: EventMessage::new("戦争を行いました（自動）"),
                     })
                     .await?;
                 return Ok(());
             }
+            CpuActionDecision::Battle { target_kuni_id: None, .. } => "攻撃対象が不明なため待機しました",
             CpuActionDecision::Rest => "休息しました",
         };
 

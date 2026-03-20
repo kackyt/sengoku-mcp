@@ -35,6 +35,8 @@ def parse_pr_comments(json_paths):
                         'diff': diff_hunk,
                         'comments': []
                     }
+                elif not threads[key]['diff'] and diff_hunk:
+                    threads[key]['diff'] = diff_hunk
                 
                 threads[key]['comments'].append({
                     'author': rc.get('user', {}).get('login', 'unknown'),
@@ -64,6 +66,8 @@ def parse_pr_comments(json_paths):
                             'diff': diff_hunk,
                             'comments': []
                         }
+                    elif not threads[key]['diff'] and diff_hunk:
+                        threads[key]['diff'] = diff_hunk
                     
                     threads[key]['comments'].append({
                         'author': rc.get('author', {}).get('login', 'unknown'),

@@ -15,7 +15,7 @@ pub enum CpuActionDecision {
     },
     Battle {
         attacker_id: DaimyoId,
-        target_kuni_id: KuniId,
+        target_kuni_id: Option<KuniId>,
     },
     Rest,
 }
@@ -42,7 +42,7 @@ impl CpuActionDecisionService {
             },
             2 => CpuActionDecision::Battle {
                 attacker_id: daimyo_id,
-                target_kuni_id: target_kuni.id, // ダミーとして自国IDを入れる
+                target_kuni_id: None, // 現時点では攻撃対象を決定できないためNoneを設定
             },
             _ => CpuActionDecision::Rest,
         }
