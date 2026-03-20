@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 engine = { path = "../engine" }
 async-trait = "0.1"
+tokio = { version = "1.0", features = ["sync", "rt"] }
