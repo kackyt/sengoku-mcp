@@ -1,9 +1,4 @@
-# progress-turn Specification
-
-## Purpose
-TBD - created by archiving change implement-domain-logic. Update Purpose after archive.
-
-## Requirements
+## MODIFIED Requirements
 ### Requirement: ターンフェーズと季節イベント
 システムは、ターンベースのループを処理し、すべての領地に対して季節イベントを適用しなければならない (MUST)。
 
@@ -27,6 +22,7 @@ TBD - created by archiving change implement-domain-logic. Update Purpose after a
 - **WHEN** 新しいターンが開始された時
 - **THEN** 各領地はそれぞれ1/40の確率で災害（疫病または飢饉）に見舞われ、人口、資源、および士気が減少する
 
+## ADDED Requirements
 ### Requirement: 自動行動（CPU）とイベント発行
 システムは、各行動番の大名について自動的に行動（CPU行動）を決定・実行し、その結果をイベントとして発行しなければならない (MUST)。
 

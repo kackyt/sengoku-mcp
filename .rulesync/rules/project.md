@@ -2,6 +2,7 @@
 targets: ["*"]
 description: "sengoku-mcp for Rust programming guidelines"
 globs: ["**/*"]
+root: true
 ---
 
 # はじめに

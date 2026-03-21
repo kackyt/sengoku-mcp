@@ -10,7 +10,8 @@
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.19.0",
-  "dependencies": {
+  "devDependencies": {
+    "@fission-ai/openspec": "^1.2.0",
     "rulesync": "^7.18.2"
   }
 }
