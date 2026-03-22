@@ -8,6 +8,7 @@ use crate::domain::model::{
     value_objects::{Amount, DaimyoId, IninFlag, KuniId},
 };
 use crate::domain::repository::kuni_repository::KuniRepository;
+use crate::domain::repository::neighbor_repository::NeighborRepository;
 use crate::domain::service::battle_service::Tactic;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -59,6 +60,33 @@ impl KuniRepository for MockKuniRepository {
     }
 }
 
+struct MockNeighborRepository {
+    adjacency_map: HashMap<KuniId, Vec<KuniId>>,
+}
+
+impl MockNeighborRepository {
+    fn new() -> Self {
+        Self {
+            adjacency_map: HashMap::new(),
+        }
+    }
+
+    fn add_neighbor(&mut self, a: KuniId, b: KuniId) {
+        self.adjacency_map.entry(a).or_default().push(b);
+        self.adjacency_map.entry(b).or_default().push(a);
+    }
+}
+
+impl NeighborRepository for MockNeighborRepository {
+    fn get_neighbors(&self, kuni_id: &KuniId) -> Vec<KuniId> {
+        self.adjacency_map.get(kuni_id).cloned().unwrap_or_default()
+    }
+
+    fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
+        self.adjacency_map.get(a).map_or(false, |neighbors| neighbors.contains(b))
+    }
+}
+
 // --- テストデータ作成ヘルパー ---
 
 fn create_test_kuni() -> Kuni {
@@ -76,11 +104,12 @@ fn create_test_kuni() -> Kuni {
 #[tokio::test]
 async fn test_domestic_sell_rice() {
     let repo = Arc::new(MockKuniRepository::new());
+    let neighbor_repo = Arc::new(MockNeighborRepository::new());
     let kuni = create_test_kuni();
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
-    let usecase = DomesticUseCase::new(repo.clone());
+    let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
     usecase
         .sell_rice(kuni_id, Amount::new(100))
         .await
@@ -96,11 +125,12 @@ async fn test_domestic_sell_rice() {
 #[tokio::test]
 async fn test_domestic_buy_rice() {
     let repo = Arc::new(MockKuniRepository::new());
+    let neighbor_repo = Arc::new(MockNeighborRepository::new());
     let kuni = create_test_kuni();
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
-    let usecase = DomesticUseCase::new(repo.clone());
+    let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
     usecase
         .buy_rice(kuni_id, Amount::new(100))
         .await
@@ -116,11 +146,12 @@ async fn test_domestic_buy_rice() {
 #[tokio::test]
 async fn test_domestic_recruit() {
     let repo = Arc::new(MockKuniRepository::new());
+    let neighbor_repo = Arc::new(MockNeighborRepository::new());
     let kuni = create_test_kuni();
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
-    let usecase = DomesticUseCase::new(repo.clone());
+    let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
     usecase
         .recruit(kuni_id, Amount::new(100))
         .await
@@ -131,11 +162,56 @@ async fn test_domestic_recruit() {
     assert_eq!(updated.resource.jinko.value(), 9900); // 10000 - 100
 }
 
+#[tokio::test]
+async fn test_domestic_transport_success_when_adjacent() {
+    let repo = Arc::new(MockKuniRepository::new());
+    let mut mock_neighbor = MockNeighborRepository::new();
+    let from_kuni = create_test_kuni();
+    let to_kuni = create_test_kuni();
+    let from_id = from_kuni.id;
+    let to_id = to_kuni.id;
+    
+    repo.setup(from_kuni);
+    repo.setup(to_kuni);
+    mock_neighbor.add_neighbor(from_id, to_id);
+    
+    let neighbor_repo = Arc::new(mock_neighbor);
+    let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
+    
+    let res = usecase.transport(from_id, to_id, Amount::new(100), Amount::new(0), Amount::new(0)).await;
+    assert!(res.is_ok());
+    
+    let updated_from = repo.find_by_id(&from_id).await.unwrap().unwrap();
+    let updated_to = repo.find_by_id(&to_id).await.unwrap().unwrap();
+    assert_eq!(updated_from.resource.kin.value(), 900);
+    assert_eq!(updated_to.resource.kin.value(), 1100);
+}
+
+#[tokio::test]
+async fn test_domestic_transport_fails_when_not_adjacent() {
+    let repo = Arc::new(MockKuniRepository::new());
+    let neighbor_repo = Arc::new(MockNeighborRepository::new()); // No adjacency
+    let from_kuni = create_test_kuni();
+    let to_kuni = create_test_kuni();
+    let from_id = from_kuni.id;
+    let to_id = to_kuni.id;
+    
+    repo.setup(from_kuni);
+    repo.setup(to_kuni);
+    
+    let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
+    let res = usecase.transport(from_id, to_id, Amount::new(100), Amount::new(0), Amount::new(0)).await;
+    assert!(res.is_err());
+    let err_str = res.unwrap_err().to_string();
+    assert!(err_str.contains("隣接していません"));
+}
+
 // --- BattleUseCase テスト ---
 
 #[tokio::test]
-async fn test_battle_execution() {
+async fn test_battle_execution_success_when_adjacent() {
     let repo = Arc::new(MockKuniRepository::new());
+    let mut mock_neighbor = MockNeighborRepository::new();
     let attacker = create_test_kuni();
     let defender = create_test_kuni();
     let attacker_id = attacker.id;
@@ -143,8 +219,10 @@ async fn test_battle_execution() {
 
     repo.setup(attacker);
     repo.setup(defender);
+    mock_neighbor.add_neighbor(attacker_id, defender_id);
+    let neighbor_repo = Arc::new(mock_neighbor);
 
-    let usecase = BattleUseCase::new(repo.clone());
+    let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone());
     let result = usecase
         .execute_battle_turn(
             attacker_id,
@@ -168,6 +246,34 @@ async fn test_battle_execution() {
         updated_defender.resource.hei.value(),
         result.defender_kuni.resource.hei.value()
     );
+}
+
+#[tokio::test]
+async fn test_battle_execution_fails_when_not_adjacent() {
+    let repo = Arc::new(MockKuniRepository::new());
+    let neighbor_repo = Arc::new(MockNeighborRepository::new()); // No adjacency
+    let attacker = create_test_kuni();
+    let defender = create_test_kuni();
+    let attacker_id = attacker.id;
+    let defender_id = defender.id;
+
+    repo.setup(attacker);
+    repo.setup(defender);
+
+    let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone());
+    let result = usecase
+        .execute_battle_turn(
+            attacker_id,
+            defender_id,
+            Tactic::Normal,
+            Tactic::Normal,
+            Amount::new(500),
+        )
+        .await;
+
+    assert!(result.is_err());
+    let err_str = result.unwrap_err().to_string();
+    assert!(err_str.contains("隣接していません"));
 }
 
 // --- TurnUseCase テスト ---

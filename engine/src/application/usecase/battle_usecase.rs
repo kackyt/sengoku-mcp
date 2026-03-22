@@ -1,20 +1,23 @@
 use crate::domain::{
+    error::DomainError,
     model::value_objects::{Amount, KuniId},
     repository::kuni_repository::KuniRepository,
+    repository::neighbor_repository::NeighborRepository,
     service::battle_service::{BattleResult, BattleService, Tactic},
 };
 use std::sync::Arc;
 
 /// 合戦に関するユースケース
 #[allow(dead_code)]
-pub struct BattleUseCase<R: KuniRepository> {
+pub struct BattleUseCase<R: KuniRepository, N: NeighborRepository> {
     kuni_repo: Arc<R>,
+    neighbor_repo: Arc<N>,
 }
 
-impl<R: KuniRepository> BattleUseCase<R> {
+impl<R: KuniRepository, N: NeighborRepository> BattleUseCase<R, N> {
     /// 新しい合戦ユースケースを作成します
-    pub fn new(kuni_repo: Arc<R>) -> Self {
-        Self { kuni_repo }
+    pub fn new(kuni_repo: Arc<R>, neighbor_repo: Arc<N>) -> Self {
+        Self { kuni_repo, neighbor_repo }
     }
 
     /// 合戦の1ターンを実行します
@@ -36,6 +39,10 @@ impl<R: KuniRepository> BattleUseCase<R> {
             .find_by_id(&defender_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません: {:?}", defender_id))?;
+
+        if !self.neighbor_repo.are_adjacent(&attacker_id, &defender_id) {
+            return Err(DomainError::NotAdjacent.into());
+        }
 
         if attacker_troops.value() > attacker.resource.hei.value() {
             return Err(anyhow::anyhow!("攻撃側の兵数が不足しています"));

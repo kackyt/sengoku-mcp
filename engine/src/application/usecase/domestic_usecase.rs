@@ -1,19 +1,22 @@
 use crate::domain::{
+    error::DomainError,
     model::value_objects::{Amount, IninFlag, KuniId},
     repository::kuni_repository::KuniRepository,
+    repository::neighbor_repository::NeighborRepository,
 };
 use std::sync::Arc;
 
 /// 内政に関するユースケース
 #[allow(dead_code)]
-pub struct DomesticUseCase<R: KuniRepository> {
+pub struct DomesticUseCase<R: KuniRepository, N: NeighborRepository> {
     kuni_repo: Arc<R>,
+    neighbor_repo: Arc<N>,
 }
 
-impl<R: KuniRepository> DomesticUseCase<R> {
+impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
     /// 新しい内政ユースケースを作成します
-    pub fn new(kuni_repo: Arc<R>) -> Self {
-        Self { kuni_repo }
+    pub fn new(kuni_repo: Arc<R>, neighbor_repo: Arc<N>) -> Self {
+        Self { kuni_repo, neighbor_repo }
     }
 
     /// 米を売却します
@@ -126,6 +129,10 @@ impl<R: KuniRepository> DomesticUseCase<R> {
             .find_by_id(&to_kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("送り先の国が見つかりません: {:?}", to_kuni_id))?;
+
+        if !self.neighbor_repo.are_adjacent(&from_kuni_id, &to_kuni_id) {
+            return Err(DomainError::NotAdjacent.into());
+        }
 
         from_kuni.consume_resource(kin, hei, kome)?;
         to_kuni.add_resource(kin, hei, kome);

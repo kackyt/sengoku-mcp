@@ -22,4 +22,8 @@ pub enum DomainError {
     /// その他のバリデーションエラーなど
     #[error("バリデーションエラー: {0}")]
     ValidationError(String),
+
+    /// 隣接していない操作を行った場合のエラー
+    #[error("対象は隣接していません")]
+    NotAdjacent,
 }
