@@ -129,7 +129,8 @@ impl<R: UnitRepository> MoveUnitUseCase<R> {
 │  └─src
 │      └─presentation : MCPのプロトコルマッピング。
 │      └─main.ts : **Composition Root**。ユースケースに infrastructure の具象リポジトリを注入して起動。
-├─ static : マスターデータ等
+├─ static
+│  └─ master_data: マスターデータ
 └─ Cargo.toml ワークスペース管理
 
 ## 構成の再確認

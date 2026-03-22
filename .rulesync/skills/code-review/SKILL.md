@@ -57,6 +57,7 @@ git diff main...HEAD -- <filepath>
 | 🔴 重大 | **[アーキテクチャ境界違反]** ドメイン層がアプリケーション層（`engine/src/application/`）のモジュールを `use` している | オニオンアーキテクチャ：ドメインはすべての層から独立 |
 | 🔴 重大 | **[アーキテクチャ境界違反]** Repository の具象実装が `infrastructure/src/persistence/` 以外（例: `engine/src/domain/`）に配置されている | ヘキサゴナルアーキテクチャ：ポート（Trait）はドメイン、アダプタ（実装）はインフラ |
 | 🔴 重大 | **[アーキテクチャ境界違反]** Usecase/Application Service が `engine/src/application/usecase/` 以外に実装されている | オニオンアーキテクチャ：Usecaseの配置規約 |
+| 🔴 重大 | **[アーキテクチャ境界違反]** ドメインロジック(収入、イベント、成否判定など)がcliなどアプリケーションで実装されている | オニオンアーキテクチャ：依存は内側に向かう |
 | 🔴 重大 | **[DDDドメインモデル違反]** ビジネスロジック（不変条件の保護、状態遷移）がドメインモデル外（Usecase や infrastructure）に漏れている | DDD：ドメインモデルが不変条件を内包すること |
 | 🔴 重大 | **[DDDドメインモデル違反]** 複数のエンティティ/集約にまたがるロジックが Usecase に直接記述されており、Domain Service として分離されていない | DDD：Domain Service（`engine/src/domain/service/`）を使うこと |
 | 🔴 重大 | **[DDDドメインモデル違反]** Repository の Interface（Trait） が `engine/src/domain/repository/` 以外に定義されている | DDD：RepositoryインターフェースはDomain層が所有する |

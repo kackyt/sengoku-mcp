@@ -21,15 +21,16 @@ Before writing any CLI code, you MUST understand how the underlying game/applica
 
 ## Step 2: Implementation Proposal (Mandatory)
 
-Before proceeding with any implementation, you MUST draft a specific implementation plan and propose it to the user. Do not skip this!
+Before proceeding with any implementation, you MUST use the `openspec-propose` skill (e.g. via `@[/opsx-propose]`) to generate the implementation proposal and tasks. Do not skip this!
 
-1. Create a file named `implementation_plan.md` in the workspace.
-2. The plan must explicitly detail:
+1. Trigger the `openspec-propose` skill to create the change.
+2. Set the description of the change to explicitly detail:
    - What UI components will be built.
    - Which specific UseCases, Repositories, or ECS Systems from the core application will be utilized or injected.
    - Any dummy/mock implementations needed if the infrastructure layer is not yet complete.
-3. Use your communication tools (e.g. `notify_user` or standard messaging if in a conversational agent context) to present the plan and ask the user for approval.
-4. DO NOT proceed to Step 3 until the user approves the implementation plan.
+3. The `openspec-propose` skill will generate the necessary artifacts (e.g., `proposal.md`, `design.md`, `tasks.md`).
+4. DO NOT proceed to Step 3 until the user approves the generated proposal and design.
+5. **生成される各種ドキュメントは必ず日本語で出力されるように指示してください**
 
 ## Step 3: Modern Rust TUI Approach (Recommended)
 
