@@ -83,7 +83,9 @@ impl NeighborRepository for MockNeighborRepository {
     }
 
     fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
-        self.adjacency_map.get(a).map_or(false, |neighbors| neighbors.contains(b))
+        self.adjacency_map
+            .get(a)
+            .is_some_and(|neighbors| neighbors.contains(b))
     }
 }
 
@@ -170,17 +172,25 @@ async fn test_domestic_transport_success_when_adjacent() {
     let to_kuni = create_test_kuni();
     let from_id = from_kuni.id;
     let to_id = to_kuni.id;
-    
+
     repo.setup(from_kuni);
     repo.setup(to_kuni);
     mock_neighbor.add_neighbor(from_id, to_id);
-    
+
     let neighbor_repo = Arc::new(mock_neighbor);
     let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
-    
-    let res = usecase.transport(from_id, to_id, Amount::new(100), Amount::new(0), Amount::new(0)).await;
+
+    let res = usecase
+        .transport(
+            from_id,
+            to_id,
+            Amount::new(100),
+            Amount::new(0),
+            Amount::new(0),
+        )
+        .await;
     assert!(res.is_ok());
-    
+
     let updated_from = repo.find_by_id(&from_id).await.unwrap().unwrap();
     let updated_to = repo.find_by_id(&to_id).await.unwrap().unwrap();
     assert_eq!(updated_from.resource.kin.value(), 900);
@@ -195,12 +205,20 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
     let to_kuni = create_test_kuni();
     let from_id = from_kuni.id;
     let to_id = to_kuni.id;
-    
+
     repo.setup(from_kuni);
     repo.setup(to_kuni);
-    
+
     let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
-    let res = usecase.transport(from_id, to_id, Amount::new(100), Amount::new(0), Amount::new(0)).await;
+    let res = usecase
+        .transport(
+            from_id,
+            to_id,
+            Amount::new(100),
+            Amount::new(0),
+            Amount::new(0),
+        )
+        .await;
     assert!(res.is_err());
     let err_str = res.unwrap_err().to_string();
     assert!(err_str.contains("隣接していません"));

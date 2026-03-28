@@ -16,7 +16,10 @@ pub struct DomesticUseCase<R: KuniRepository, N: NeighborRepository> {
 impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
     /// 新しい内政ユースケースを作成します
     pub fn new(kuni_repo: Arc<R>, neighbor_repo: Arc<N>) -> Self {
-        Self { kuni_repo, neighbor_repo }
+        Self {
+            kuni_repo,
+            neighbor_repo,
+        }
     }
 
     /// 米を売却します

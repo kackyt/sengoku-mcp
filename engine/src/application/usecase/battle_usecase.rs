@@ -17,7 +17,10 @@ pub struct BattleUseCase<R: KuniRepository, N: NeighborRepository> {
 impl<R: KuniRepository, N: NeighborRepository> BattleUseCase<R, N> {
     /// 新しい合戦ユースケースを作成します
     pub fn new(kuni_repo: Arc<R>, neighbor_repo: Arc<N>) -> Self {
-        Self { kuni_repo, neighbor_repo }
+        Self {
+            kuni_repo,
+            neighbor_repo,
+        }
     }
 
     /// 合戦の1ターンを実行します
