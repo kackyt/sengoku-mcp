@@ -7,6 +7,10 @@ description: >-
 
 このスキルは、GitHubのプルリクエストについたレビューコメント（Review Comments）を読み取り、現在のコードを自動的に修正するための手順を提供します。
 
+> [!WARNING]
+> **ファイルの所有権（Ownership）の維持は、レビューを行う側の責任です。**
+> このスキルを使用する際は、修正内容がプロジェクトの所有権ルールに抵触しないよう注意してください。
+
 ## 対象となる場面
 
 - ユーザーから「PRのコメントを直して」「レビュー指摘を反映して」と依頼されたとき
@@ -21,23 +25,17 @@ description: >-
 
 ### 1. PR情報の特定とコメントの取得
 
-現在の環境に紐づくPRの情報をJSON形式で取得し、スクリプトで解析可能な形式に変換します。
+現在の環境に紐づくPRの情報を取得し、スクリプトで解析可能な形式に変換します。
+解決済み（Resolved）のコメントは自動的にスキップされます。
 
+[<parse_comments_script>](./scripts/parse_comments.py)
 ```bash
-# 1. PRのレビュー概要と全体コメントをJSONとして書き出し
-# カレントブランチのPRを対象とする場合
-gh pr view --json comments,reviews > pr_comments.json
-
-# 2. インラインコメント（個別の差分コメント）をJSONとして取得
-# PR番号を取得して実行
-gh api repos/:owner/:repo/pulls/:number/comments > inline_comments.json
-
-# 3. スクリプトを実行して Markdown (suggestions.md) に変換
-# リポジトリルートから実行する場合
-python .rulesync/skills/fix-pr-comments/scripts/parse_comments.py pr_comments.json inline_comments.json
+# スクリプトを実行して PR のコメントを取得し Markdown (suggestions.md) に変換
+# 引数なしで実行するとカレントブランチのPRを対象とします。対象PRを指定する場合は引数にPR番号等を指定してください。
+python <parse_comments_script>
 ```
 
-※もしカレントブランチからPRが特定できない場合は、`gh pr status` 等を用いるか、ユーザーに対象のPR番号やURLを尋ねてください。
+※もしカレントブランチからPRが特定できない場合は、ユーザーに対象のPR番号やURLを尋ね、`python <parse_comments_script> 123` のように引数に追加して実行してください。
 ※生成された `suggestions.md` を `view_file` ツールで読み込み、指摘内容を確認してください。
 
 ### 2. 指摘内容の分析

@@ -1,136 +1,193 @@
+import subprocess
 import json
 import sys
 import os
+from datetime import datetime
 
-def parse_pr_comments(json_paths):
-    threads = {}
-    general_comments = []
 
-    for json_path in json_paths:
-        if not os.path.exists(json_path):
-            print(f"Warning: {json_path} not found. Skipping.")
+def run_cmd(cmd):
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+    if result.returncode != 0:
+        print(f"Command failed: {' '.join(cmd)}\n{result.stderr}")
+        sys.exit(1)
+    return result.stdout
+
+
+def get_pr_info(pr_arg=None):
+    if pr_arg:
+        cmd = ['gh', 'pr', 'view', pr_arg, '--json', 'url,number']
+    else:
+        cmd = ['gh', 'pr', 'view', '--json', 'url,number']
+
+    out = run_cmd(cmd)
+    data = json.loads(out)
+
+    url = data['url']
+    number = data['number']
+
+    parts = url.split('/')
+    owner = parts[-4]
+    repo = parts[-3]
+
+    return owner, repo, number
+
+
+def fetch_threads(owner, repo, number):
+    """
+    GitHub GraphQL で PR のレビュースレッドを取得する。
+    isResolved: ユーザーが明示的に「解決済み」にマークしたスレッド
+    isOutdated: コードが変更されてスレッドの指摘箇所が古くなったスレッド
+    isCollapsed: コードが更新によってスレッドが折りたたまれた状態
+    これらのいずれかが true のスレッドは「解決済み/不要」とみなしてスキップする。
+    """
+    query = """
+    query($name: String!, $owner: String!, $number: Int!, $cursor: String) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              isResolved
+              isOutdated
+              isCollapsed
+              comments(first: 50) {
+                nodes {
+                  id
+                  body
+                  path
+                  line
+                  originalLine
+                  author { login }
+                  createdAt
+                  diffHunk
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    all_threads = []
+    cursor = None
+
+    while True:
+        cmd = [
+            'gh', 'api', 'graphql',
+            '-F', f'owner={owner}',
+            '-F', f'name={repo}',
+            '-F', f'number={number}',
+            '-f', f'query={query}'
+        ]
+        if cursor:
+            cmd.extend(['-F', f'cursor={cursor}'])
+
+        out = run_cmd(cmd)
+        data = json.loads(out)
+
+        pr_data = data.get('data', {}).get('repository', {}).get('pullRequest', {})
+        threads_page = pr_data.get('reviewThreads', {})
+
+        all_threads.extend(threads_page.get('nodes', []))
+
+        page_info = threads_page.get('pageInfo', {})
+        if page_info.get('hasNextPage'):
+            cursor = page_info.get('endCursor')
+        else:
+            break
+
+    return all_threads
+
+
+def is_unresolved(thread):
+    """
+    スレッドが未解決かどうかを判定する。
+    以下のいずれかに該当する場合は解決済み/不要とみなす:
+    - isResolved: True  (ユーザーが明示的に解決済みにした)
+    - isOutdated: True  (コード変更によって指摘箇所が古くなった)
+    - isCollapsed: True (コード更新によって折りたたまれた)
+    """
+    if thread.get('isResolved'):
+        return False
+    if thread.get('isOutdated'):
+        return False
+    if thread.get('isCollapsed'):
+        return False
+    return True
+
+
+def generate_markdown(threads):
+    output_lines = ["# PR Review Comments - Unresolved Threads\n"]
+    output_lines.append(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+    active_threads = []
+
+    for thread in threads:
+        if not is_unresolved(thread):
             continue
 
-        with open(json_path, 'r', encoding='utf-8') as f:
+        comments = thread.get('comments', {}).get('nodes', [])
+        if not comments:
+            continue
+
+        first_comment = comments[0]
+        path = first_comment.get('path', 'Unknown file')
+        line = first_comment.get('line') or first_comment.get('originalLine') or 'N/A'
+        diff_hunk = first_comment.get('diffHunk', '')
+
+        active_threads.append({
+            'path': path,
+            'line': line,
+            'comments': comments,
+        })
+
+    if not active_threads:
+        output_lines.append("✅ 未解決のレビュースレッドはありません。\n")
+    else:
+        output_lines.append(f"**{len(active_threads)} 件の未解決スレッド**\n\n")
+
+        def sort_key(t):
             try:
-                data = json.load(f)
-            except json.JSONDecodeError as e:
-                print(f"Error decoding JSON in {json_path}: {e}")
-                continue
+                line_num = int(t['line']) if t['line'] != 'N/A' else 0
+                return (t['path'], line_num)
+            except (ValueError, TypeError):
+                return (t['path'], 0)
 
-        # Handle different JSON structures
-        if isinstance(data, list):
-            # Format: gh api repos/:owner/:repo/pulls/:number/comments
-            for rc in data:
-                path = rc.get('path', 'Unknown file')
-                # API lists 'line' or 'original_line'
-                line = rc.get('line') or rc.get('original_line') or 'N/A'
-                diff_hunk = rc.get('diff_hunk', '')
-                
-                key = f"{path}:{line}"
-                if key not in threads:
-                    threads[key] = {
-                        'path': path,
-                        'line': line,
-                        'diff': diff_hunk,
-                        'comments': []
-                    }
-                elif not threads[key]['diff'] and diff_hunk:
-                    threads[key]['diff'] = diff_hunk
-                
-                threads[key]['comments'].append({
-                    'author': rc.get('user', {}).get('login', 'unknown'),
-                    'body': rc.get('body', '').strip(),
-                    'createdAt': rc.get('created_at', ''),
-                    'id': rc.get('id', '')
-                })
-        elif isinstance(data, dict):
-            # Format: gh pr view --json comments,reviews
-            # General comments
-            general_comments.extend(data.get('comments', []))
-            
-            # Inline review comments
-            reviews = data.get('reviews', [])
-            for review in reviews:
-                review_comments = review.get('comments', [])
-                for rc in review_comments:
-                    path = rc.get('path', 'Unknown file')
-                    line = rc.get('line') or rc.get('originalLine', 'N/A')
-                    diff_hunk = rc.get('diffHunk', '')
-                    
-                    key = f"{path}:{line}"
-                    if key not in threads:
-                        threads[key] = {
-                            'path': path,
-                            'line': line,
-                            'diff': diff_hunk,
-                            'comments': []
-                        }
-                    elif not threads[key]['diff'] and diff_hunk:
-                        threads[key]['diff'] = diff_hunk
-                    
-                    threads[key]['comments'].append({
-                        'author': rc.get('author', {}).get('login', 'unknown'),
-                        'body': rc.get('body', '').strip(),
-                        'createdAt': rc.get('createdAt', ''),
-                        'id': rc.get('id', '')
-                    })
+        active_threads.sort(key=sort_key)
 
-    output_lines = ["# PR Review Comments Suggestions\n"]
+        for thread in active_threads:
+            output_lines.append(f"### `{thread['path']}` (Line: {thread['line']})\n")
 
-    if general_comments:
-        output_lines.append("## General PR Comments\n")
-        # Deduplicate and sort could be added here if needed
-        for c in general_comments:
-            author = c.get('author', {}).get('login', 'unknown')
-            body = c.get('body', '').strip()
-            if body:
-                output_lines.append(f"### From @{author}\n{body}\n\n---\n")
-
-    if threads:
-        output_lines.append("## Inline Suggestions by File\n")
-        
-        def sort_key(k):
-            # Split from the right in case path contains colons (rare but possible)
-            if ':' in k:
-                path, line_str = k.rsplit(':', 1)
-                try:
-                    return (path, int(line_str))
-                except ValueError:
-                    return (path, 0)
-            return (k, 0)
-            
-        sorted_keys = sorted(threads.keys(), key=sort_key)
-        for key in sorted_keys:
-            thread = threads[key]
-            output_lines.append(f"### File: `{thread['path']}` (Line: {thread['line']})\n")
-            if thread['diff']:
-                output_lines.append("```diff\n" + thread['diff'] + "\n```\n")
-            
-            # Sort comments in thread by date, then ID as fallback
-            thread_comments = sorted(
-                thread['comments'], 
-                key=lambda x: (x['createdAt'], str(x['id']))
-            )
-            # Deduplicate by ID
-            seen_ids = set()
-            for tc in thread_comments:
-                if tc['id'] and tc['id'] in seen_ids:
-                    continue
-                seen_ids.add(tc['id'])
-                output_lines.append(f"**@{tc['author']}**: {tc['body']}\n\n")
-            output_lines.append("---\n")
+            for comment in thread['comments']:
+                author = comment.get('author', {}).get('login', 'unknown') if comment.get('author') else 'unknown'
+                body = comment.get('body', '').strip()
+                created = comment.get('createdAt', '')
+                output_lines.append(f"**@{author}** ({created[:10]}):\n\n{body}\n\n")
+            output_lines.append("---\n\n")
 
     output_path = "suggestions.md"
     with open(output_path, 'w', encoding='utf-8') as f:
         f.writelines(output_lines)
-    
-    print(f"Successfully generated {output_path}")
+
+    print(f"Successfully generated {output_path} ({len(active_threads)} unresolved threads)")
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python parse_comments.py <file1.json> [file2.json] ...")
-        sys.exit(1)
-    else:
-        parse_pr_comments(sys.argv[1:])
+    pr_arg = sys.argv[1] if len(sys.argv) > 1 else None
 
+    print("Fetching PR info...")
+    owner, repo, number = get_pr_info(pr_arg)
+
+    print(f"Fetching review threads for {owner}/{repo}#{number}...")
+    threads = fetch_threads(owner, repo, number)
+
+    total = len(threads)
+    resolved = sum(1 for t in threads if not is_unresolved(t))
+    print(f"Total threads: {total}, Resolved/Outdated/Collapsed: {resolved}, Active: {total - resolved}")
+
+    print("Generating suggestions.md...")
+    generate_markdown(threads)

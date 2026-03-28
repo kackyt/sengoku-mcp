@@ -9,7 +9,7 @@ description: >-
 
 This skill provides guidance for creating effective skills.
 **skillは技術用語やプログラムを除いて日本語で記述すること**
-**skillは.rulesync/skills/skill-name/SKILL.mdに配置して、作成後pnpm exec rulesync generateで動悸する**
+**skillは.rulesync/skills/skill-name/SKILL.mdに配置して、作成後pnpm exec rulesync generateで同期する**
 
 ## About Skills
 
