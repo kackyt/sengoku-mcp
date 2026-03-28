@@ -218,7 +218,11 @@ mod tests {
         let ezo = result.kunis.iter().find(|k| k.id == *ezo_id).unwrap();
         assert_eq!(ezo.resource.kin.value(), 80);
 
-        let kakizaki = result.daimyos.iter().find(|d| d.id == ezo.daimyo_id).unwrap();
+        let kakizaki = result
+            .daimyos
+            .iter()
+            .find(|d| d.id == ezo.daimyo_id)
+            .unwrap();
         assert_eq!(kakizaki.name, DaimyoName("蛎崎".to_string()));
     }
 
@@ -252,7 +256,8 @@ mod tests {
         writeln!(neighbor_file, "1,2").unwrap();
         writeln!(neighbor_file, "2,3").unwrap();
 
-        let neighbor_repo = MasterDataLoader::load_neighbor(dir.path(), &kuni_result.id_map).unwrap();
+        let neighbor_repo =
+            MasterDataLoader::load_neighbor(dir.path(), &kuni_result.id_map).unwrap();
 
         let id1 = kuni_result.id_map.get(&1).unwrap();
         let id2 = kuni_result.id_map.get(&2).unwrap();
