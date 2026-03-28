@@ -6,5 +6,5 @@ edition = "2021"
 [dependencies]
 engine = { path = "../engine" }
 infrastructure = { path = "../infrastructure" }
-tokio = "1.50.0"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 anyhow = "1.0"
