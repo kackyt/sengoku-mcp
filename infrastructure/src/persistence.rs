@@ -1,8 +1,11 @@
 use engine::domain::error::DomainError;
 use engine::domain::model::event::GameEvent;
 use engine::domain::model::game_state::GameState;
+use engine::domain::model::value_objects::KuniId;
 use engine::domain::repository::event_dispatcher::EventDispatcher;
 use engine::domain::repository::game_state_repository::GameStateRepository;
+use engine::domain::repository::neighbor_repository::NeighborRepository;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -73,5 +76,31 @@ impl EventDispatcher for InMemoryEventDispatcher {
     async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError> {
         self.events.write().await.push(event);
         Ok(())
+    }
+}
+
+/// 隣接国情報をメモリ上に保持するリポジトリの実装
+pub struct InMemoryNeighborRepository {
+    adjacency_map: HashMap<KuniId, Vec<KuniId>>,
+}
+
+impl InMemoryNeighborRepository {
+    /// 新しいインスタンスを作成する
+    pub fn new(adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Self {
+        Self { adjacency_map }
+    }
+}
+
+impl NeighborRepository for InMemoryNeighborRepository {
+    /// 指定された国の隣接国リストを取得する
+    fn get_neighbors(&self, kuni_id: &KuniId) -> Vec<KuniId> {
+        self.adjacency_map.get(kuni_id).cloned().unwrap_or_default()
+    }
+
+    /// 2つの国が隣接しているか判定する
+    fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
+        self.adjacency_map
+            .get(a)
+            .is_some_and(|neighbors| neighbors.contains(b))
     }
 }
