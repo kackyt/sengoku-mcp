@@ -1,12 +1,25 @@
 use std::fmt;
 
-/// 金額、人数、量などを表す基本単位
+/// 金額、人数、量などを表す基本単位。
+/// PRDで定義される BIAS (10倍) を内部スケールとして使用します。
+pub const INTERNAL_SCALE: u32 = 10;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Amount(pub u32);
 
 impl Amount {
     pub fn new(val: u32) -> Self {
         Self(val)
+    }
+
+    /// 表示用の値（整数）から内部単位の Amount を作成します
+    pub fn from_display(val: u32) -> Self {
+        Self(val * INTERNAL_SCALE)
+    }
+
+    /// 内部単位の値を表示用の整数に変換します
+    pub fn to_display(&self) -> u32 {
+        self.0 / INTERNAL_SCALE
     }
 
     pub fn value(&self) -> u32 {

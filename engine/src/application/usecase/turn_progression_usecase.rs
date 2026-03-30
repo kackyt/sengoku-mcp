@@ -48,6 +48,22 @@ where
         }
     }
 
+    /// 現在の大名の行動を完了とし、次の大名（または次のターン）へ進める
+    pub async fn complete_current_action(&self) -> Result<(), anyhow::Error> {
+        let mut state = self.game_state_repo.get().await?.ok_or_else(|| {
+            anyhow::anyhow!("GameStateが見つかりません。progressを先に呼んでください。")
+        })?;
+
+        state.advance_action();
+        self.game_state_repo.save(&state).await?;
+
+        if state.is_turn_completed() {
+            self.finish_turn(state).await?;
+        }
+
+        Ok(())
+    }
+
     /// ターンフェーズを進める（自動行動を一回行う、またはターン終了処理を行う）
     pub async fn progress(&self) -> Result<(), anyhow::Error> {
         let mut state = match self.game_state_repo.get().await? {

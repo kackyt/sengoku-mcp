@@ -8,6 +8,8 @@ use rand::Rng;
 pub struct Kuni {
     /// 国ID
     pub id: KuniId,
+    /// 国名
+    pub name: crate::domain::model::daimyo::DaimyoName, // 便宜上DaimyoNameを使い回すが、本来はKuniNameを作るべき。今回はDaimyoName(String)なので一旦これを使う。
     /// 支配している大名のID
     pub daimyo_id: DaimyoId,
     /// 資源（金、兵、米、人口）
@@ -22,6 +24,7 @@ impl Kuni {
     /// 新しい国を作成します
     pub fn new(
         id: KuniId,
+        name: impl Into<String>,
         daimyo_id: DaimyoId,
         resource: Resource,
         stats: DevelopmentStats,
@@ -29,6 +32,7 @@ impl Kuni {
     ) -> Self {
         Self {
             id,
+            name: crate::domain::model::daimyo::DaimyoName(name.into()),
             daimyo_id,
             resource,
             stats,
@@ -78,51 +82,61 @@ impl Kuni {
     }
 
     // --- 内政ロジック (Usecaseから移譲) ---
+    // 各計算式は PRD.md の「資源計算式」章に基づいています。
 
-    /// 米を売却します。価格はランダムに変動します。
-    pub fn sell_rice(&mut self, amount: Amount) -> Result<(), DomainError> {
-        let bias: u32 = rand::thread_rng().gen_range(10..=20); // 1.0 to 2.0 倍 (10-20で表現)
-        let gain = (amount.value() * bias) / 10;
+    /// 米を売却します。
+    /// 獲得：金 += 投入量 * (random(BIAS) + BIAS)
+    pub fn sell_rice(&mut self, amount: Amount) -> Result<u32, DomainError> {
+        let rng = rand::thread_rng().gen_range(0..crate::domain::model::value_objects::INTERNAL_SCALE);
+        let multiplier = rng + crate::domain::model::value_objects::INTERNAL_SCALE;
+        let gain = (amount.value() * multiplier) / crate::domain::model::value_objects::INTERNAL_SCALE;
 
         self.consume_resource(Amount::new(0), Amount::new(0), amount)?;
         self.add_resource(Amount::new(gain), Amount::new(0), Amount::new(0));
-        Ok(())
+        Ok(gain / crate::domain::model::value_objects::INTERNAL_SCALE) // 表示単位の獲得額を返す
     }
 
-    /// 米を購入します。価格はランダムに変動します。
-    pub fn buy_rice(&mut self, amount: Amount) -> Result<(), DomainError> {
-        let bias: u32 = rand::thread_rng().gen_range(10..=20);
-        let cost = (amount.value() * bias) / 10;
+    /// 米を購入します。
+    /// 消費：金 -= 投入量 * (random(BIAS) + BIAS)
+    pub fn buy_rice(&mut self, amount: Amount) -> Result<u32, DomainError> {
+        let rng = rand::thread_rng().gen_range(0..crate::domain::model::value_objects::INTERNAL_SCALE);
+        let multiplier = rng + crate::domain::model::value_objects::INTERNAL_SCALE;
+        let cost = (amount.value() * multiplier) / crate::domain::model::value_objects::INTERNAL_SCALE;
 
         self.consume_resource(Amount::new(cost), Amount::new(0), Amount::new(0))?;
         self.add_resource(Amount::new(0), Amount::new(0), amount);
-        Ok(())
+        Ok(cost / crate::domain::model::value_objects::INTERNAL_SCALE) // 表示単位の支払額を返す
     }
 
     /// 開墾を行い、石高を上昇させます。
-    pub fn develop_land(&mut self, investment: Amount) -> Result<(), DomainError> {
+    /// 獲得：石高 += 投入量 * (45 + random(10))
+    pub fn develop_land(&mut self, investment: Amount) -> Result<u32, DomainError> {
         let multiplier: u32 = rand::thread_rng().gen_range(45..=54);
         let gain = investment.value() * multiplier;
 
         self.consume_resource(investment, Amount::new(0), Amount::new(0))?;
         self.stats.kokudaka = self.stats.kokudaka.add(Amount::new(gain));
-        Ok(())
+        Ok(gain / crate::domain::model::value_objects::INTERNAL_SCALE) // 表示単位の上昇量を返す
     }
 
-    /// 町作りを行い、町ランクを上昇させます。
-    pub fn build_town(&mut self, investment: Amount) -> Result<(), DomainError> {
+    /// 町造りを行い、町ランクを上昇させます。
+    /// 獲得：町 += 投入量 * (45 + random(10))
+    pub fn build_town(&mut self, investment: Amount) -> Result<u32, DomainError> {
         let multiplier: u32 = rand::thread_rng().gen_range(45..=54);
         let gain = investment.value() * multiplier;
 
         self.consume_resource(investment, Amount::new(0), Amount::new(0))?;
         self.stats.machi = self.stats.machi.add(Amount::new(gain));
-        Ok(())
+        Ok(gain / crate::domain::model::value_objects::INTERNAL_SCALE) // 表示単位の上昇量を返す
     }
 
-    /// 兵を徴募します。金と人口を消費し、忠誠度が低下します。
+    /// 兵を徴募します。
+    /// 消費：金 -= 投入量 * BIAS/2, 人口 -= 投入量 * BIAS, 忠誠度 -= 投入量 * BIAS/2
+    /// 獲得：兵 += 投入量 * BIAS
     pub fn recruit_troops(&mut self, amount: Amount) -> Result<(), DomainError> {
         let cost = amount.value() / 2;
         let population_cost = amount.value();
+        let tyu_loss = amount.value() / 2;
 
         if self.resource.jinko.value() < population_cost {
             return Err(DomainError::InsufficientResource("人口不足".to_string()));
@@ -130,12 +144,14 @@ impl Kuni {
 
         self.consume_resource(Amount::new(cost), Amount::new(0), Amount::new(0))?;
         self.modify_jinko(-(population_cost as i32));
-        self.modify_tyu(-((amount.value() / 2) as i32));
+        self.modify_tyu(-(tyu_loss as i32));
         self.add_resource(Amount::new(0), amount, Amount::new(0));
         Ok(())
     }
 
-    /// 兵を解雇します。人口に戻り、忠誠度が上昇します。
+    /// 兵を解雇します。
+    /// 消費：兵 -= 投入量 * BIAS
+    /// 獲得：忠誠度 += 投入量 * BIAS/2, 人口 += 投入量 * BIAS
     pub fn dismiss_troops(&mut self, amount: Amount) -> Result<(), DomainError> {
         self.consume_resource(Amount::new(0), amount, Amount::new(0))?;
         self.modify_jinko(amount.value() as i32);
@@ -144,12 +160,15 @@ impl Kuni {
     }
 
     /// 施しを行い、忠誠度を上昇させます。
-    pub fn give_charity(&mut self, amount: Amount) -> Result<(), DomainError> {
+    /// 獲得：忠誠度 += 投入量 * (BIAS/2 + random(BIAS/2))
+    pub fn give_charity(&mut self, amount: Amount) -> Result<u32, DomainError> {
         self.consume_resource(Amount::new(0), Amount::new(0), amount)?;
 
-        let multiplier: u32 = rand::thread_rng().gen_range(5..=10); // 0.5 to 1.0 倍
-        let tyu_gain = (amount.value() * multiplier) / 10;
+        let bias_half = crate::domain::model::value_objects::INTERNAL_SCALE / 2;
+        let rng = rand::thread_rng().gen_range(0..bias_half);
+        let tyu_gain = (amount.value() * (bias_half + rng)) / crate::domain::model::value_objects::INTERNAL_SCALE;
+        
         self.modify_tyu(tyu_gain as i32);
-        Ok(())
+        Ok(tyu_gain) // 忠誠度上昇量を返す
     }
 }

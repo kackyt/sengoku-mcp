@@ -46,9 +46,9 @@ struct KuniRecord {
     /// 国ID (CSV内)
     #[serde(rename = "ID")]
     id: u32,
-    /// 国名 (現時点では Kuni モデルに国名フィールドが未実装のため未使用)
+    /// 国名
     #[serde(rename = "名前")]
-    _name: String,
+    name: String,
     /// 初期大名名
     #[serde(rename = "初期大名")]
     initial_daimyo: String,
@@ -122,23 +122,23 @@ impl MasterDataLoader {
             let kuni_id = KuniId::new();
             id_map.insert(record.id, kuni_id);
 
-            // 資源データの構築
+            // 資源データの構築 (内部計算用に10倍する)
             let resource = Resource {
-                kin: Amount::new(record.kin),
-                hei: Amount::new(record.hei),
-                kome: Amount::new(record.kome),
-                jinko: Amount::new(record.jinko),
+                kin: Amount::new(record.kin * 10),
+                hei: Amount::new(record.hei * 10),
+                kome: Amount::new(record.kome * 10),
+                jinko: Amount::new(record.jinko * 10),
             };
 
-            // 開発ステータスの構築
+            // 開発ステータスの構築 (内部計算用に10倍する)
             let stats = DevelopmentStats {
-                kokudaka: Amount::new(record.kokudaka),
-                machi: Amount::new(record.machi),
-                tyu: Rate::new(record.tyu),
+                kokudaka: Amount::new(record.kokudaka * 10),
+                machi: Amount::new(record.machi * 10),
+                tyu: Rate::new(record.tyu), // 忠誠度は%なのでそのまま
             };
 
             // 国エンティティの作成
-            let kuni = Kuni::new(kuni_id, daimyo.id, resource, stats, IninFlag::new(false));
+            let kuni = Kuni::new(kuni_id, record.name, daimyo.id, resource, stats, IninFlag::new(false));
             kunis.push(kuni);
         }
 

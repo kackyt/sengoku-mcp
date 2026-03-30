@@ -1,9 +1,13 @@
 use engine::domain::error::DomainError;
+use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::event::GameEvent;
 use engine::domain::model::game_state::GameState;
-use engine::domain::model::value_objects::KuniId;
+use engine::domain::model::kuni::Kuni;
+use engine::domain::model::value_objects::{DaimyoId, KuniId};
+use engine::domain::repository::daimyo_repository::DaimyoRepository;
 use engine::domain::repository::event_dispatcher::EventDispatcher;
 use engine::domain::repository::game_state_repository::GameStateRepository;
+use engine::domain::repository::kuni_repository::KuniRepository;
 use engine::domain::repository::neighbor_repository::NeighborRepository;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -102,5 +106,104 @@ impl NeighborRepository for InMemoryNeighborRepository {
         self.adjacency_map
             .get(a)
             .is_some_and(|neighbors| neighbors.contains(b))
+    }
+}
+
+/// インメモリでの国リポジトリの仮実装
+pub struct InMemoryKuniRepository {
+    kunis: Arc<RwLock<HashMap<KuniId, Kuni>>>,
+}
+
+impl InMemoryKuniRepository {
+    pub fn new() -> Self {
+        Self {
+            kunis: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub async fn init_with_data(&self, kunis: Vec<Kuni>) {
+        let mut guard = self.kunis.write().await;
+        for kuni in kunis {
+            guard.insert(kuni.id, kuni);
+        }
+    }
+}
+
+impl Default for InMemoryKuniRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl KuniRepository for InMemoryKuniRepository {
+    async fn find_by_id(&self, id: &KuniId) -> Result<Option<Kuni>, DomainError> {
+        let guard = self.kunis.read().await;
+        Ok(guard.get(id).cloned())
+    }
+
+    async fn find_by_daimyo_id(&self, daimyo_id: &DaimyoId) -> Result<Vec<Kuni>, DomainError> {
+        let guard = self.kunis.read().await;
+        Ok(guard
+            .values()
+            .filter(|k| &k.daimyo_id == daimyo_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn save(&self, kuni: &Kuni) -> Result<(), DomainError> {
+        let mut guard = self.kunis.write().await;
+        guard.insert(kuni.id, kuni.clone());
+        Ok(())
+    }
+
+    async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
+        let guard = self.kunis.read().await;
+        Ok(guard.values().cloned().collect())
+    }
+}
+
+/// インメモリでの大名リポジトリの仮実装
+pub struct InMemoryDaimyoRepository {
+    daimyos: Arc<RwLock<HashMap<DaimyoId, Daimyo>>>,
+}
+
+impl InMemoryDaimyoRepository {
+    pub fn new() -> Self {
+        Self {
+            daimyos: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub async fn init_with_data(&self, daimyos: Vec<Daimyo>) {
+        let mut guard = self.daimyos.write().await;
+        for daimyo in daimyos {
+            guard.insert(daimyo.id, daimyo);
+        }
+    }
+}
+
+impl Default for InMemoryDaimyoRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl DaimyoRepository for InMemoryDaimyoRepository {
+    async fn find_by_id(&self, id: &DaimyoId) -> Result<Option<Daimyo>, DomainError> {
+        let guard = self.daimyos.read().await;
+        Ok(guard.get(id).cloned())
+    }
+
+    async fn save(&self, daimyo: &Daimyo) -> Result<(), DomainError> {
+        let mut guard = self.daimyos.write().await;
+        guard.insert(daimyo.id, daimyo.clone());
+        Ok(())
+    }
+
+    async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
+        let guard = self.daimyos.read().await;
+        Ok(guard.values().cloned().collect())
     }
 }

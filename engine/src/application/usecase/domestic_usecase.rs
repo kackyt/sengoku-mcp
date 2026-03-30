@@ -23,55 +23,59 @@ impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
     }
 
     /// 米を売却します
-    pub async fn sell_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn sell_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.sell_rice(amount)?;
+        let gain = kuni.sell_rice(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+        Ok(gain)
     }
 
     /// 米を購入します
-    pub async fn buy_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn buy_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.buy_rice(amount)?;
+        let cost = kuni.buy_rice(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+        Ok(cost)
     }
 
     /// 開墾を行います
-    pub async fn develop_land(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn develop_land(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.develop_land(amount)?;
+        let gain = kuni.develop_land(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+        Ok(gain)
     }
 
     /// 町作りを行います
-    pub async fn build_town(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn build_town(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.build_town(amount)?;
+        let gain = kuni.build_town(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+        Ok(gain)
     }
 
     /// 兵を徴募します
@@ -101,16 +105,17 @@ impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
     }
 
     /// 施しを行います
-    pub async fn give_charity(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn give_charity(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        kuni.give_charity(amount)?;
+        let gain = kuni.give_charity(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+        Ok(gain)
     }
 
     /// 輸送を行います
