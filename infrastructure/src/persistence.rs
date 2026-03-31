@@ -112,7 +112,12 @@ impl Default for InMemoryNeighborRepository {
 impl NeighborRepository for InMemoryNeighborRepository {
     /// 指定された国の隣接国リストを取得する
     fn get_neighbors(&self, kuni_id: &KuniId) -> Vec<KuniId> {
-        self.adjacency_map.read().unwrap().get(kuni_id).cloned().unwrap_or_default()
+        self.adjacency_map
+            .read()
+            .unwrap()
+            .get(kuni_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// 2つの国が隣接しているか判定する

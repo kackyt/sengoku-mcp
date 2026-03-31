@@ -51,7 +51,11 @@ impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
     }
 
     /// 開墾を行います
-    pub async fn develop_land(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
+    pub async fn develop_land(
+        &self,
+        kuni_id: KuniId,
+        amount: Amount,
+    ) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -105,7 +109,11 @@ impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
     }
 
     /// 施しを行います
-    pub async fn give_charity(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
+    pub async fn give_charity(
+        &self,
+        kuni_id: KuniId,
+        amount: Amount,
+    ) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)

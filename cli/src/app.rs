@@ -128,8 +128,12 @@ impl App {
                     }
                 }
             }
-            ScreenState::War { attacker_kuni, defender_kuni, .. } => {
-                 if let Some(kuni) = self.kuni_repo.find_by_id(attacker_kuni).await? {
+            ScreenState::War {
+                attacker_kuni,
+                defender_kuni,
+                ..
+            } => {
+                if let Some(kuni) = self.kuni_repo.find_by_id(attacker_kuni).await? {
                     self.attacker_kuni = Some(kuni.clone());
                     if let Some(daimyo) = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await? {
                         self.current_daimyo = Some(daimyo);
@@ -168,11 +172,9 @@ impl App {
             terminal.draw(|f| crate::ui::draw(self, f))?;
             on_draw(terminal);
 
-            if let Some(event) = get_event(Duration::from_millis(16))? {
-                if let Event::Key(key) = event {
-                    if key.kind == KeyEventKind::Press {
-                        EventHandler::handle_key(self, key).await?;
-                    }
+            if let Some(Event::Key(key)) = get_event(Duration::from_millis(16))? {
+                if key.kind == KeyEventKind::Press {
+                    EventHandler::handle_key(self, key).await?;
                 }
             }
         }

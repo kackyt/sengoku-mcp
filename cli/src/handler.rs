@@ -1,11 +1,10 @@
 use crate::app::App;
-use crate::screen::{ScreenState, DomesticSubState, DomesticCommand};
+use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use engine::domain::model::value_objects::Amount;
 use engine::domain::repository::{
-    kuni_repository::KuniRepository,
-    neighbor_repository::NeighborRepository,
+    kuni_repository::KuniRepository, neighbor_repository::NeighborRepository,
 };
 
 pub struct EventHandler;
@@ -14,20 +13,31 @@ impl EventHandler {
     pub async fn handle_key(app: &mut App, key: KeyEvent) -> Result<()> {
         match &app.screen {
             ScreenState::Title => Self::handle_title(app, key).await,
-            ScreenState::SelectDaimyo { cursor } => Self::handle_select_daimyo(app, key, *cursor).await,
-            ScreenState::Domestic { selected_kuni, cursor, sub_state } => {
+            ScreenState::SelectDaimyo { cursor } => {
+                Self::handle_select_daimyo(app, key, *cursor).await
+            }
+            ScreenState::Domestic {
+                selected_kuni,
+                cursor,
+                sub_state,
+            } => {
                 let kuni_id = *selected_kuni;
                 let cursor_pos = *cursor;
                 let sub = sub_state.clone();
                 Self::handle_domestic(app, key, kuni_id, cursor_pos, sub).await
-            },
-            ScreenState::War { attacker_kuni, defender_kuni, cursor, sub_state } => {
+            }
+            ScreenState::War {
+                attacker_kuni,
+                defender_kuni,
+                cursor,
+                sub_state,
+            } => {
                 let att = *attacker_kuni;
                 let def = *defender_kuni;
                 let cur = *cursor;
                 let sub = sub_state.clone();
                 Self::handle_war(app, key, att, def, cur, sub).await
-            },
+            }
             ScreenState::GameOver { .. } => {
                 if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
                     app.screen = ScreenState::Title;
@@ -67,9 +77,7 @@ impl EventHandler {
             }
             KeyCode::Down => {
                 if cursor < daimyos.len() - 1 {
-                    app.screen = ScreenState::SelectDaimyo {
-                        cursor: cursor + 1,
-                    };
+                    app.screen = ScreenState::SelectDaimyo { cursor: cursor + 1 };
                 }
             }
             KeyCode::Enter => {
@@ -83,7 +91,7 @@ impl EventHandler {
                         cursor: 0,
                         sub_state: DomesticSubState::Normal,
                     };
-                    
+
                     // CPUのターンを自分の番が来るまで回す必要があるが、
                     // 簡略化のため、まずは自分の番から始まると仮定して進める
                 } else {
@@ -116,7 +124,8 @@ impl EventHandler {
                         };
                     }
                     KeyCode::Down => {
-                        if cursor < 12 { // 13コマンド
+                        if cursor < 12 {
+                            // 13コマンド
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: kuni_id,
                                 cursor: cursor + 1,
@@ -148,8 +157,14 @@ impl EventHandler {
                             }
                             DomesticCommand::Delegate | DomesticCommand::Undelegate => {
                                 let delegate = command == DomesticCommand::Delegate;
-                                app.domestic_usecase.set_delegation(kuni_id, delegate).await?;
-                                let msg = if delegate { "委任しました" } else { "委任を解除しました" };
+                                app.domestic_usecase
+                                    .set_delegation(kuni_id, delegate)
+                                    .await?;
+                                let msg = if delegate {
+                                    "委任しました"
+                                } else {
+                                    "委任を解除しました"
+                                };
                                 app.screen = ScreenState::Domestic {
                                     selected_kuni: kuni_id,
                                     cursor,
@@ -161,13 +176,16 @@ impl EventHandler {
                             }
                             DomesticCommand::Information => {
                                 // 情報を表示（本来は他国選択だが簡略化して全体サマリー）
-                                app.turn_progression_usecase.complete_current_action().await?;
+                                app.turn_progression_usecase
+                                    .complete_current_action()
+                                    .await?;
                                 app.turn_progression_usecase.progress().await?;
                                 app.screen = ScreenState::Domestic {
                                     selected_kuni: kuni_id,
                                     cursor,
                                     sub_state: DomesticSubState::ShowMessage {
-                                        message: "他国の情報を調査しました。1ターン経過しました。".to_string(),
+                                        message: "他国の情報を調査しました。1ターン経過しました。"
+                                            .to_string(),
                                         next_state: Box::new(DomesticSubState::Normal),
                                     },
                                 };
@@ -197,88 +215,88 @@ impl EventHandler {
                     _ => {}
                 }
             }
-            DomesticSubState::InputAmount { command, mut input } => {
-                match key.code {
-                    KeyCode::Char(c) if c.is_ascii_digit() => {
-                        input.push(c);
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::InputAmount { command, input },
-                        };
-                    }
-                    KeyCode::Backspace => {
-                        input.pop();
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::InputAmount { command, input },
-                        };
-                    }
-                    KeyCode::Enter => {
-                        let amount_val = input.parse::<u32>().unwrap_or(0);
-                        let amount = Amount::from_display(amount_val);
-                        let result_msg = match command {
-                            DomesticCommand::SellRice => {
-                                let gain = app.domestic_usecase.sell_rice(kuni_id, amount).await?;
-                                format!("米を売却し、金を {} 獲得しました", gain)
-                            }
-                            DomesticCommand::BuyRice => {
-                                let cost = app.domestic_usecase.buy_rice(kuni_id, amount).await?;
-                                format!("米を購入し、金を {} 支払いました", cost)
-                            }
-                            DomesticCommand::Develop => {
-                                let gain = app.domestic_usecase.develop_land(kuni_id, amount).await?;
-                                format!("開墾完了！石高が {} 上昇しました", gain)
-                            }
-                            DomesticCommand::BuildTown => {
-                                let gain = app.domestic_usecase.build_town(kuni_id, amount).await?;
-                                format!("町造り完了！町ランクが {} 上昇しました", gain)
-                            }
-                            DomesticCommand::Hire => {
-                                app.domestic_usecase.recruit(kuni_id, amount).await?;
-                                format!("兵を {} 雇用しました", amount_val)
-                            }
-                            DomesticCommand::Dismiss => {
-                                app.domestic_usecase.dismiss(kuni_id, amount).await?;
-                                format!("兵を {} 解雇しました", amount_val)
-                            }
-                            DomesticCommand::Give => {
-                                let gain = app.domestic_usecase.give_charity(kuni_id, amount).await?;
-                                format!("施しを行い、忠誠度が {} 上昇しました", gain)
-                            }
-                            _ => "実行しました".to_string(),
-                        };
-                        
-                        app.turn_progression_usecase.complete_current_action().await?;
-                        app.turn_progression_usecase.progress().await?;
-
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::ShowMessage {
-                                message: result_msg,
-                                next_state: Box::new(DomesticSubState::Normal),
-                            },
-                        };
-                    }
-                    KeyCode::Esc => {
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::Normal,
-                        };
-                    }
-                    _ => {}
+            DomesticSubState::InputAmount { command, mut input } => match key.code {
+                KeyCode::Char(c) if c.is_ascii_digit() => {
+                    input.push(c);
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::InputAmount { command, input },
+                    };
                 }
-            }
+                KeyCode::Backspace => {
+                    input.pop();
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::InputAmount { command, input },
+                    };
+                }
+                KeyCode::Enter => {
+                    let amount_val = input.parse::<u32>().unwrap_or(0);
+                    let amount = Amount::from_display(amount_val);
+                    let result_msg = match command {
+                        DomesticCommand::SellRice => {
+                            let gain = app.domestic_usecase.sell_rice(kuni_id, amount).await?;
+                            format!("米を売却し、金を {} 獲得しました", gain)
+                        }
+                        DomesticCommand::BuyRice => {
+                            let cost = app.domestic_usecase.buy_rice(kuni_id, amount).await?;
+                            format!("米を購入し、金を {} 支払いました", cost)
+                        }
+                        DomesticCommand::Develop => {
+                            let gain = app.domestic_usecase.develop_land(kuni_id, amount).await?;
+                            format!("開墾完了！石高が {} 上昇しました", gain)
+                        }
+                        DomesticCommand::BuildTown => {
+                            let gain = app.domestic_usecase.build_town(kuni_id, amount).await?;
+                            format!("町造り完了！町ランクが {} 上昇しました", gain)
+                        }
+                        DomesticCommand::Hire => {
+                            app.domestic_usecase.recruit(kuni_id, amount).await?;
+                            format!("兵を {} 雇用しました", amount_val)
+                        }
+                        DomesticCommand::Dismiss => {
+                            app.domestic_usecase.dismiss(kuni_id, amount).await?;
+                            format!("兵を {} 解雇しました", amount_val)
+                        }
+                        DomesticCommand::Give => {
+                            let gain = app.domestic_usecase.give_charity(kuni_id, amount).await?;
+                            format!("施しを行い、忠誠度が {} 上昇しました", gain)
+                        }
+                        _ => "実行しました".to_string(),
+                    };
+
+                    app.turn_progression_usecase
+                        .complete_current_action()
+                        .await?;
+                    app.turn_progression_usecase.progress().await?;
+
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::ShowMessage {
+                            message: result_msg,
+                            next_state: Box::new(DomesticSubState::Normal),
+                        },
+                    };
+                }
+                KeyCode::Esc => {
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::Normal,
+                    };
+                }
+                _ => {}
+            },
             DomesticSubState::SelectTargetKuni { command } => {
                 let neighbors = app.neighbor_repo.get_neighbors(&kuni_id);
                 match key.code {
                     KeyCode::Char(c) if c.is_ascii_digit() => {
                         let idx = (c.to_digit(10).unwrap_or(1) as usize).saturating_sub(1);
                         if let Some(target_id) = neighbors.get(idx) {
-                             if command == DomesticCommand::War {
+                            if command == DomesticCommand::War {
                                 app.screen = ScreenState::War {
                                     attacker_kuni: kuni_id,
                                     defender_kuni: *target_id,
@@ -287,8 +305,18 @@ impl EventHandler {
                                 };
                             } else if command == DomesticCommand::Transport {
                                 // 輸送（簡略化：全リソースの10%を送る）
-                                app.domestic_usecase.transport(kuni_id, *target_id, Amount::new(100), Amount::new(100), Amount::new(100)).await?;
-                                app.turn_progression_usecase.complete_current_action().await?;
+                                app.domestic_usecase
+                                    .transport(
+                                        kuni_id,
+                                        *target_id,
+                                        Amount::new(100),
+                                        Amount::new(100),
+                                        Amount::new(100),
+                                    )
+                                    .await?;
+                                app.turn_progression_usecase
+                                    .complete_current_action()
+                                    .await?;
                                 app.turn_progression_usecase.progress().await?;
                                 app.screen = ScreenState::Domestic {
                                     selected_kuni: kuni_id,
@@ -333,26 +361,24 @@ impl EventHandler {
         sub_state: crate::screen::WarSubState,
     ) -> Result<()> {
         match sub_state {
-            crate::screen::WarSubState::Normal => {
-                match key.code {
-                    KeyCode::Enter => {
-                        app.screen = ScreenState::War {
-                            attacker_kuni: attacker_id,
-                            defender_kuni: defender_id,
-                            cursor: 0,
-                            sub_state: crate::screen::WarSubState::SelectTactic,
-                        };
-                    }
-                    KeyCode::Esc => {
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: attacker_id,
-                            cursor: 0,
-                            sub_state: DomesticSubState::Normal,
-                        };
-                    }
-                    _ => {}
+            crate::screen::WarSubState::Normal => match key.code {
+                KeyCode::Enter => {
+                    app.screen = ScreenState::War {
+                        attacker_kuni: attacker_id,
+                        defender_kuni: defender_id,
+                        cursor: 0,
+                        sub_state: crate::screen::WarSubState::SelectTactic,
+                    };
                 }
-            }
+                KeyCode::Esc => {
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: attacker_id,
+                        cursor: 0,
+                        sub_state: DomesticSubState::Normal,
+                    };
+                }
+                _ => {}
+            },
             crate::screen::WarSubState::SelectTactic => {
                 match key.code {
                     KeyCode::Up => {
@@ -383,13 +409,16 @@ impl EventHandler {
                             _ => Tactic::Normal,
                         };
 
-                        let result = app.battle_usecase.execute_battle_turn(
-                            attacker_id,
-                            defender_id,
-                            tactic,
-                            Tactic::Normal,
-                            Amount::from_display(100), // 投入兵力
-                        ).await?;
+                        let result = app
+                            .battle_usecase
+                            .execute_battle_turn(
+                                attacker_id,
+                                defender_id,
+                                tactic,
+                                Tactic::Normal,
+                                Amount::from_display(100), // 投入兵力
+                            )
+                            .await?;
 
                         let msg = if let Some(winner) = result.winner {
                             format!("戦闘終了！勝者: {:?}", winner)
@@ -398,14 +427,16 @@ impl EventHandler {
                         };
 
                         if result.winner.is_some() {
-                             app.turn_progression_usecase.complete_current_action().await?;
-                             app.turn_progression_usecase.progress().await?;
-                             app.screen = ScreenState::Domestic {
+                            app.turn_progression_usecase
+                                .complete_current_action()
+                                .await?;
+                            app.turn_progression_usecase.progress().await?;
+                            app.screen = ScreenState::Domestic {
                                 selected_kuni: attacker_id,
                                 cursor: 0,
-                                sub_state: DomesticSubState::ShowMessage { 
+                                sub_state: DomesticSubState::ShowMessage {
                                     message: msg,
-                                    next_state: Box::new(DomesticSubState::Normal)
+                                    next_state: Box::new(DomesticSubState::Normal),
                                 },
                             };
                         } else {

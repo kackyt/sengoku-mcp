@@ -2,7 +2,7 @@ use anyhow::Result;
 use cli::app::App;
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use engine::domain::repository::neighbor_repository::NeighborRepository;
 use ratatui::prelude::*;
@@ -61,8 +61,8 @@ async fn main() -> Result<()> {
 
 #[cfg(feature = "ai-debug")]
 async fn run_ai_debug() -> Result<()> {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
     use ratatui::backend::TestBackend;
-    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyEventState};
     use std::io::{self, BufRead};
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -125,7 +125,7 @@ async fn run_ai_debug() -> Result<()> {
                 for x in 0..buffer.area.width {
                     let cell = &buffer[(x, y)];
                     if !cell.symbol().is_empty() {
-                         line.push_str(cell.symbol());
+                        line.push_str(cell.symbol());
                     }
                 }
                 println!("{}", line.trim_end());

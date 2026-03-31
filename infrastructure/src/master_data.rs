@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::master_data_error::MasterDataError;
-use crate::persistence::InMemoryNeighborRepository;
 
 /// マスターデータのロード結果をまとめた構造体
 pub struct MasterDataBundle {
@@ -138,7 +137,14 @@ impl MasterDataLoader {
             };
 
             // 国エンティティの作成
-            let kuni = Kuni::new(kuni_id, record.name, daimyo.id, resource, stats, IninFlag::new(false));
+            let kuni = Kuni::new(
+                kuni_id,
+                record.name,
+                daimyo.id,
+                resource,
+                stats,
+                IninFlag::new(false),
+            );
             kunis.push(kuni);
         }
 
@@ -189,6 +195,7 @@ impl MasterDataLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::persistence::InMemoryNeighborRepository;
     use engine::domain::repository::neighbor_repository::NeighborRepository;
     use std::fs::File;
     use std::io::Write;

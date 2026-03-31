@@ -87,9 +87,11 @@ impl Kuni {
     /// 米を売却します。
     /// 獲得：金 += 投入量 * (random(BIAS) + BIAS)
     pub fn sell_rice(&mut self, amount: Amount) -> Result<u32, DomainError> {
-        let rng = rand::thread_rng().gen_range(0..crate::domain::model::value_objects::INTERNAL_SCALE);
+        let rng =
+            rand::thread_rng().gen_range(0..crate::domain::model::value_objects::INTERNAL_SCALE);
         let multiplier = rng + crate::domain::model::value_objects::INTERNAL_SCALE;
-        let gain = (amount.value() * multiplier) / crate::domain::model::value_objects::INTERNAL_SCALE;
+        let gain =
+            (amount.value() * multiplier) / crate::domain::model::value_objects::INTERNAL_SCALE;
 
         self.consume_resource(Amount::new(0), Amount::new(0), amount)?;
         self.add_resource(Amount::new(gain), Amount::new(0), Amount::new(0));
@@ -99,9 +101,11 @@ impl Kuni {
     /// 米を購入します。
     /// 消費：金 -= 投入量 * (random(BIAS) + BIAS)
     pub fn buy_rice(&mut self, amount: Amount) -> Result<u32, DomainError> {
-        let rng = rand::thread_rng().gen_range(0..crate::domain::model::value_objects::INTERNAL_SCALE);
+        let rng =
+            rand::thread_rng().gen_range(0..crate::domain::model::value_objects::INTERNAL_SCALE);
         let multiplier = rng + crate::domain::model::value_objects::INTERNAL_SCALE;
-        let cost = (amount.value() * multiplier) / crate::domain::model::value_objects::INTERNAL_SCALE;
+        let cost =
+            (amount.value() * multiplier) / crate::domain::model::value_objects::INTERNAL_SCALE;
 
         self.consume_resource(Amount::new(cost), Amount::new(0), Amount::new(0))?;
         self.add_resource(Amount::new(0), Amount::new(0), amount);
@@ -166,8 +170,9 @@ impl Kuni {
 
         let bias_half = crate::domain::model::value_objects::INTERNAL_SCALE / 2;
         let rng = rand::thread_rng().gen_range(0..bias_half);
-        let tyu_gain = (amount.value() * (bias_half + rng)) / crate::domain::model::value_objects::INTERNAL_SCALE;
-        
+        let tyu_gain = (amount.value() * (bias_half + rng))
+            / crate::domain::model::value_objects::INTERNAL_SCALE;
+
         self.modify_tyu(tyu_gain as i32);
         Ok(tyu_gain) // 忠誠度上昇量を返す
     }

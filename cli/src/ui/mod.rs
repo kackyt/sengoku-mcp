@@ -2,17 +2,21 @@ use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use engine::domain::repository::neighbor_repository::NeighborRepository;
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
-    Frame,
 };
 
 pub fn draw(app: &App, f: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
         .split(f.area());
 
     render_header(app, f, chunks[0]);
@@ -27,9 +31,7 @@ pub fn draw(app: &App, f: &mut Frame) {
             sub_state,
         } => render_domestic(app, f, chunks[1], *selected_kuni, *cursor, sub_state),
         ScreenState::War {
-            cursor,
-            sub_state,
-            ..
+            cursor, sub_state, ..
         } => render_war(app, f, chunks[1], *cursor, sub_state),
         ScreenState::GameOver { winner } => render_game_over(app, f, chunks[1], *winner),
     }
@@ -49,7 +51,11 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
     };
     let text = format!("戦国統一 - Sengoku Tounitsu ({}年 {})", year, season);
     let header = Paragraph::new(text)
-        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(header, area);
@@ -96,7 +102,11 @@ fn render_select_daimyo(app: &App, f: &mut Frame, area: Rect, cursor: usize) {
 
     let list = List::new(items)
         .block(Block::default().title("大名選択").borders(Borders::ALL))
-        .highlight_style(Style::default().bg(Color::Blue).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol(">> ");
 
     let mut state = ratatui::widgets::ListState::default();
@@ -143,27 +153,16 @@ fn render_domestic(
             Span::raw("大名: "),
             Span::styled(daimyo_name, Style::default().fg(Color::Green)),
         ]),
-        Line::from(vec![
-            Span::raw("金: "),
-            Span::raw(kin.to_string()),
-        ]),
-        Line::from(vec![
-            Span::raw("米: "), 
-            Span::raw(kome.to_string()),
-        ]),
-        Line::from(vec![
-            Span::raw("兵: "),
-            Span::raw(hei.to_string()),
-        ]),
-        Line::from(vec![
-            Span::raw("人口: "),
-            Span::raw(jinko.to_string()),
-        ]),
+        Line::from(vec![Span::raw("金: "), Span::raw(kin.to_string())]),
+        Line::from(vec![Span::raw("米: "), Span::raw(kome.to_string())]),
+        Line::from(vec![Span::raw("兵: "), Span::raw(hei.to_string())]),
+        Line::from(vec![Span::raw("人口: "), Span::raw(jinko.to_string())]),
         Line::from(vec![Span::raw("石高: "), Span::raw(koko.to_string())]),
         Line::from(vec![Span::raw("町  : "), Span::raw(machi.to_string())]),
         Line::from(vec![Span::raw("忠誠: "), Span::raw(tyu.to_string())]),
     ];
-    let status = Paragraph::new(status_text).block(Block::default().title("領地情報").borders(Borders::ALL));
+    let status =
+        Paragraph::new(status_text).block(Block::default().title("領地情報").borders(Borders::ALL));
     f.render_widget(status, chunks[0]);
 
     // Right: Commands
@@ -184,7 +183,11 @@ fn render_domestic(
     ];
     let list = List::new(commands)
         .block(Block::default().title("行動メニュー").borders(Borders::ALL))
-        .highlight_style(Style::default().bg(Color::Magenta).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("> ");
 
     let mut state = ratatui::widgets::ListState::default();
@@ -208,11 +211,24 @@ fn render_war(
     if let Some(attacker) = &app.attacker_kuni {
         let attacker_status = vec![
             Line::from(vec![Span::raw("自軍")]),
-            Line::from(vec![Span::raw("兵力: "), Span::raw(attacker.resource.hei.to_display().to_string())]),
-            Line::from(vec![Span::raw("食料: "), Span::raw(attacker.resource.kome.to_display().to_string())]),
-            Line::from(vec![Span::raw("士気: "), Span::raw(attacker.stats.tyu.value().to_string())]),
+            Line::from(vec![
+                Span::raw("兵力: "),
+                Span::raw(attacker.resource.hei.to_display().to_string()),
+            ]),
+            Line::from(vec![
+                Span::raw("食料: "),
+                Span::raw(attacker.resource.kome.to_display().to_string()),
+            ]),
+            Line::from(vec![
+                Span::raw("士気: "),
+                Span::raw(attacker.stats.tyu.value().to_string()),
+            ]),
         ];
-        let attacker_p = Paragraph::new(attacker_status).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Blue)));
+        let attacker_p = Paragraph::new(attacker_status).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Blue)),
+        );
         f.render_widget(attacker_p, chunks[0]);
     }
 
@@ -220,11 +236,24 @@ fn render_war(
     if let Some(defender) = &app.defender_kuni {
         let defender_status = vec![
             Line::from(vec![Span::raw("敵軍")]),
-            Line::from(vec![Span::raw("兵力: "), Span::raw(defender.resource.hei.to_display().to_string())]),
-            Line::from(vec![Span::raw("食料: "), Span::raw(defender.resource.kome.to_display().to_string())]),
-            Line::from(vec![Span::raw("士気: "), Span::raw(defender.stats.tyu.value().to_string())]),
+            Line::from(vec![
+                Span::raw("兵力: "),
+                Span::raw(defender.resource.hei.to_display().to_string()),
+            ]),
+            Line::from(vec![
+                Span::raw("食料: "),
+                Span::raw(defender.resource.kome.to_display().to_string()),
+            ]),
+            Line::from(vec![
+                Span::raw("士気: "),
+                Span::raw(defender.stats.tyu.value().to_string()),
+            ]),
         ];
-        let defender_p = Paragraph::new(defender_status).block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Red)));
+        let defender_p = Paragraph::new(defender_status).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Red)),
+        );
         f.render_widget(defender_p, chunks[1]);
     }
 
@@ -240,7 +269,11 @@ fn render_war(
         ];
         let list = List::new(tactics)
             .block(Block::default().title("戦術選択").borders(Borders::ALL))
-            .highlight_style(Style::default().bg(Color::Magenta).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol("> ");
         let mut state = ratatui::widgets::ListState::default();
         state.select(Some(cursor));
@@ -295,10 +328,12 @@ fn render_modals(app: &App, f: &mut Frame) {
             }
             _ => {}
         }
-    } else if let ScreenState::War { sub_state, .. } = &app.screen {
-        if let crate::screen::WarSubState::ShowMessage { message, .. } = sub_state {
-            render_message_modal(f, message);
-        }
+    } else if let ScreenState::War {
+        sub_state: crate::screen::WarSubState::ShowMessage { message, .. },
+        ..
+    } = &app.screen
+    {
+        render_message_modal(f, message);
     }
 }
 
@@ -347,9 +382,13 @@ fn render_select_target_modal(
 
     let neighbors = app.neighbor_repo.get_neighbors(&kuni_id);
     let mut items = vec![Line::from("数字キーで対象国を選択してください：")];
-    
+
     for (i, target_id) in neighbors.iter().enumerate() {
-        let name = app.kuni_names.get(target_id).cloned().unwrap_or_else(|| "未知の国".to_string());
+        let name = app
+            .kuni_names
+            .get(target_id)
+            .cloned()
+            .unwrap_or_else(|| "未知の国".to_string());
         items.push(Line::from(format!("{}. {}", i + 1, name)));
     }
 
@@ -363,8 +402,7 @@ fn render_select_target_modal(
         _ => "対象選択",
     };
 
-    let p = Paragraph::new(items)
-        .block(Block::default().title(title).borders(Borders::ALL));
+    let p = Paragraph::new(items).block(Block::default().title(title).borders(Borders::ALL));
     f.render_widget(p, area);
 }
 
