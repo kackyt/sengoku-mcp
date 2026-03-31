@@ -136,11 +136,12 @@ mod tests {
 
     fn create_test_kuni(daimyo_id: DaimyoId) -> Kuni {
         Kuni::new(
-            KuniId(Uuid::new_v4()),
+            KuniId::new(),
+            "TestKuni",
             daimyo_id,
-            Resource::new(1000, 1000, 1000, 10000),
-            DevelopmentStats::new(100, 100, 50),
-            IninFlag::new(false),
+            Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
+            DevelopmentStats::new(100 * 10, 100 * 10, 50),
+            IninFlag(false),
         )
     }
 

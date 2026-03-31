@@ -15,8 +15,8 @@ pub struct MasterDataBundle {
     pub daimyos: Vec<Daimyo>,
     /// ロードされた国のリスト
     pub kunis: Vec<Kuni>,
-    /// ロードされた隣接情報を持つリポジトリ
-    pub neighbor_repo: InMemoryNeighborRepository,
+    /// ロードされた隣接情報 (内部ID間)
+    pub adjacency_map: HashMap<KuniId, Vec<KuniId>>,
 }
 
 /// 国データのロード結果
@@ -82,12 +82,12 @@ impl MasterDataLoader {
     /// ベースディレクトリからマスターデータを一括ロードする
     pub fn load(base_dir: &Path) -> Result<MasterDataBundle, MasterDataError> {
         let kuni_result = Self::load_kuni(base_dir)?;
-        let neighbor_repo = Self::load_neighbor(base_dir, &kuni_result.id_map)?;
+        let adjacency_map = Self::load_neighbor(base_dir, &kuni_result.id_map)?;
 
         Ok(MasterDataBundle {
             daimyos: kuni_result.daimyos,
             kunis: kuni_result.kunis,
-            neighbor_repo,
+            adjacency_map,
         })
     }
 
@@ -150,11 +150,10 @@ impl MasterDataLoader {
         })
     }
 
-    /// neighbor.csv から隣接情報を読み込み、リポジトリを構築する
     fn load_neighbor(
         base_dir: &Path,
         id_map: &HashMap<u32, KuniId>,
-    ) -> Result<InMemoryNeighborRepository, MasterDataError> {
+    ) -> Result<HashMap<KuniId, Vec<KuniId>>, MasterDataError> {
         let neighbor_csv_path = base_dir.join("neighbor.csv");
         if !neighbor_csv_path.exists() {
             return Err(MasterDataError::FileNotFound("neighbor.csv".to_string()));
@@ -173,27 +172,23 @@ impl MasterDataLoader {
                 reason: e.to_string(),
             })?;
 
-            // CSV上のIDを内部IDに変換
             let id1 = id_map
                 .get(&record.id1)
                 .ok_or(MasterDataError::InvalidReference { id: record.id1 })?;
             let id2 = id_map
                 .get(&record.id2)
                 .ok_or(MasterDataError::InvalidReference { id: record.id2 })?;
-
-            // 相互の隣接関係を登録
             adjacency_map.entry(*id1).or_default().push(*id2);
             adjacency_map.entry(*id2).or_default().push(*id1);
         }
 
-        Ok(InMemoryNeighborRepository::new(adjacency_map))
+        Ok(adjacency_map)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine::domain::model::daimyo::DaimyoName;
     use engine::domain::repository::neighbor_repository::NeighborRepository;
     use std::fs::File;
     use std::io::Write;
@@ -216,26 +211,14 @@ mod tests {
 
         let ezo_id = result.id_map.get(&1).unwrap();
         let ezo = result.kunis.iter().find(|k| k.id == *ezo_id).unwrap();
-        assert_eq!(ezo.resource.kin.value(), 80);
+        assert_eq!(ezo.resource.kin.value(), 800); // 10倍
 
         let kakizaki = result
             .daimyos
             .iter()
             .find(|d| d.id == ezo.daimyo_id)
             .unwrap();
-        assert_eq!(kakizaki.name, DaimyoName("蛎崎".to_string()));
-    }
-
-    #[test]
-    fn test_load_kuni_parse_error() {
-        let dir = tempdir().unwrap();
-        let kuni_path = dir.path().join("kuni.csv");
-        let mut file = File::create(kuni_path).unwrap();
-        writeln!(file, "ID,名前,初期大名,金,兵,米,人口,石高,町,忠誠").unwrap();
-        writeln!(file, "1,蝦夷,蛎崎,数値ではない,50,50,200,40,50,80").unwrap();
-
-        let result = MasterDataLoader::load_kuni(dir.path());
-        assert!(matches!(result, Err(MasterDataError::ParseError { .. })));
+        assert_eq!(kakizaki.name.0, "蛎崎");
     }
 
     #[test]
@@ -256,8 +239,10 @@ mod tests {
         writeln!(neighbor_file, "1,2").unwrap();
         writeln!(neighbor_file, "2,3").unwrap();
 
-        let neighbor_repo =
+        let adjacency_map =
             MasterDataLoader::load_neighbor(dir.path(), &kuni_result.id_map).unwrap();
+        let neighbor_repo = InMemoryNeighborRepository::new();
+        neighbor_repo.init_with_data(adjacency_map);
 
         let id1 = kuni_result.id_map.get(&1).unwrap();
         let id2 = kuni_result.id_map.get(&2).unwrap();

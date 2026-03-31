@@ -10,11 +10,12 @@ mod tests {
 
     fn create_test_kuni(hei: u32, kome: u32, tyu: u32) -> Kuni {
         Kuni::new(
-            KuniId(Uuid::new_v4()),
+            KuniId::new(),
+            "TestKuni".to_string(),
             DaimyoId(Uuid::new_v4()),
             Resource::new(1000, hei, kome, 10000),
             DevelopmentStats::new(100, 100, tyu),
-            IninFlag::new(false),
+            IninFlag(false),
         )
     }
 

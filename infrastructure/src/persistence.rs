@@ -85,25 +85,41 @@ impl EventDispatcher for InMemoryEventDispatcher {
 
 /// 隣接国情報をメモリ上に保持するリポジトリの実装
 pub struct InMemoryNeighborRepository {
-    adjacency_map: HashMap<KuniId, Vec<KuniId>>,
+    adjacency_map: Arc<std::sync::RwLock<HashMap<KuniId, Vec<KuniId>>>>,
 }
 
 impl InMemoryNeighborRepository {
     /// 新しいインスタンスを作成する
-    pub fn new(adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Self {
-        Self { adjacency_map }
+    pub fn new() -> Self {
+        Self {
+            adjacency_map: Arc::new(std::sync::RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// データから初期化する
+    pub fn init_with_data(&self, adjacency_map: HashMap<KuniId, Vec<KuniId>>) {
+        let mut guard = self.adjacency_map.write().unwrap();
+        *guard = adjacency_map;
+    }
+}
+
+impl Default for InMemoryNeighborRepository {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl NeighborRepository for InMemoryNeighborRepository {
     /// 指定された国の隣接国リストを取得する
     fn get_neighbors(&self, kuni_id: &KuniId) -> Vec<KuniId> {
-        self.adjacency_map.get(kuni_id).cloned().unwrap_or_default()
+        self.adjacency_map.read().unwrap().get(kuni_id).cloned().unwrap_or_default()
     }
 
     /// 2つの国が隣接しているか判定する
     fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
         self.adjacency_map
+            .read()
+            .unwrap()
             .get(a)
             .is_some_and(|neighbors| neighbors.contains(b))
     }

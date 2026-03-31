@@ -58,11 +58,7 @@ impl App {
         let game_state_repo = Arc::new(InMemoryGameStateRepository::new());
         let event_dispatcher = Arc::new(InMemoryEventDispatcher::new());
 
-        // マスターデータのロード
-        let base_dir = Path::new("static/master_data");
-        let bundle = MasterDataLoader::load(base_dir)?;
-
-        let neighbor_repo = Arc::new(bundle.neighbor_repo);
+        let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
 
         // ユースケースの初期化
         let domestic_usecase = DomesticUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
@@ -102,6 +98,7 @@ impl App {
 
         self.kuni_repo.init_with_data(bundle.kunis).await;
         self.daimyo_repo.init_with_data(bundle.daimyos).await;
+        self.neighbor_repo.init_with_data(bundle.adjacency_map);
 
         self.update_cache().await?;
 

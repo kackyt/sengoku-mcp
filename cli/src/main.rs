@@ -4,6 +4,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use engine::domain::repository::neighbor_repository::NeighborRepository;
 use ratatui::prelude::*;
 use std::{io, panic};
 
@@ -11,49 +12,51 @@ use std::{io, panic};
 async fn main() -> Result<()> {
     #[cfg(feature = "ai-debug")]
     {
-        return run_ai_debug().await;
+        run_ai_debug().await
     }
-
-    // ターミナルの初期化
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // パニック時のクリーンアップ処理
-    let original_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        let _ = disable_raw_mode();
+    #[cfg(not(feature = "ai-debug"))]
+    {
+        // ターミナルの初期化
+        enable_raw_mode()?;
         let mut stdout = io::stdout();
-        let _ = execute!(stdout, LeaveAlternateScreen);
-        original_hook(panic_info);
-    }));
+        execute!(stdout, EnterAlternateScreen)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
 
-    // アプリケーションの初期化
-    let mut app = App::new()?;
+        // パニック時のクリーンアップ処理
+        let original_hook = panic::take_hook();
+        panic::set_hook(Box::new(move |panic_info| {
+            let _ = disable_raw_mode();
+            let mut stdout = io::stdout();
+            let _ = execute!(stdout, LeaveAlternateScreen);
+            original_hook(panic_info);
+        }));
 
-    // メインループの実行
-    let get_event = |_timeout: std::time::Duration| -> Result<Option<crossterm::event::Event>> {
-        if crossterm::event::poll(_timeout)? {
-            Ok(Some(crossterm::event::read()?))
-        } else {
-            Ok(None)
+        // アプリケーションの初期化
+        let mut app = App::new()?;
+
+        // メインループの実行
+        let get_event = |_timeout: std::time::Duration| -> Result<Option<crossterm::event::Event>> {
+            if crossterm::event::poll(_timeout)? {
+                Ok(Some(crossterm::event::read()?))
+            } else {
+                Ok(None)
+            }
+        };
+        let on_draw = |_terminal: &mut Terminal<CrosstermBackend<io::Stdout>>| {};
+        let res = app.run(&mut terminal, get_event, on_draw).await;
+
+        // クリーンアップ
+        disable_raw_mode()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        terminal.show_cursor()?;
+
+        if let Err(err) = res {
+            eprintln!("{:?}", err);
         }
-    };
-    let on_draw = |_terminal: &mut Terminal<CrosstermBackend<io::Stdout>>| {};
-    let res = app.run(&mut terminal, get_event, on_draw).await;
 
-    // クリーンアップ
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        eprintln!("{:?}", err);
+        Ok(())
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "ai-debug")]
@@ -120,7 +123,10 @@ async fn run_ai_debug() -> Result<()> {
             for y in 0..buffer.area.height {
                 let mut line = String::with_capacity(buffer.area.width as usize);
                 for x in 0..buffer.area.width {
-                    line.push_str(buffer.get(x, y).symbol());
+                    let cell = &buffer[(x, y)];
+                    if !cell.symbol().is_empty() {
+                         line.push_str(cell.symbol());
+                    }
                 }
                 println!("{}", line.trim_end());
             }
