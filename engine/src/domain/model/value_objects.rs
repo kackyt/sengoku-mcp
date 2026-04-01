@@ -105,6 +105,10 @@ impl KuniId {
     }
 }
 
+/// 国名を表す型
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KuniName(pub String);
+
 /// 大名の識別子
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DaimyoId(pub uuid::Uuid);

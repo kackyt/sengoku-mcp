@@ -1,29 +1,14 @@
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
-use engine::domain::repository::{
-    daimyo_repository::DaimyoRepository, event_dispatcher::EventDispatcher,
-    game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
-};
 use std::sync::Arc;
 
 #[allow(dead_code)]
-pub struct McpHandlers<
-    KR: KuniRepository + 'static,
-    DR: DaimyoRepository + 'static,
-    GSR: GameStateRepository + 'static,
-    ED: EventDispatcher + 'static,
-> {
-    turn_progression_usecase: Arc<TurnProgressionUseCase<KR, DR, GSR, ED>>,
+pub struct McpHandlers {
+    turn_progression_usecase: Arc<TurnProgressionUseCase>,
 }
 
 #[allow(dead_code)]
-impl<KR, DR, GSR, ED> McpHandlers<KR, DR, GSR, ED>
-where
-    KR: KuniRepository,
-    DR: DaimyoRepository,
-    GSR: GameStateRepository,
-    ED: EventDispatcher,
-{
-    pub fn new(turn_progression_usecase: Arc<TurnProgressionUseCase<KR, DR, GSR, ED>>) -> Self {
+impl McpHandlers {
+    pub fn new(turn_progression_usecase: Arc<TurnProgressionUseCase>) -> Self {
         Self {
             turn_progression_usecase,
         }

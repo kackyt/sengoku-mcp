@@ -15,30 +15,19 @@ use crate::domain::{
 };
 use std::sync::Arc;
 
-pub struct TurnProgressionUseCase<
-    KR: KuniRepository,
-    DR: DaimyoRepository,
-    GSR: GameStateRepository,
-    ED: EventDispatcher,
-> {
-    kuni_repo: Arc<KR>,
-    daimyo_repo: Arc<DR>,
-    game_state_repo: Arc<GSR>,
-    event_dispatcher: Arc<ED>,
+pub struct TurnProgressionUseCase {
+    kuni_repo: Arc<dyn KuniRepository>,
+    daimyo_repo: Arc<dyn DaimyoRepository>,
+    game_state_repo: Arc<dyn GameStateRepository>,
+    event_dispatcher: Arc<dyn EventDispatcher>,
 }
 
-impl<KR, DR, GSR, ED> TurnProgressionUseCase<KR, DR, GSR, ED>
-where
-    KR: KuniRepository,
-    DR: DaimyoRepository,
-    GSR: GameStateRepository,
-    ED: EventDispatcher,
-{
+impl TurnProgressionUseCase {
     pub fn new(
-        kuni_repo: Arc<KR>,
-        daimyo_repo: Arc<DR>,
-        game_state_repo: Arc<GSR>,
-        event_dispatcher: Arc<ED>,
+        kuni_repo: Arc<dyn KuniRepository>,
+        daimyo_repo: Arc<dyn DaimyoRepository>,
+        game_state_repo: Arc<dyn GameStateRepository>,
+        event_dispatcher: Arc<dyn EventDispatcher>,
     ) -> Self {
         Self {
             kuni_repo,
@@ -121,10 +110,8 @@ where
         let decision = CpuActionDecisionService::decide(daimyo_id, &kunis, &mut rng);
 
         let action_msg = match decision {
-            CpuActionDecision::DevelopLand {
-                target_kuni_id,
-                amount,
-            } => {
+            CpuActionDecision::DevelopLand { target_kuni_id, .. }
+            | CpuActionDecision::BuildTown { target_kuni_id, .. } => {
                 let Some(mut target_kuni) = kunis.into_iter().find(|k| k.id == target_kuni_id)
                 else {
                     return Err(anyhow::anyhow!(
@@ -132,29 +119,15 @@ where
                         target_kuni_id
                     ));
                 };
-                if target_kuni.develop_land(amount).is_ok() {
-                    self.kuni_repo.save(&target_kuni).await?;
-                    "開墾を行いました"
-                } else {
-                    "資金不足で開墾に失敗しました"
-                }
-            }
-            CpuActionDecision::BuildTown {
-                target_kuni_id,
-                amount,
-            } => {
-                let Some(mut target_kuni) = kunis.into_iter().find(|k| k.id == target_kuni_id)
-                else {
-                    return Err(anyhow::anyhow!(
-                        "対象国が見つかりません: {:?}",
-                        target_kuni_id
-                    ));
-                };
-                if target_kuni.build_town(amount).is_ok() {
-                    self.kuni_repo.save(&target_kuni).await?;
-                    "町造りを行いました"
-                } else {
-                    "資金不足で町造りに失敗しました"
+
+                match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(&mut target_kuni, decision) {
+                    Ok(msg) => {
+                        self.kuni_repo.save(&target_kuni).await?;
+                        msg
+                    }
+                    Err(e) => {
+                        format!("自動内政に失敗しました: {:?}", e)
+                    }
                 }
             }
             CpuActionDecision::Battle {
@@ -173,8 +146,8 @@ where
             CpuActionDecision::Battle {
                 target_kuni_id: None,
                 ..
-            } => "攻撃対象が不明なため待機しました",
-            CpuActionDecision::Rest => "休息しました",
+            } => "攻撃対象が不明なため待機しました".to_string(),
+            CpuActionDecision::Rest => "休息しました".to_string(),
         };
 
         self.event_dispatcher

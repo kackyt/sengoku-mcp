@@ -1,6 +1,5 @@
 use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
-use engine::domain::repository::neighbor_repository::NeighborRepository;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -380,7 +379,7 @@ fn render_select_target_modal(
     let area = centered_rect(60, 40, f.area());
     f.render_widget(Clear, area);
 
-    let neighbors = app.neighbor_repo.get_neighbors(&kuni_id);
+    let neighbors = app.kuni_query_usecase.get_neighbor_ids(&kuni_id);
     let mut items = vec![Line::from("数字キーで対象国を選択してください：")];
 
     for (i, target_id) in neighbors.iter().enumerate() {

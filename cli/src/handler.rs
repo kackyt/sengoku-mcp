@@ -2,10 +2,8 @@ use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
+use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::Amount;
-use engine::domain::repository::{
-    kuni_repository::KuniRepository, neighbor_repository::NeighborRepository,
-};
 
 pub struct EventHandler;
 
@@ -84,7 +82,10 @@ impl EventHandler {
                 let selected_daimyo = &daimyos[cursor];
                 // プレイヤーの大名を記憶する仕組みが必要だが、
                 // 現状は選択した大名の最初の国を操作対象にする
-                let kunis = app.kuni_repo.find_by_daimyo_id(&selected_daimyo.id).await?;
+                let kunis: Vec<Kuni> = app
+                    .kuni_query_usecase
+                    .get_kunis_by_daimyo(&selected_daimyo.id)
+                    .await?;
                 if let Some(first_kuni) = kunis.first() {
                     app.screen = ScreenState::Domestic {
                         selected_kuni: first_kuni.id,
@@ -291,7 +292,7 @@ impl EventHandler {
                 _ => {}
             },
             DomesticSubState::SelectTargetKuni { command } => {
-                let neighbors = app.neighbor_repo.get_neighbors(&kuni_id);
+                let neighbors = app.kuni_query_usecase.get_neighbor_ids(&kuni_id);
                 match key.code {
                     KeyCode::Char(c) if c.is_ascii_digit() => {
                         let idx = (c.to_digit(10).unwrap_or(1) as usize).saturating_sub(1);

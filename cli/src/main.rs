@@ -1,11 +1,23 @@
 use anyhow::Result;
 use cli::app::App;
+#[cfg(not(feature = "ai-debug"))]
 use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use engine::domain::repository::neighbor_repository::NeighborRepository;
+use engine::application::usecase::{
+    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
+    kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
+};
+use infrastructure::master_data::MasterDataLoader;
+use infrastructure::persistence::{
+    InMemoryDaimyoRepository, InMemoryEventDispatcher, InMemoryGameStateRepository,
+    InMemoryKuniRepository, InMemoryNeighborRepository,
+};
 use ratatui::prelude::*;
+use std::path::Path;
+use std::sync::Arc;
+#[cfg(not(feature = "ai-debug"))]
 use std::{io, panic};
 
 #[tokio::main]
@@ -32,8 +44,9 @@ async fn main() -> Result<()> {
             original_hook(panic_info);
         }));
 
-        // アプリケーションの初期化
-        let mut app = App::new()?;
+        // アプリケーションの構築 (Composition Root)
+        let app = build_app().await?;
+        let mut app = app;
 
         // メインループの実行
         let get_event = |_timeout: std::time::Duration| -> Result<Option<crossterm::event::Event>> {
@@ -59,6 +72,46 @@ async fn main() -> Result<()> {
     }
 }
 
+/// アプリケーションと依存関係を構築する (Composition Root)
+async fn build_app() -> Result<App> {
+    let kuni_repo = Arc::new(InMemoryKuniRepository::new());
+    let daimyo_repo = Arc::new(InMemoryDaimyoRepository::new());
+    let game_state_repo = Arc::new(InMemoryGameStateRepository::new());
+    let event_dispatcher = Arc::new(InMemoryEventDispatcher::new());
+    let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
+
+    // マスターデータのロードと初期化
+    let base_dir = Path::new("static/master_data");
+    let bundle = MasterDataLoader::load(base_dir)?;
+
+    kuni_repo.init_with_data(bundle.kunis).await;
+    daimyo_repo.init_with_data(bundle.daimyos).await;
+    neighbor_repo.init_with_data(bundle.adjacency_map);
+
+    // ユースケースの構築
+    let domestic_usecase = DomesticUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
+    let battle_usecase = BattleUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
+    let turn_progression_usecase = TurnProgressionUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        event_dispatcher.clone(),
+    );
+    let kuni_query_usecase = KuniQueryUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
+
+    Ok(App::new(
+        kuni_repo,
+        daimyo_repo,
+        game_state_repo,
+        neighbor_repo,
+        event_dispatcher,
+        domestic_usecase,
+        battle_usecase,
+        turn_progression_usecase,
+        kuni_query_usecase,
+    ))
+}
+
 #[cfg(feature = "ai-debug")]
 async fn run_ai_debug() -> Result<()> {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
@@ -66,7 +119,7 @@ async fn run_ai_debug() -> Result<()> {
     use std::io::{self, BufRead};
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    let mut app = App::new()?;
+    let mut app = build_app().await?;
     let backend = TestBackend::new(120, 30);
     let mut terminal = Terminal::new(backend)?;
 

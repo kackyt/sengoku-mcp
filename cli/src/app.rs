@@ -1,44 +1,36 @@
 use crate::handler::EventHandler;
 use crate::screen::ScreenState;
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{Event, KeyEventKind};
 use engine::application::usecase::{
     battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
-    turn_progression_usecase::TurnProgressionUseCase,
+    kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::KuniId;
 use engine::domain::repository::daimyo_repository::DaimyoRepository;
+use engine::domain::repository::event_dispatcher::EventDispatcher;
 use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::repository::kuni_repository::KuniRepository;
-use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::{
-    InMemoryDaimyoRepository, InMemoryEventDispatcher, InMemoryGameStateRepository,
-    InMemoryKuniRepository, InMemoryNeighborRepository,
-};
+use engine::domain::repository::neighbor_repository::NeighborRepository;
 use ratatui::prelude::*;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 pub struct App {
     pub screen: ScreenState,
     pub running: bool,
-    pub kuni_repo: Arc<InMemoryKuniRepository>,
-    pub daimyo_repo: Arc<InMemoryDaimyoRepository>,
-    pub game_state_repo: Arc<InMemoryGameStateRepository>,
-    pub neighbor_repo: Arc<InMemoryNeighborRepository>,
-    pub event_dispatcher: Arc<InMemoryEventDispatcher>,
+    pub kuni_repo: Arc<dyn KuniRepository>,
+    pub daimyo_repo: Arc<dyn DaimyoRepository>,
+    pub game_state_repo: Arc<dyn GameStateRepository>,
+    pub neighbor_repo: Arc<dyn NeighborRepository>,
+    pub event_dispatcher: Arc<dyn EventDispatcher>,
 
-    pub domestic_usecase: DomesticUseCase<InMemoryKuniRepository, InMemoryNeighborRepository>,
-    pub battle_usecase: BattleUseCase<InMemoryKuniRepository, InMemoryNeighborRepository>,
-    pub turn_progression_usecase: TurnProgressionUseCase<
-        InMemoryKuniRepository,
-        InMemoryDaimyoRepository,
-        InMemoryGameStateRepository,
-        InMemoryEventDispatcher,
-    >,
+    pub domestic_usecase: DomesticUseCase,
+    pub battle_usecase: BattleUseCase,
+    pub turn_progression_usecase: TurnProgressionUseCase,
+    pub kuni_query_usecase: KuniQueryUseCase,
 
     // UI Cache
     pub current_kuni: Option<Kuni>,
@@ -52,25 +44,19 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Result<Self> {
-        let kuni_repo = Arc::new(InMemoryKuniRepository::new());
-        let daimyo_repo = Arc::new(InMemoryDaimyoRepository::new());
-        let game_state_repo = Arc::new(InMemoryGameStateRepository::new());
-        let event_dispatcher = Arc::new(InMemoryEventDispatcher::new());
-
-        let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
-
-        // ユースケースの初期化
-        let domestic_usecase = DomesticUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
-        let battle_usecase = BattleUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
-        let turn_progression_usecase = TurnProgressionUseCase::new(
-            kuni_repo.clone(),
-            daimyo_repo.clone(),
-            game_state_repo.clone(),
-            event_dispatcher.clone(),
-        );
-
-        Ok(Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        kuni_repo: Arc<dyn KuniRepository>,
+        daimyo_repo: Arc<dyn DaimyoRepository>,
+        game_state_repo: Arc<dyn GameStateRepository>,
+        neighbor_repo: Arc<dyn NeighborRepository>,
+        event_dispatcher: Arc<dyn EventDispatcher>,
+        domestic_usecase: DomesticUseCase,
+        battle_usecase: BattleUseCase,
+        turn_progression_usecase: TurnProgressionUseCase,
+        kuni_query_usecase: KuniQueryUseCase,
+    ) -> Self {
+        Self {
             screen: ScreenState::Title,
             running: true,
             kuni_repo,
@@ -81,6 +67,7 @@ impl App {
             domestic_usecase,
             battle_usecase,
             turn_progression_usecase,
+            kuni_query_usecase,
             current_kuni: None,
             current_daimyo: None,
             all_daimyos: Vec::new(),
@@ -89,19 +76,11 @@ impl App {
             attacker_kuni: None,
             defender_kuni: None,
             kuni_names: std::collections::HashMap::new(),
-        })
+        }
     }
 
     pub async fn init(&mut self) -> Result<()> {
-        let base_dir = Path::new("static/master_data");
-        let bundle = MasterDataLoader::load(base_dir)?;
-
-        self.kuni_repo.init_with_data(bundle.kunis).await;
-        self.daimyo_repo.init_with_data(bundle.daimyos).await;
-        self.neighbor_repo.init_with_data(bundle.adjacency_map);
-
         self.update_cache().await?;
-
         Ok(())
     }
 
@@ -172,10 +151,11 @@ impl App {
             terminal.draw(|f| crate::ui::draw(self, f))?;
             on_draw(terminal);
 
-            if let Some(Event::Key(key)) = get_event(Duration::from_millis(16))? {
-                if key.kind == KeyEventKind::Press {
+            match get_event(Duration::from_millis(16))? {
+                Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                     EventHandler::handle_key(self, key).await?;
                 }
+                _ => {}
             }
         }
         Ok(())

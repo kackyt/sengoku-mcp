@@ -1,6 +1,6 @@
 use crate::domain::error::DomainError;
 use crate::domain::model::resource::{DevelopmentStats, Resource};
-use crate::domain::model::value_objects::{Amount, DaimyoId, IninFlag, KuniId, Rate};
+use crate::domain::model::value_objects::{Amount, DaimyoId, IninFlag, KuniId, KuniName, Rate};
 use rand::Rng;
 
 /// 国を表すドメインモデル
@@ -9,7 +9,7 @@ pub struct Kuni {
     /// 国ID
     pub id: KuniId,
     /// 国名
-    pub name: crate::domain::model::daimyo::DaimyoName, // 便宜上DaimyoNameを使い回すが、本来はKuniNameを作るべき。今回はDaimyoName(String)なので一旦これを使う。
+    pub name: KuniName,
     /// 支配している大名のID
     pub daimyo_id: DaimyoId,
     /// 資源（金、兵、米、人口）
@@ -32,7 +32,7 @@ impl Kuni {
     ) -> Self {
         Self {
             id,
-            name: crate::domain::model::daimyo::DaimyoName(name.into()),
+            name: KuniName(name.into()),
             daimyo_id,
             resource,
             stats,

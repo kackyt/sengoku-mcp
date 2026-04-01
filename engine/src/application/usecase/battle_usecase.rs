@@ -9,14 +9,17 @@ use std::sync::Arc;
 
 /// 合戦に関するユースケース
 #[allow(dead_code)]
-pub struct BattleUseCase<R: KuniRepository, N: NeighborRepository> {
-    kuni_repo: Arc<R>,
-    neighbor_repo: Arc<N>,
+pub struct BattleUseCase {
+    kuni_repo: Arc<dyn KuniRepository>,
+    neighbor_repo: Arc<dyn NeighborRepository>,
 }
 
-impl<R: KuniRepository, N: NeighborRepository> BattleUseCase<R, N> {
+impl BattleUseCase {
     /// 新しい合戦ユースケースを作成します
-    pub fn new(kuni_repo: Arc<R>, neighbor_repo: Arc<N>) -> Self {
+    pub fn new(
+        kuni_repo: Arc<dyn KuniRepository>,
+        neighbor_repo: Arc<dyn NeighborRepository>,
+    ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,

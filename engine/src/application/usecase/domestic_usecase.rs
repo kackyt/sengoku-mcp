@@ -8,14 +8,17 @@ use std::sync::Arc;
 
 /// 内政に関するユースケース
 #[allow(dead_code)]
-pub struct DomesticUseCase<R: KuniRepository, N: NeighborRepository> {
-    kuni_repo: Arc<R>,
-    neighbor_repo: Arc<N>,
+pub struct DomesticUseCase {
+    kuni_repo: Arc<dyn KuniRepository>,
+    neighbor_repo: Arc<dyn NeighborRepository>,
 }
 
-impl<R: KuniRepository, N: NeighborRepository> DomesticUseCase<R, N> {
+impl DomesticUseCase {
     /// 新しい内政ユースケースを作成します
-    pub fn new(kuni_repo: Arc<R>, neighbor_repo: Arc<N>) -> Self {
+    pub fn new(
+        kuni_repo: Arc<dyn KuniRepository>,
+        neighbor_repo: Arc<dyn NeighborRepository>,
+    ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,
