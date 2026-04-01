@@ -144,9 +144,7 @@ impl InMemoryKuniRepository {
 
     pub async fn init_with_data(&self, kunis: Vec<Kuni>) {
         let mut guard = self.kunis.write().await;
-        for kuni in kunis {
-            guard.insert(kuni.id, kuni);
-        }
+        *guard = kunis.into_iter().map(|k| (k.id, k)).collect();
     }
 }
 
@@ -204,9 +202,7 @@ impl InMemoryDaimyoRepository {
 
     pub async fn init_with_data(&self, daimyos: Vec<Daimyo>) {
         let mut guard = self.daimyos.write().await;
-        for daimyo in daimyos {
-            guard.insert(daimyo.id, daimyo);
-        }
+        *guard = daimyos.into_iter().map(|d| (d.id, d)).collect();
     }
 }
 

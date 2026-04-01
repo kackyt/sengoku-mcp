@@ -44,10 +44,11 @@ impl TurnProgressionUseCase {
         })?;
 
         state.advance_action();
-        self.game_state_repo.save(&state).await?;
 
         if state.is_turn_completed() {
             self.finish_turn(state).await?;
+        } else {
+            self.game_state_repo.save(&state).await?;
         }
 
         Ok(())
@@ -91,7 +92,11 @@ impl TurnProgressionUseCase {
 
             // 次の大名へ
             state.advance_action();
-            self.game_state_repo.save(&state).await?;
+            if state.is_turn_completed() {
+                self.finish_turn(state).await?;
+            } else {
+                self.game_state_repo.save(&state).await?;
+            }
         }
 
         Ok(())

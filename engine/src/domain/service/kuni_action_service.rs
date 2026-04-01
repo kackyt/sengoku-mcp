@@ -12,11 +12,27 @@ impl KuniActionService {
         decision: CpuActionDecision,
     ) -> Result<String, DomainError> {
         match decision {
-            CpuActionDecision::DevelopLand { amount, .. } => {
+            CpuActionDecision::DevelopLand {
+                target_kuni_id,
+                amount,
+            } => {
+                if target_kuni_id != kuni.id {
+                    return Err(DomainError::InvalidOperation(
+                        "対象国IDが一致しません".to_string(),
+                    ));
+                }
                 kuni.develop_land(amount)?;
                 Ok("開墾を行いました".to_string())
             }
-            CpuActionDecision::BuildTown { amount, .. } => {
+            CpuActionDecision::BuildTown {
+                target_kuni_id,
+                amount,
+            } => {
+                if target_kuni_id != kuni.id {
+                    return Err(DomainError::InvalidOperation(
+                        "対象国IDが一致しません".to_string(),
+                    ));
+                }
                 kuni.build_town(amount)?;
                 Ok("町造りを行いました".to_string())
             }

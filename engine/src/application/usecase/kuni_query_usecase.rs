@@ -32,11 +32,14 @@ impl KuniQueryUseCase {
     /// 指定した国の隣接国を取得します
     pub async fn get_neighbors(&self, kuni_id: &KuniId) -> anyhow::Result<Vec<Kuni>> {
         let neighbor_ids = self.neighbor_repo.get_neighbors(kuni_id);
-        let mut neighbors = Vec::new();
+        let mut neighbors = Vec::with_capacity(neighbor_ids.len());
         for id in neighbor_ids {
-            if let Some(kuni) = self.kuni_repo.find_by_id(&id).await? {
-                neighbors.push(kuni);
-            }
+            let kuni = self
+                .kuni_repo
+                .find_by_id(&id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("隣接国が見つかりません: {:?}", id))?;
+            neighbors.push(kuni);
         }
         Ok(neighbors)
     }

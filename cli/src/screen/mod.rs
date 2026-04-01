@@ -31,6 +31,7 @@ pub enum DomesticSubState {
     },
     SelectTargetKuni {
         command: DomesticCommand,
+        cursor: usize,
     },
     ShowMessage {
         message: String,

@@ -189,18 +189,12 @@ mod tests {
             .iter()
             .any(|e| matches!(e, GameEvent::DaimyoActionStarted { .. })));
 
-        // 2. 2番目の大名が行動
+        // 2. 2番目の大名が行動（最後の行動なので自動的にターン終了処理まで走る）
         usecase.progress().await.expect("進行成功");
 
         let state2 = state_repo.get().await.unwrap().unwrap();
-        assert!(state2.is_turn_completed());
-
-        // 3. ターンの終了処理（季節処理と次ターンへの移行）
-        usecase.progress().await.expect("進行成功");
-
-        let state3 = state_repo.get().await.unwrap().unwrap();
-        assert_eq!(state3.current_turn().value(), 2); // ターンが進んでいる
-        assert!(state3.current_daimyo().is_some());
+        assert_eq!(state2.current_turn().value(), 2); // すでにターンが進んでいる
+        assert!(state2.current_daimyo().is_some());
 
         let final_events = event_dispatcher.get_events().await;
         assert!(final_events

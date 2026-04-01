@@ -64,7 +64,12 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
     let footer_text = match &app.screen {
         ScreenState::Title => "Enter: 開始 | Esc/q: 終了",
         ScreenState::SelectDaimyo { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
-        ScreenState::Domestic { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: タイトルへ",
+        ScreenState::Domestic { sub_state, .. } => match sub_state {
+            DomesticSubState::Normal => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
+            DomesticSubState::InputAmount { .. } => "数字: 入力 | Enter: 決定 | Esc: 戻る",
+            DomesticSubState::SelectTargetKuni { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
+            DomesticSubState::ShowMessage { .. } => "Enter/Esc: 閉じる",
+        },
         ScreenState::War { .. } => "Enter: 戦闘開始 | Esc: 戻る",
         ScreenState::GameOver { .. } => "Enter/Esc: タイトルへ",
     };
@@ -319,8 +324,8 @@ fn render_modals(app: &App, f: &mut Frame) {
             DomesticSubState::InputAmount { command, input } => {
                 render_input_modal(f, *command, input);
             }
-            DomesticSubState::SelectTargetKuni { command } => {
-                render_select_target_modal(app, f, *selected_kuni, *command);
+            DomesticSubState::SelectTargetKuni { command, cursor } => {
+                render_select_target_modal(app, f, *selected_kuni, *command, *cursor);
             }
             DomesticSubState::ShowMessage { message, .. } => {
                 render_message_modal(f, message);
@@ -375,34 +380,54 @@ fn render_select_target_modal(
     f: &mut Frame,
     kuni_id: engine::domain::model::value_objects::KuniId,
     command: DomesticCommand,
+    cursor: usize,
 ) {
     let area = centered_rect(60, 40, f.area());
     f.render_widget(Clear, area);
 
     let neighbors = app.kuni_query_usecase.get_neighbor_ids(&kuni_id);
-    let mut items = vec![Line::from("数字キーで対象国を選択してください：")];
-
-    for (i, target_id) in neighbors.iter().enumerate() {
-        let name = app
-            .kuni_names
-            .get(target_id)
-            .cloned()
-            .unwrap_or_else(|| "未知の国".to_string());
-        items.push(Line::from(format!("{}. {}", i + 1, name)));
-    }
-
-    if neighbors.is_empty() {
-        items.push(Line::from("隣接する国がありません。"));
-    }
-
     let title = match command {
         DomesticCommand::War => "攻撃対象選択",
         DomesticCommand::Transport => "輸送先選択",
         _ => "対象選択",
     };
 
-    let p = Paragraph::new(items).block(Block::default().title(title).borders(Borders::ALL));
-    f.render_widget(p, area);
+    if neighbors.is_empty() {
+        let p = Paragraph::new("隣接する国がありません。")
+            .block(Block::default().title(title).borders(Borders::ALL));
+        f.render_widget(p, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = neighbors
+        .iter()
+        .map(|target_id| {
+            let name = app
+                .kuni_names
+                .get(target_id)
+                .cloned()
+                .unwrap_or_else(|| "未知の国".to_string());
+            ListItem::new(name)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(Some(cursor));
+    f.render_stateful_widget(list, area, &mut state);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
