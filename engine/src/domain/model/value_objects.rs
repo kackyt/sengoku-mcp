@@ -90,7 +90,7 @@ impl UnitId {
 }
 
 /// 国の識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct KuniId(pub uuid::Uuid);
 
 impl Default for KuniId {
@@ -110,7 +110,7 @@ impl KuniId {
 pub struct KuniName(pub String);
 
 /// 大名の識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DaimyoId(pub uuid::Uuid);
 
 impl Default for DaimyoId {

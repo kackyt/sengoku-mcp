@@ -8,7 +8,7 @@ use engine::application::usecase::{
 };
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
-use engine::domain::model::value_objects::KuniId;
+use engine::domain::model::value_objects::{DaimyoId, KuniId};
 use engine::domain::repository::daimyo_repository::DaimyoRepository;
 use engine::domain::repository::event_dispatcher::EventDispatcher;
 use engine::domain::repository::game_state_repository::GameStateRepository;
@@ -41,6 +41,7 @@ pub struct App {
     pub attacker_kuni: Option<Kuni>,
     pub defender_kuni: Option<Kuni>,
     pub kuni_names: std::collections::HashMap<KuniId, String>,
+    pub selected_daimyo_id: Option<DaimyoId>,
 }
 
 impl App {
@@ -76,6 +77,7 @@ impl App {
             attacker_kuni: None,
             defender_kuni: None,
             kuni_names: std::collections::HashMap::new(),
+            selected_daimyo_id: None,
         }
     }
 

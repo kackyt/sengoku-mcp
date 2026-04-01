@@ -167,6 +167,7 @@ impl Kuni {
     /// 獲得：忠誠度 += 投入量 * (BIAS/2 + random(BIAS/2))
     pub fn give_charity(&mut self, amount: Amount) -> Result<u32, DomainError> {
         self.consume_resource(Amount::new(0), Amount::new(0), amount)?;
+        let before = self.stats.tyu.value();
 
         let bias_half = crate::domain::model::value_objects::INTERNAL_SCALE / 2;
         let rng = rand::thread_rng().gen_range(0..bias_half);
@@ -174,6 +175,6 @@ impl Kuni {
             / crate::domain::model::value_objects::INTERNAL_SCALE;
 
         self.modify_tyu(tyu_gain as i32);
-        Ok(tyu_gain) // 忠誠度上昇量を返す
+        Ok(self.stats.tyu.value().saturating_sub(before))
     }
 }

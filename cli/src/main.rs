@@ -15,10 +15,32 @@ use infrastructure::persistence::{
     InMemoryKuniRepository, InMemoryNeighborRepository,
 };
 use ratatui::prelude::*;
-use std::path::Path;
 use std::sync::Arc;
 #[cfg(not(feature = "ai-debug"))]
 use std::{io, panic};
+
+#[cfg(not(feature = "ai-debug"))]
+#[allow(dead_code)]
+struct TerminalGuard;
+
+#[cfg(not(feature = "ai-debug"))]
+impl TerminalGuard {
+    fn new() -> Result<Self> {
+        enable_raw_mode()?;
+        execute!(std::io::stdout(), EnterAlternateScreen)?;
+        Ok(Self)
+    }
+}
+
+#[cfg(not(feature = "ai-debug"))]
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        use std::io::Write;
+        let _ = disable_raw_mode();
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+        let _ = std::io::stdout().flush();
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,19 +50,15 @@ async fn main() -> Result<()> {
     }
     #[cfg(not(feature = "ai-debug"))]
     {
-        // ターミナルの初期化
-        enable_raw_mode()?;
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        // ターミナルの初期化（RAIIガード）
+        let _guard = TerminalGuard::new()?;
+        let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
 
-        // パニック時のクリーンアップ処理
+        // パニック時のクリーンアップ処理（バックアップ的に維持）
         let original_hook = panic::take_hook();
         panic::set_hook(Box::new(move |panic_info| {
             let _ = disable_raw_mode();
-            let mut stdout = io::stdout();
-            let _ = execute!(stdout, LeaveAlternateScreen);
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
             original_hook(panic_info);
         }));
 
@@ -59,16 +77,11 @@ async fn main() -> Result<()> {
         let on_draw = |_terminal: &mut Terminal<CrosstermBackend<io::Stdout>>| {};
         let res = app.run(&mut terminal, get_event, on_draw).await;
 
-        // クリーンアップ
-        disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-        terminal.show_cursor()?;
-
-        if let Err(err) = res {
+        if let Err(ref err) = res {
             eprintln!("{:?}", err);
         }
 
-        Ok(())
+        res
     }
 }
 
@@ -81,8 +94,20 @@ async fn build_app() -> Result<App> {
     let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
 
     // マスターデータのロードと初期化
-    let base_dir = Path::new("static/master_data");
-    let bundle = MasterDataLoader::load(base_dir)?;
+    let base_dir = std::env::var("SENGOKU_MASTER_DATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+            // ワークスペース構成 (cli/, static/) を考慮
+            let dev_path = manifest_dir.join("../static/master_data");
+            if dev_path.exists() {
+                dev_path
+            } else {
+                // デフォルト
+                std::path::PathBuf::from("static/master_data")
+            }
+        });
+    let bundle = MasterDataLoader::load(&base_dir)?;
 
     kuni_repo.init_with_data(bundle.kunis).await;
     daimyo_repo.init_with_data(bundle.daimyos).await;

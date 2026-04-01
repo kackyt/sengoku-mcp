@@ -165,11 +165,14 @@ impl KuniRepository for InMemoryKuniRepository {
 
     async fn find_by_daimyo_id(&self, daimyo_id: &DaimyoId) -> Result<Vec<Kuni>, DomainError> {
         let guard = self.kunis.read().await;
-        Ok(guard
+        let mut kunis: Vec<Kuni> = guard
             .values()
             .filter(|k| &k.daimyo_id == daimyo_id)
             .cloned()
-            .collect())
+            .collect();
+        // 順序を安定させるためにIDでソート
+        kunis.sort_by_key(|k| k.id);
+        Ok(kunis)
     }
 
     async fn save(&self, kuni: &Kuni) -> Result<(), DomainError> {
@@ -180,7 +183,10 @@ impl KuniRepository for InMemoryKuniRepository {
 
     async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
         let guard = self.kunis.read().await;
-        Ok(guard.values().cloned().collect())
+        let mut kunis: Vec<Kuni> = guard.values().cloned().collect();
+        // 順序を安定させるためにIDでソート
+        kunis.sort_by_key(|k| k.id);
+        Ok(kunis)
     }
 }
 
@@ -225,6 +231,9 @@ impl DaimyoRepository for InMemoryDaimyoRepository {
 
     async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
         let guard = self.daimyos.read().await;
-        Ok(guard.values().cloned().collect())
+        let mut daimyos: Vec<Daimyo> = guard.values().cloned().collect();
+        // 順序を安定させるためにIDでソート
+        daimyos.sort_by_key(|d| d.id);
+        Ok(daimyos)
     }
 }

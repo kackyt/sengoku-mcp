@@ -80,8 +80,10 @@ impl EventHandler {
             }
             KeyCode::Enter => {
                 let selected_daimyo = &daimyos[cursor];
-                // プレイヤーの大名を記憶する仕組みが必要だが、
-                // 現状は選択した大名の最初の国を操作対象にする
+                // プレイヤーの大名を記憶する
+                app.selected_daimyo_id = Some(selected_daimyo.id);
+
+                // 選択した大名の最初の国を操作対象にする
                 let kunis: Vec<Kuni> = app
                     .kuni_query_usecase
                     .get_kunis_by_daimyo(&selected_daimyo.id)
@@ -92,9 +94,6 @@ impl EventHandler {
                         cursor: 0,
                         sub_state: DomesticSubState::Normal,
                     };
-
-                    // CPUのターンを自分の番が来るまで回す必要があるが、
-                    // 簡略化のため、まずは自分の番から始まると仮定して進める
                 } else {
                     app.screen = ScreenState::Title;
                 }
@@ -151,6 +150,13 @@ impl EventHandler {
                             12 => DomesticCommand::Exit,
                             _ => return Ok(()),
                         };
+
+                        if command != DomesticCommand::Exit
+                            && command != DomesticCommand::Information
+                            && !Self::check_player_turn(app, kuni_id, cursor).await?
+                        {
+                            return Ok(());
+                        }
 
                         match command {
                             DomesticCommand::Exit => {
@@ -410,6 +416,10 @@ impl EventHandler {
                             _ => Tactic::Normal,
                         };
 
+                        if !Self::check_player_turn(app, attacker_id, 0).await? {
+                            return Ok(());
+                        }
+
                         let result = app
                             .battle_usecase
                             .execute_battle_turn(
@@ -475,5 +485,28 @@ impl EventHandler {
             }
         }
         Ok(())
+    }
+
+    async fn check_player_turn(
+        app: &mut App,
+        kuni_id: engine::domain::model::value_objects::KuniId,
+        cursor: usize,
+    ) -> Result<bool> {
+        if let Some(player_id) = app.selected_daimyo_id
+            && let Some(state) = app.game_state_repo.get().await?
+            && state.current_daimyo() == Some(player_id)
+        {
+            return Ok(true);
+        }
+
+        app.screen = ScreenState::Domestic {
+            selected_kuni: kuni_id,
+            cursor,
+            sub_state: DomesticSubState::ShowMessage {
+                message: "自分の手番ではありません".to_string(),
+                next_state: Box::new(DomesticSubState::Normal),
+            },
+        };
+        Ok(false)
     }
 }
