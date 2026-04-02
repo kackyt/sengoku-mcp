@@ -54,6 +54,44 @@ impl TurnProgressionUseCase {
         Ok(())
     }
 
+    /// 指定した大名（プレイヤー）の手番になるまで、CPUの行動を自動的に進める
+    pub async fn progress_until_player_turn(
+        &self,
+        player_id: Option<crate::domain::model::value_objects::DaimyoId>,
+    ) -> Result<(), anyhow::Error> {
+        for _ in 0..100 {
+            // 安全のため上限回数を設ける
+            let state = self.game_state_repo.get().await?;
+
+            // 状態がない場合は progress を呼んで初期化
+            if state.is_none() {
+                self.progress().await?;
+                continue;
+            }
+
+            let state = state.unwrap();
+
+            // 現在の大名を取得
+            let current_daimyo = state.current_daimyo();
+
+            // プレイヤーの手番であり、かつターンが完了していなければ停止
+            if let (Some(pid), Some(cid)) = (player_id, current_daimyo) {
+                if pid == cid && !state.is_turn_completed() {
+                    break;
+                }
+            }
+
+            // プレイヤー以外の番、またはターン完了時は進める
+            self.progress().await?;
+
+            // プレイヤー未指定（観戦モードなど）の場合は1回で抜ける
+            if player_id.is_none() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// ターンフェーズを進める（自動行動を一回行う、またはターン終了処理を行う）
     pub async fn progress(&self) -> Result<(), anyhow::Error> {
         let mut state = match self.game_state_repo.get().await? {

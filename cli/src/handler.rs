@@ -48,8 +48,10 @@ impl EventHandler {
     async fn handle_title(app: &mut App, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Enter => {
-                // ゲーム開始時に初期ターンを生成するために一度 progress を呼ぶ
-                app.turn_progression_usecase.progress().await?;
+                // ゲーム開始時に初期ターンを生成し、プレイヤーの手番まで進める
+                app.turn_progression_usecase
+                    .progress_until_player_turn(app.selected_daimyo_id)
+                    .await?;
                 app.screen = ScreenState::SelectDaimyo { cursor: 0 };
             }
             KeyCode::Char('q') | KeyCode::Esc => {
@@ -152,7 +154,6 @@ impl EventHandler {
                         };
 
                         if command != DomesticCommand::Exit
-                            && command != DomesticCommand::Information
                             && !Self::check_player_turn(app, kuni_id, cursor).await?
                         {
                             return Ok(());
@@ -186,13 +187,16 @@ impl EventHandler {
                                 app.turn_progression_usecase
                                     .complete_current_action()
                                     .await?;
-                                app.turn_progression_usecase.progress().await?;
+                                app.turn_progression_usecase
+                                    .progress_until_player_turn(app.selected_daimyo_id)
+                                    .await?;
                                 app.screen = ScreenState::Domestic {
                                     selected_kuni: kuni_id,
                                     cursor,
                                     sub_state: DomesticSubState::ShowMessage {
-                                        message: "他国の情報を調査しました。1ターン経過しました。"
-                                            .to_string(),
+                                        message:
+                                            "他国の情報を調査しました。各国の行動が進みました。"
+                                                .to_string(),
                                         next_state: Box::new(DomesticSubState::Normal),
                                     },
                                 };
@@ -306,7 +310,9 @@ impl EventHandler {
                             app.turn_progression_usecase
                                 .complete_current_action()
                                 .await?;
-                            app.turn_progression_usecase.progress().await?;
+                            app.turn_progression_usecase
+                                .progress_until_player_turn(app.selected_daimyo_id)
+                                .await?;
 
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: kuni_id,
@@ -376,15 +382,20 @@ impl EventHandler {
                                     sub_state: crate::screen::WarSubState::Normal,
                                 };
                             } else if command == DomesticCommand::Transport {
-                                // 輸送（簡略化：全リソースの10%を送る）
+                                // 輸送（各資源の10%を送る）
+                                let kuni = app.current_kuni.as_ref().unwrap();
+                                let target_kin = kuni.resource.kin.mul_percent(10);
+                                let target_hei = kuni.resource.hei.mul_percent(10);
+                                let target_kome = kuni.resource.kome.mul_percent(10);
+
                                 let result = app
                                     .domestic_usecase
                                     .transport(
                                         kuni_id,
                                         *target_id,
-                                        Amount::new(100),
-                                        Amount::new(100),
-                                        Amount::new(100),
+                                        target_kin,
+                                        target_hei,
+                                        target_kome,
                                     )
                                     .await;
 
@@ -393,7 +404,9 @@ impl EventHandler {
                                         app.turn_progression_usecase
                                             .complete_current_action()
                                             .await?;
-                                        app.turn_progression_usecase.progress().await?;
+                                        app.turn_progression_usecase
+                                            .progress_until_player_turn(app.selected_daimyo_id)
+                                            .await?;
                                         app.screen = ScreenState::Domestic {
                                             selected_kuni: kuni_id,
                                             cursor,
@@ -522,7 +535,9 @@ impl EventHandler {
                             app.turn_progression_usecase
                                 .complete_current_action()
                                 .await?;
-                            app.turn_progression_usecase.progress().await?;
+                            app.turn_progression_usecase
+                                .progress_until_player_turn(app.selected_daimyo_id)
+                                .await?;
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: attacker_id,
                                 cursor: 0,
@@ -573,9 +588,13 @@ impl EventHandler {
         kuni_id: engine::domain::model::value_objects::KuniId,
         cursor: usize,
     ) -> Result<bool> {
+        let snapshot = app
+            .kuni_query_usecase
+            .get_ui_snapshot(None, None, None)
+            .await?;
         if let Some(player_id) = app.selected_daimyo_id
-            && let Some(state) = app.game_state_repo.get().await?
-            && state.current_daimyo() == Some(player_id)
+            && let Some(current_daimyo) = snapshot.current_daimyo
+            && current_daimyo.id == player_id
         {
             return Ok(true);
         }

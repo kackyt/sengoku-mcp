@@ -9,23 +9,12 @@ use engine::application::usecase::{
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
-use engine::domain::repository::daimyo_repository::DaimyoRepository;
-use engine::domain::repository::event_dispatcher::EventDispatcher;
-use engine::domain::repository::game_state_repository::GameStateRepository;
-use engine::domain::repository::kuni_repository::KuniRepository;
-use engine::domain::repository::neighbor_repository::NeighborRepository;
 use ratatui::prelude::*;
-use std::sync::Arc;
 use std::time::Duration;
 
 pub struct App {
     pub screen: ScreenState,
     pub running: bool,
-    pub kuni_repo: Arc<dyn KuniRepository>,
-    pub daimyo_repo: Arc<dyn DaimyoRepository>,
-    pub game_state_repo: Arc<dyn GameStateRepository>,
-    pub neighbor_repo: Arc<dyn NeighborRepository>,
-    pub event_dispatcher: Arc<dyn EventDispatcher>,
 
     pub domestic_usecase: DomesticUseCase,
     pub battle_usecase: BattleUseCase,
@@ -45,13 +34,7 @@ pub struct App {
 }
 
 impl App {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        kuni_repo: Arc<dyn KuniRepository>,
-        daimyo_repo: Arc<dyn DaimyoRepository>,
-        game_state_repo: Arc<dyn GameStateRepository>,
-        neighbor_repo: Arc<dyn NeighborRepository>,
-        event_dispatcher: Arc<dyn EventDispatcher>,
         domestic_usecase: DomesticUseCase,
         battle_usecase: BattleUseCase,
         turn_progression_usecase: TurnProgressionUseCase,
@@ -60,11 +43,6 @@ impl App {
         Self {
             screen: ScreenState::Title,
             running: true,
-            kuni_repo,
-            daimyo_repo,
-            game_state_repo,
-            neighbor_repo,
-            event_dispatcher,
             domestic_usecase,
             battle_usecase,
             turn_progression_usecase,
@@ -87,50 +65,29 @@ impl App {
     }
 
     pub async fn update_cache(&mut self) -> Result<()> {
-        self.all_daimyos = self.daimyo_repo.find_all().await?;
-        let all_kunis = self.kuni_repo.find_all().await?;
-        self.kuni_names = all_kunis.into_iter().map(|k| (k.id, k.name.0)).collect();
-
-        if let Some(state) = self.game_state_repo.get().await? {
-            self.current_turn = Some(state.current_turn().value());
-        }
-
-        match &self.screen {
-            ScreenState::SelectDaimyo { cursor } => {
-                if let Some(daimyo) = self.all_daimyos.get(*cursor) {
-                    self.current_daimyo = Some(daimyo.clone());
-                }
-            }
-            ScreenState::Domestic { selected_kuni, .. } => {
-                if let Some(kuni) = self.kuni_repo.find_by_id(selected_kuni).await? {
-                    self.current_kuni = Some(kuni.clone());
-                    if let Some(daimyo) = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await? {
-                        self.current_daimyo = Some(daimyo);
-                    }
-                }
-            }
+        let (selected_id, attacker_id, defender_id) = match &self.screen {
+            ScreenState::Domestic { selected_kuni, .. } => (Some(*selected_kuni), None, None),
             ScreenState::War {
                 attacker_kuni,
                 defender_kuni,
                 ..
-            } => {
-                if let Some(kuni) = self.kuni_repo.find_by_id(attacker_kuni).await? {
-                    self.attacker_kuni = Some(kuni.clone());
-                    if let Some(daimyo) = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await? {
-                        self.current_daimyo = Some(daimyo);
-                    }
-                }
-                if let Some(kuni) = self.kuni_repo.find_by_id(defender_kuni).await? {
-                    self.defender_kuni = Some(kuni.clone());
-                }
-            }
-            _ => {
-                self.current_kuni = None;
-                self.current_daimyo = None;
-                self.attacker_kuni = None;
-                self.defender_kuni = None;
-            }
-        }
+            } => (None, Some(*attacker_kuni), Some(*defender_kuni)),
+            _ => (None, None, None),
+        };
+
+        let snapshot = self
+            .kuni_query_usecase
+            .get_ui_snapshot(selected_id, attacker_id, defender_id)
+            .await?;
+
+        self.all_daimyos = snapshot.all_daimyos;
+        self.current_turn = snapshot.current_turn;
+        self.current_kuni = snapshot.current_kuni;
+        self.current_daimyo = snapshot.current_daimyo;
+        self.attacker_kuni = snapshot.attacker_kuni;
+        self.defender_kuni = snapshot.defender_kuni;
+        self.kuni_names = snapshot.kuni_names;
+
         Ok(())
     }
 

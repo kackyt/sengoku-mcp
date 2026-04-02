@@ -94,19 +94,39 @@ async fn build_app() -> Result<App> {
     let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
 
     // マスターデータのロードと初期化
-    let base_dir = std::env::var("SENGOKU_MASTER_DATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-            // ワークスペース構成 (cli/, static/) を考慮
-            let dev_path = manifest_dir.join("../static/master_data");
-            if dev_path.exists() {
-                dev_path
+    let base_dir = if let Ok(env_path) = std::env::var("SENGOKU_MASTER_DATA") {
+        std::path::PathBuf::from(env_path)
+    } else {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let dev_path = manifest_dir.join("../static/master_data");
+
+        let exe_path = std::env::current_exe().ok();
+        let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
+        let rel_path = exe_dir.map(|d| d.join("static/master_data"));
+
+        if dev_path.exists() {
+            dev_path
+        } else if let Some(path) = rel_path.filter(|p| p.exists()) {
+            path
+        } else {
+            let cwd_path = std::path::PathBuf::from("static/master_data");
+            if cwd_path.exists() {
+                cwd_path
             } else {
-                // デフォルト
-                std::path::PathBuf::from("static/master_data")
+                anyhow::bail!(
+                    "マスターデータが見つかりません。\n\
+                    探索したパス:\n\
+                    1. (env) SENGOKU_MASTER_DATA\n\
+                    2. (dev) {:?}\n\
+                    3. (rel) {:?}\n\
+                    4. (cwd) static/master_data",
+                    dev_path,
+                    exe_dir.map(|d| d.join("static/master_data"))
+                );
             }
-        });
+        }
+    };
+
     let bundle = MasterDataLoader::load(&base_dir)?;
 
     kuni_repo.init_with_data(bundle.kunis).await;
@@ -122,14 +142,14 @@ async fn build_app() -> Result<App> {
         game_state_repo.clone(),
         event_dispatcher.clone(),
     );
-    let kuni_query_usecase = KuniQueryUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
+    let kuni_query_usecase = KuniQueryUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        neighbor_repo.clone(),
+    );
 
     Ok(App::new(
-        kuni_repo,
-        daimyo_repo,
-        game_state_repo,
-        neighbor_repo,
-        event_dispatcher,
         domestic_usecase,
         battle_usecase,
         turn_progression_usecase,
