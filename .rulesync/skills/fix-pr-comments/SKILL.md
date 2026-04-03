@@ -59,7 +59,7 @@ python <parse_comments_script>
 #### Rustの場合
 
 ```sh
-cargo clippy --all-targets --all-features -- -D warninngs && cargo fmt --all -- --check && cargo test --workspace
+cargo clippy --all-targets --all-features -- -D warnings && cargo fmt --all -- --check && cargo test --workspace
 ```
 
 #### TypeScriptの場合
