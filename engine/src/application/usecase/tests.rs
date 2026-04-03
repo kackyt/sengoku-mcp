@@ -92,12 +92,14 @@ impl NeighborRepository for MockNeighborRepository {
 // --- テストデータ作成ヘルパー ---
 
 fn create_test_kuni() -> Kuni {
+    let daimyo_id = DaimyoId(Uuid::new_v4());
     Kuni::new(
         KuniId(Uuid::new_v4()),
-        DaimyoId(Uuid::new_v4()),
-        Resource::new(1000, 1000, 1000, 10000),
-        DevelopmentStats::new(100, 100, 50),
-        IninFlag::new(false),
+        "TestKuni".to_string(),
+        daimyo_id,
+        Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 1000 * 10),
+        DevelopmentStats::new(100 * 10, 100 * 10, 60),
+        IninFlag(false),
     )
 }
 
@@ -118,10 +120,10 @@ async fn test_domestic_sell_rice() {
         .expect("売却成功");
 
     let updated = repo.find_by_id(&kuni_id).await.unwrap().unwrap();
-    // 1000 - 100 = 900
-    assert_eq!(updated.resource.kome.value(), 900);
-    // 金が増えているはず (1.0 - 2.0倍)
-    assert!(updated.resource.kin.value() > 1000);
+    // 10000 - 100 = 9900
+    assert_eq!(updated.resource.kome.value(), 9900);
+    // 金が増えているはず (10000 + alpha)
+    assert!(updated.resource.kin.value() > 10000);
 }
 
 #[tokio::test]
@@ -139,10 +141,10 @@ async fn test_domestic_buy_rice() {
         .expect("購入成功");
 
     let updated = repo.find_by_id(&kuni_id).await.unwrap().unwrap();
-    // 1000 + 100 = 1100
-    assert_eq!(updated.resource.kome.value(), 1100);
+    // 10000 + 100 = 10100
+    assert_eq!(updated.resource.kome.value(), 10100);
     // 金が減っているはず
-    assert!(updated.resource.kin.value() < 1000);
+    assert!(updated.resource.kin.value() < 10000);
 }
 
 #[tokio::test]
@@ -160,7 +162,7 @@ async fn test_domestic_recruit() {
         .expect("徴募成功");
 
     let updated = repo.find_by_id(&kuni_id).await.unwrap().unwrap();
-    assert_eq!(updated.resource.hei.value(), 1100);
+    assert_eq!(updated.resource.hei.value(), 10100);
     assert_eq!(updated.resource.jinko.value(), 9900); // 10000 - 100
 }
 
@@ -193,8 +195,8 @@ async fn test_domestic_transport_success_when_adjacent() {
 
     let updated_from = repo.find_by_id(&from_id).await.unwrap().unwrap();
     let updated_to = repo.find_by_id(&to_id).await.unwrap().unwrap();
-    assert_eq!(updated_from.resource.kin.value(), 900);
-    assert_eq!(updated_to.resource.kin.value(), 1100);
+    assert_eq!(updated_from.resource.kin.value(), 9900);
+    assert_eq!(updated_to.resource.kin.value(), 10100);
 }
 
 #[tokio::test]

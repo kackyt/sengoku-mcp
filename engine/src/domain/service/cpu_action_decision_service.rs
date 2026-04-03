@@ -4,6 +4,7 @@ use crate::domain::model::{
 };
 use rand::Rng;
 
+#[derive(Debug, Clone, Copy)]
 pub enum CpuActionDecision {
     DevelopLand {
         target_kuni_id: KuniId,

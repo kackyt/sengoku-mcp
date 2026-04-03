@@ -54,7 +54,19 @@ python <parse_comments_script>
 - 複雑な変更の場合は段階的にコミットできるよう、意識して変更を分割してください
 
 ### 4. 修正の確認
-修正が完了したら、コンパイルやテストが通るか確認します。（プロジェクトの言語に応じて `cargo check`, `npm run build`, `npm test` などを実行してください。）
+修正が完了したら、コンパイルやテストが通るか確認します。
+
+#### Rustの場合
+
+```sh
+cargo clippy --all-targets --all-features -- -D warnings && cargo fmt --all -- --check && cargo test --workspace
+```
+
+#### TypeScriptの場合
+
+```sh
+pnpm type-check && pnpm biome:check && pnpm test
+```
 
 ### 5. ユーザーへの報告完了
 すべての指摘事項に対する修正が完了し、テストも問題なければ `notify_user` ツールを使いユーザーに報告します。未解決が残る場合はレビュアーに質問する準備を整えてください。

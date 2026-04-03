@@ -39,6 +39,10 @@ impl GameState {
         &self.action_order
     }
 
+    pub fn current_action_index(&self) -> ActionOrderIndex {
+        self.current_action_index
+    }
+
     /// 現在行動中の大名IDを取得します。
     /// 順番が終了している場合は `None` を返します。
     pub fn current_daimyo(&self) -> Option<DaimyoId> {

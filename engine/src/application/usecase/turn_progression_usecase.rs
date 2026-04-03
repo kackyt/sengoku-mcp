@@ -15,30 +15,19 @@ use crate::domain::{
 };
 use std::sync::Arc;
 
-pub struct TurnProgressionUseCase<
-    KR: KuniRepository,
-    DR: DaimyoRepository,
-    GSR: GameStateRepository,
-    ED: EventDispatcher,
-> {
-    kuni_repo: Arc<KR>,
-    daimyo_repo: Arc<DR>,
-    game_state_repo: Arc<GSR>,
-    event_dispatcher: Arc<ED>,
+pub struct TurnProgressionUseCase {
+    kuni_repo: Arc<dyn KuniRepository>,
+    daimyo_repo: Arc<dyn DaimyoRepository>,
+    game_state_repo: Arc<dyn GameStateRepository>,
+    event_dispatcher: Arc<dyn EventDispatcher>,
 }
 
-impl<KR, DR, GSR, ED> TurnProgressionUseCase<KR, DR, GSR, ED>
-where
-    KR: KuniRepository,
-    DR: DaimyoRepository,
-    GSR: GameStateRepository,
-    ED: EventDispatcher,
-{
+impl TurnProgressionUseCase {
     pub fn new(
-        kuni_repo: Arc<KR>,
-        daimyo_repo: Arc<DR>,
-        game_state_repo: Arc<GSR>,
-        event_dispatcher: Arc<ED>,
+        kuni_repo: Arc<dyn KuniRepository>,
+        daimyo_repo: Arc<dyn DaimyoRepository>,
+        game_state_repo: Arc<dyn GameStateRepository>,
+        event_dispatcher: Arc<dyn EventDispatcher>,
     ) -> Self {
         Self {
             kuni_repo,
@@ -46,6 +35,71 @@ where
             game_state_repo,
             event_dispatcher,
         }
+    }
+
+    /// 現在の大名の行動を完了とし、次の大名（または次のターン）へ進める
+    pub async fn complete_current_action(&self) -> Result<(), anyhow::Error> {
+        let mut state = self.game_state_repo.get().await?.ok_or_else(|| {
+            anyhow::anyhow!("GameStateが見つかりません。progressを先に呼んでください。")
+        })?;
+
+        state.advance_action();
+
+        if state.is_turn_completed() {
+            self.finish_turn(state).await?;
+        } else {
+            self.game_state_repo.save(&state).await?;
+        }
+
+        Ok(())
+    }
+
+    /// 指定した大名（プレイヤー）の手番になるまで、CPUの行動を自動的に進める
+    pub async fn progress_until_player_turn(
+        &self,
+        player_id: Option<crate::domain::model::value_objects::DaimyoId>,
+    ) -> Result<(), anyhow::Error> {
+        let mut reached = false;
+        for _ in 0..100 {
+            // 安全のため上限回数を設ける
+            let state = self.game_state_repo.get().await?;
+
+            // 状態がない場合は progress を呼んで初期化
+            if state.is_none() {
+                self.progress().await?;
+                continue;
+            }
+
+            let state = state.unwrap();
+
+            // 現在の大名を取得
+            let current_daimyo = state.current_daimyo();
+
+            // プレイヤーの手番であり、かつターンが完了していなければ停止
+            if let (Some(pid), Some(cid)) = (player_id, current_daimyo) {
+                if pid == cid && !state.is_turn_completed() {
+                    reached = true;
+                    break;
+                }
+            }
+
+            // プレイヤー以外の番、またはターン完了時は進める
+            self.progress().await?;
+
+            // プレイヤー未指定（観戦モードなど）の場合は1回で抜ける
+            if player_id.is_none() {
+                reached = true;
+                break;
+            }
+        }
+
+        if !reached {
+            return Err(anyhow::anyhow!(
+                "プレイヤーの手番に到達できませんでした（ループ上限到達）"
+            ));
+        }
+
+        Ok(())
     }
 
     /// ターンフェーズを進める（自動行動を一回行う、またはターン終了処理を行う）
@@ -65,7 +119,7 @@ where
                         turn: TurnNumber::new(1),
                     })
                     .await?;
-                initial_state
+                return Ok(());
             }
         };
 
@@ -86,7 +140,11 @@ where
 
             // 次の大名へ
             state.advance_action();
-            self.game_state_repo.save(&state).await?;
+            if state.is_turn_completed() {
+                self.finish_turn(state).await?;
+            } else {
+                self.game_state_repo.save(&state).await?;
+            }
         }
 
         Ok(())
@@ -105,10 +163,8 @@ where
         let decision = CpuActionDecisionService::decide(daimyo_id, &kunis, &mut rng);
 
         let action_msg = match decision {
-            CpuActionDecision::DevelopLand {
-                target_kuni_id,
-                amount,
-            } => {
+            CpuActionDecision::DevelopLand { target_kuni_id, .. }
+            | CpuActionDecision::BuildTown { target_kuni_id, .. } => {
                 let Some(mut target_kuni) = kunis.into_iter().find(|k| k.id == target_kuni_id)
                 else {
                     return Err(anyhow::anyhow!(
@@ -116,29 +172,15 @@ where
                         target_kuni_id
                     ));
                 };
-                if target_kuni.develop_land(amount).is_ok() {
-                    self.kuni_repo.save(&target_kuni).await?;
-                    "開墾を行いました"
-                } else {
-                    "資金不足で開墾に失敗しました"
-                }
-            }
-            CpuActionDecision::BuildTown {
-                target_kuni_id,
-                amount,
-            } => {
-                let Some(mut target_kuni) = kunis.into_iter().find(|k| k.id == target_kuni_id)
-                else {
-                    return Err(anyhow::anyhow!(
-                        "対象国が見つかりません: {:?}",
-                        target_kuni_id
-                    ));
-                };
-                if target_kuni.build_town(amount).is_ok() {
-                    self.kuni_repo.save(&target_kuni).await?;
-                    "町造りを行いました"
-                } else {
-                    "資金不足で町造りに失敗しました"
+
+                match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(&mut target_kuni, decision) {
+                    Ok(msg) => {
+                        self.kuni_repo.save(&target_kuni).await?;
+                        msg
+                    }
+                    Err(e) => {
+                        format!("自動内政に失敗しました: {:?}", e)
+                    }
                 }
             }
             CpuActionDecision::Battle {
@@ -157,8 +199,8 @@ where
             CpuActionDecision::Battle {
                 target_kuni_id: None,
                 ..
-            } => "攻撃対象が不明なため待機しました",
-            CpuActionDecision::Rest => "休息しました",
+            } => "攻撃対象が不明なため待機しました".to_string(),
+            CpuActionDecision::Rest => "休息しました".to_string(),
         };
 
         self.event_dispatcher
