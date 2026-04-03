@@ -172,13 +172,18 @@ mod tests {
             event_dispatcher.clone(),
         );
 
-        // 1. 初回進行: ターン1の開始をセットアップし、最初の大名が行動
+        // 1. 初回進行: ターン1の開始をセットアップ（初期化のみ）
         usecase.progress().await.expect("進行成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_turn().value(), 1);
-        assert_eq!(state.action_order().len(), 2);
-        assert!(state.current_daimyo().is_some());
+        assert_eq!(state.current_action_index().value(), 0);
+
+        // 2. 最初の大名が行動
+        usecase.progress().await.expect("進行成功");
+
+        let state = state_repo.get().await.unwrap().unwrap();
+        assert_eq!(state.current_action_index().value(), 1);
 
         // 一人目の行動イベントが発火していることを確認
         let events = event_dispatcher.get_events().await;
@@ -189,7 +194,7 @@ mod tests {
             .iter()
             .any(|e| matches!(e, GameEvent::DaimyoActionStarted { .. })));
 
-        // 2. 2番目の大名が行動（最後の行動なので自動的にターン終了処理まで走る）
+        // 3. 2番目の大名が行動（最後の行動なので自動的にターン終了処理まで走る）
         usecase.progress().await.expect("進行成功");
 
         let state2 = state_repo.get().await.unwrap().unwrap();
@@ -279,5 +284,110 @@ mod tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, GameEvent::SeasonPassed { .. })));
+    }
+
+    #[tokio::test]
+    async fn test_progress_until_player_turn_success() {
+        let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
+        let state_repo = Arc::new(MockGameStateRepository::new());
+        let event_dispatcher = Arc::new(MockEventDispatcher::new());
+
+        let daimyo1 = create_test_daimyo("プレイヤー");
+        let daimyo_cpu = create_test_daimyo("CPU");
+        daimyo_repo.setup(daimyo1.clone()).await;
+        daimyo_repo.setup(daimyo_cpu.clone()).await;
+
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            daimyo_repo,
+            state_repo.clone(),
+            event_dispatcher,
+        );
+
+        // 初期状態で CPU -> プレイヤー の順とする
+        let initial_state = GameState::new(
+            crate::domain::model::value_objects::TurnNumber::new(1),
+            vec![daimyo_cpu.id, daimyo1.id],
+            crate::domain::model::value_objects::ActionOrderIndex::new(0),
+        )
+        .unwrap();
+        state_repo.save(&initial_state).await.unwrap();
+
+        // 実行: プレイヤーの手番になるまで進むはず
+        usecase
+            .progress_until_player_turn(Some(daimyo1.id))
+            .await
+            .expect("成功するはず");
+
+        let state = state_repo.get().await.unwrap().unwrap();
+        assert_eq!(state.current_daimyo(), Some(daimyo1.id));
+        assert_eq!(state.current_action_index().value(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_progress_until_player_turn_unreachable() {
+        let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
+        let state_repo = Arc::new(MockGameStateRepository::new());
+        let event_dispatcher = Arc::new(MockEventDispatcher::new());
+
+        let daimyo_cpu = create_test_daimyo("CPU");
+        daimyo_repo.setup(daimyo_cpu.clone()).await;
+
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            daimyo_repo,
+            state_repo.clone(),
+            event_dispatcher,
+        );
+
+        // CPU一人のみの状態
+        let initial_state = GameState::new(
+            crate::domain::model::value_objects::TurnNumber::new(1),
+            vec![daimyo_cpu.id],
+            crate::domain::model::value_objects::ActionOrderIndex::new(0),
+        )
+        .unwrap();
+        state_repo.save(&initial_state).await.unwrap();
+
+        // 存在しない大名IDを指定して実行
+        let unknown_id = DaimyoId(Uuid::new_v4());
+        let result = usecase.progress_until_player_turn(Some(unknown_id)).await;
+
+        // エラーになるはず
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("プレイヤーの手番に到達できませんでした"));
+    }
+
+    #[tokio::test]
+    async fn test_progress_until_player_turn_initial_start() {
+        let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
+        let state_repo = Arc::new(MockGameStateRepository::new());
+        let event_dispatcher = Arc::new(MockEventDispatcher::new());
+
+        let daimyo1 = create_test_daimyo("プレイヤー");
+        daimyo_repo.setup(daimyo1.clone()).await;
+
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            daimyo_repo,
+            state_repo.clone(),
+            event_dispatcher,
+        );
+
+        // GameState が None の状態から開始
+        usecase
+            .progress_until_player_turn(Some(daimyo1.id))
+            .await
+            .expect("初期化されて成功するはず");
+
+        let state = state_repo.get().await.unwrap().unwrap();
+        assert_eq!(state.current_daimyo(), Some(daimyo1.id));
+        assert_eq!(state.current_turn().value(), 1);
     }
 }

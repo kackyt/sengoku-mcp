@@ -59,6 +59,7 @@ impl TurnProgressionUseCase {
         &self,
         player_id: Option<crate::domain::model::value_objects::DaimyoId>,
     ) -> Result<(), anyhow::Error> {
+        let mut reached = false;
         for _ in 0..100 {
             // 安全のため上限回数を設ける
             let state = self.game_state_repo.get().await?;
@@ -77,6 +78,7 @@ impl TurnProgressionUseCase {
             // プレイヤーの手番であり、かつターンが完了していなければ停止
             if let (Some(pid), Some(cid)) = (player_id, current_daimyo) {
                 if pid == cid && !state.is_turn_completed() {
+                    reached = true;
                     break;
                 }
             }
@@ -86,9 +88,17 @@ impl TurnProgressionUseCase {
 
             // プレイヤー未指定（観戦モードなど）の場合は1回で抜ける
             if player_id.is_none() {
+                reached = true;
                 break;
             }
         }
+
+        if !reached {
+            return Err(anyhow::anyhow!(
+                "プレイヤーの手番に到達できませんでした（ループ上限到達）"
+            ));
+        }
+
         Ok(())
     }
 
@@ -109,7 +119,7 @@ impl TurnProgressionUseCase {
                         turn: TurnNumber::new(1),
                     })
                     .await?;
-                initial_state
+                return Ok(());
             }
         };
 
