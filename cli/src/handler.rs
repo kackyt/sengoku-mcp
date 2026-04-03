@@ -382,8 +382,18 @@ impl EventHandler {
                                     sub_state: crate::screen::WarSubState::Normal,
                                 };
                             } else if command == DomesticCommand::Transport {
-                                // 輸送（各資源の10%を送る）
-                                let kuni = app.current_kuni.as_ref().unwrap();
+                                // 輸送（各資源 of 10%を送る）
+                                let Some(kuni) = app.current_kuni.as_ref() else {
+                                    app.screen = ScreenState::Domestic {
+                                        selected_kuni: kuni_id,
+                                        cursor,
+                                        sub_state: DomesticSubState::ShowMessage {
+                                            message: "国の情報が取得できませんでした".to_string(),
+                                            next_state: Box::new(DomesticSubState::Normal),
+                                        },
+                                    };
+                                    return Ok(());
+                                };
                                 let target_kin = kuni.resource.kin.mul_percent(10);
                                 let target_hei = kuni.resource.hei.mul_percent(10);
                                 let target_kome = kuni.resource.kome.mul_percent(10);
