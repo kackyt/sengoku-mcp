@@ -110,6 +110,20 @@ impl App {
             terminal.draw(|f| crate::ui::draw(self, f))?;
             on_draw(terminal);
 
+            // プレイヤーの手番でない場合は自動進行
+            if self.selected_daimyo_id.is_some() && !self.is_player_turn() {
+                match &self.screen {
+                    ScreenState::Domestic { .. } | ScreenState::War { .. } => {
+                        // 1ステップ進める
+                        self.turn_progression_usecase.progress().await?;
+                        // CPUの行動を見せるために少し待機
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
             match get_event(Duration::from_millis(16))? {
                 Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                     EventHandler::handle_key(self, key).await?;
@@ -118,5 +132,13 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    pub fn is_player_turn(&self) -> bool {
+        if let (Some(pid), Some(current)) = (self.selected_daimyo_id, &self.current_daimyo) {
+            pid == current.id
+        } else {
+            false
+        }
     }
 }

@@ -169,34 +169,51 @@ fn render_domestic(
         Paragraph::new(status_text).block(Block::default().title("領地情報").borders(Borders::ALL));
     f.render_widget(status, chunks[0]);
 
-    // Right: Commands
-    let commands = vec![
-        ListItem::new(" 1. 戦争"),
-        ListItem::new(" 2. 米売り"),
-        ListItem::new(" 3. 米買い"),
-        ListItem::new(" 4. 開墾"),
-        ListItem::new(" 5. 町造り"),
-        ListItem::new(" 6. 雇用"),
-        ListItem::new(" 7. 解雇"),
-        ListItem::new(" 8. 施し"),
-        ListItem::new(" 9. 輸送"),
-        ListItem::new("10. 委任"),
-        ListItem::new("11. 解任"),
-        ListItem::new("12. 情報"),
-        ListItem::new("13. 終了"),
-    ];
-    let list = List::new(commands)
-        .block(Block::default().title("行動メニュー").borders(Borders::ALL))
-        .highlight_style(
-            Style::default()
-                .bg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
+    // Right: Commands (プレイヤーの手番の時だけ表示)
+    if app.is_player_turn() {
+        let commands = vec![
+            ListItem::new(" 1. 戦争"),
+            ListItem::new(" 2. 米売り"),
+            ListItem::new(" 3. 米買い"),
+            ListItem::new(" 4. 開墾"),
+            ListItem::new(" 5. 町造り"),
+            ListItem::new(" 6. 雇用"),
+            ListItem::new(" 7. 解雇"),
+            ListItem::new(" 8. 施し"),
+            ListItem::new(" 9. 輸送"),
+            ListItem::new("10. 委任"),
+            ListItem::new("11. 解任"),
+            ListItem::new("12. 情報"),
+            ListItem::new("13. 終了"),
+        ];
+        let list = List::new(commands)
+            .block(Block::default().title("行動メニュー").borders(Borders::ALL))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
 
-    let mut state = ratatui::widgets::ListState::default();
-    state.select(Some(cursor));
-    f.render_stateful_widget(list, chunks[1], &mut state);
+        let mut state = ratatui::widgets::ListState::default();
+        state.select(Some(cursor));
+        f.render_stateful_widget(list, chunks[1], &mut state);
+    } else {
+        let text = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                " 他の大名が行動中です...",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::ITALIC),
+            )),
+            Line::from(" しばらくお待ちください。"),
+        ];
+        let p = Paragraph::new(text)
+            .block(Block::default().title("状況").borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        f.render_widget(p, chunks[1]);
+    }
 }
 
 fn render_war(

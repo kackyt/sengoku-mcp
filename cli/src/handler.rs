@@ -48,10 +48,6 @@ impl EventHandler {
     async fn handle_title(app: &mut App, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Enter => {
-                // ゲーム開始時に初期ターンを生成し、プレイヤーの手番まで進める
-                app.turn_progression_usecase
-                    .progress_until_player_turn(app.selected_daimyo_id)
-                    .await?;
                 app.screen = ScreenState::SelectDaimyo { cursor: 0 };
             }
             KeyCode::Char('q') | KeyCode::Esc => {
@@ -84,6 +80,11 @@ impl EventHandler {
                 let selected_daimyo = &daimyos[cursor];
                 // プレイヤーの大名を記憶する
                 app.selected_daimyo_id = Some(selected_daimyo.id);
+
+                // プレイヤーの手番まで自動的に進める
+                app.turn_progression_usecase
+                    .progress_until_player_turn(app.selected_daimyo_id)
+                    .await?;
 
                 // 選択した大名の最初の国を操作対象にする
                 let kunis: Vec<Kuni> = app
