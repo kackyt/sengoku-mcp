@@ -61,6 +61,24 @@ fn render_header(app: &App, f: &mut Frame, area: Rect) {
 }
 
 fn render_footer(app: &App, f: &mut Frame, area: Rect) {
+    if !app.is_player_turn() {
+        match &app.screen {
+            ScreenState::Domestic { .. } | ScreenState::War { .. } => {
+                let footer = Paragraph::new("他の大名が行動中です...")
+                    .alignment(Alignment::Center)
+                    .style(
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::ITALIC),
+                    )
+                    .block(Block::default().borders(Borders::ALL));
+                f.render_widget(footer, area);
+                return;
+            }
+            _ => {}
+        }
+    }
+
     let footer_text = match &app.screen {
         ScreenState::Title => "Enter: 開始 | Esc/q: 終了",
         ScreenState::SelectDaimyo { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
