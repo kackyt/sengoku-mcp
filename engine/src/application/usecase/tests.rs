@@ -5,7 +5,7 @@ use crate::domain::error::DomainError;
 use crate::domain::model::{
     kuni::Kuni,
     resource::{DevelopmentStats, Resource},
-    value_objects::{Amount, DaimyoId, IninFlag, KuniId},
+    value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId},
 };
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
@@ -98,7 +98,7 @@ fn create_test_kuni() -> Kuni {
         "TestKuni".to_string(),
         daimyo_id,
         Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 1000 * 10),
-        DevelopmentStats::new(100 * 10, 100 * 10, 60),
+        DevelopmentStats::new(100 * 100, 100 * 100, 60), // 石高と町は Amount なので 100 * INTERNAL_SCALE
         IninFlag(false),
     )
 }
@@ -115,7 +115,7 @@ async fn test_domestic_sell_rice() {
 
     let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
     usecase
-        .sell_rice(kuni_id, Amount::new(100))
+        .sell_rice(kuni_id, DisplayAmount::new(1))
         .await
         .expect("売却成功");
 
@@ -136,7 +136,7 @@ async fn test_domestic_buy_rice() {
 
     let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
     usecase
-        .buy_rice(kuni_id, Amount::new(100))
+        .buy_rice(kuni_id, DisplayAmount::new(1))
         .await
         .expect("購入成功");
 
@@ -157,7 +157,7 @@ async fn test_domestic_recruit() {
 
     let usecase = DomesticUseCase::new(repo.clone(), neighbor_repo.clone());
     usecase
-        .recruit(kuni_id, Amount::new(100))
+        .recruit(kuni_id, DisplayAmount::new(1))
         .await
         .expect("徴募成功");
 
@@ -186,9 +186,9 @@ async fn test_domestic_transport_success_when_adjacent() {
         .transport(
             from_id,
             to_id,
-            Amount::new(100),
-            Amount::new(0),
-            Amount::new(0),
+            DisplayAmount::new(1),
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
         )
         .await;
     assert!(res.is_ok());
@@ -216,9 +216,9 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
         .transport(
             from_id,
             to_id,
-            Amount::new(100),
-            Amount::new(0),
-            Amount::new(0),
+            DisplayAmount::new(1),
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
         )
         .await;
     assert!(res.is_err());
@@ -249,7 +249,7 @@ async fn test_battle_execution_success_when_adjacent() {
             defender_id,
             Tactic::Normal,
             Tactic::Normal,
-            Amount::new(500),
+            DisplayAmount::new(5),
         )
         .await
         .expect("合戦成功");
@@ -287,7 +287,7 @@ async fn test_battle_execution_fails_when_not_adjacent() {
             defender_id,
             Tactic::Normal,
             Tactic::Normal,
-            Amount::new(500),
+            DisplayAmount::new(5),
         )
         .await;
 

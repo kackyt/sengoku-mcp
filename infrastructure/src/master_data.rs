@@ -1,7 +1,9 @@
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::resource::{DevelopmentStats, Resource};
-use engine::domain::model::value_objects::{Amount, DaimyoId, IninFlag, KuniId, Rate};
+use engine::domain::model::value_objects::{
+    Amount, DaimyoId, DisplayAmount, IninFlag, KuniId, Rate,
+};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -121,18 +123,18 @@ impl MasterDataLoader {
             let kuni_id = KuniId::new();
             id_map.insert(record.id, kuni_id);
 
-            // 資源データの構築 (内部計算用に10倍する)
+            // 資源データの構築
             let resource = Resource {
-                kin: Amount::new(record.kin * 10),
-                hei: Amount::new(record.hei * 10),
-                kome: Amount::new(record.kome * 10),
-                jinko: Amount::new(record.jinko * 10),
+                kin: DisplayAmount::new(record.kin).to_internal(),
+                hei: DisplayAmount::new(record.hei).to_internal(),
+                kome: DisplayAmount::new(record.kome).to_internal(),
+                jinko: DisplayAmount::new(record.jinko).to_internal(),
             };
 
-            // 開発ステータスの構築 (内部計算用に10倍する)
+            // 開発ステータスの構築
             let stats = DevelopmentStats {
-                kokudaka: Amount::new(record.kokudaka * 10),
-                machi: Amount::new(record.machi * 10),
+                kokudaka: DisplayAmount::new(record.kokudaka).to_internal(),
+                machi: DisplayAmount::new(record.machi).to_internal(),
                 tyu: Rate::new(record.tyu), // 忠誠度は%なのでそのまま
             };
 
@@ -143,7 +145,7 @@ impl MasterDataLoader {
                 daimyo.id,
                 resource,
                 stats,
-                IninFlag::new(false),
+                IninFlag(false),
             );
             kunis.push(kuni);
         }

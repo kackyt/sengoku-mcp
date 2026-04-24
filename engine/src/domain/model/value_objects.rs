@@ -1,8 +1,33 @@
 use std::fmt;
 
-/// 金額、人数、量などを表す基本単位。
-/// PRDで定義される BIAS (10倍) を内部スケールとして使用します。
-pub const INTERNAL_SCALE: u32 = 10;
+/// 表示用の金額、人数、量などを表す単位（整数）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DisplayAmount(pub u32);
+
+impl DisplayAmount {
+    pub fn new(val: u32) -> Self {
+        Self(val)
+    }
+
+    /// 内部単位の Amount に変換します
+    pub fn to_internal(&self) -> Amount {
+        Amount(self.0 * INTERNAL_SCALE)
+    }
+
+    pub fn value(&self) -> u32 {
+        self.0
+    }
+}
+
+impl fmt::Display for DisplayAmount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// 内部計算用の金額、人数、量などを表す基本単位。
+/// PRDで定義される BIAS (100倍) を内部スケールとして使用します。
+pub const INTERNAL_SCALE: u32 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Amount(pub u32);
@@ -12,14 +37,9 @@ impl Amount {
         Self(val)
     }
 
-    /// 表示用の値（整数）から内部単位の Amount を作成します
-    pub fn from_display(val: u32) -> Self {
-        Self(val * INTERNAL_SCALE)
-    }
-
-    /// 内部単位の値を表示用の整数に変換します
-    pub fn to_display(&self) -> u32 {
-        self.0 / INTERNAL_SCALE
+    /// 表示用の単位 DisplayAmount に変換します（端数は切り捨て）
+    pub fn to_display(&self) -> DisplayAmount {
+        DisplayAmount(self.0 / INTERNAL_SCALE)
     }
 
     pub fn value(&self) -> u32 {

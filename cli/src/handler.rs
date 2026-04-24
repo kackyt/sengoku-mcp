@@ -3,7 +3,7 @@ use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use engine::domain::model::kuni::Kuni;
-use engine::domain::model::value_objects::Amount;
+use engine::domain::model::value_objects::DisplayAmount;
 
 pub struct EventHandler;
 
@@ -71,10 +71,8 @@ impl EventHandler {
                     cursor: cursor.saturating_sub(1),
                 };
             }
-            KeyCode::Down => {
-                if cursor < daimyos.len() - 1 {
-                    app.screen = ScreenState::SelectDaimyo { cursor: cursor + 1 };
-                }
+            KeyCode::Down if cursor < daimyos.len() - 1 => {
+                app.screen = ScreenState::SelectDaimyo { cursor: cursor + 1 };
             }
             KeyCode::Enter => {
                 let selected_daimyo = &daimyos[cursor];
@@ -126,15 +124,13 @@ impl EventHandler {
                             sub_state: DomesticSubState::Normal,
                         };
                     }
-                    KeyCode::Down => {
-                        if cursor < 12 {
-                            // 13コマンド
-                            app.screen = ScreenState::Domestic {
-                                selected_kuni: kuni_id,
-                                cursor: cursor + 1,
-                                sub_state: DomesticSubState::Normal,
-                            };
-                        }
+                    KeyCode::Down if cursor < 12 => {
+                        // 13コマンド
+                        app.screen = ScreenState::Domestic {
+                            selected_kuni: kuni_id,
+                            cursor: cursor + 1,
+                            sub_state: DomesticSubState::Normal,
+                        };
                     }
                     KeyCode::Enter => {
                         let command = match cursor {
@@ -265,7 +261,7 @@ impl EventHandler {
                             return Ok(());
                         }
                     };
-                    let amount = Amount::from_display(amount_val);
+                    let amount = DisplayAmount::new(amount_val);
 
                     let result = match command {
                         DomesticCommand::SellRice => app
@@ -361,17 +357,15 @@ impl EventHandler {
                             },
                         };
                     }
-                    KeyCode::Down => {
-                        if !neighbors.is_empty() && target_cursor < neighbors.len() - 1 {
-                            app.screen = ScreenState::Domestic {
-                                selected_kuni: kuni_id,
-                                cursor,
-                                sub_state: DomesticSubState::SelectTargetKuni {
-                                    command,
-                                    cursor: target_cursor + 1,
-                                },
-                            };
-                        }
+                    KeyCode::Down if !neighbors.is_empty() && target_cursor < neighbors.len() - 1 => {
+                        app.screen = ScreenState::Domestic {
+                            selected_kuni: kuni_id,
+                            cursor,
+                            sub_state: DomesticSubState::SelectTargetKuni {
+                                command,
+                                cursor: target_cursor + 1,
+                            },
+                        };
                     }
                     KeyCode::Enter => {
                         if let Some(target_id) = neighbors.get(target_cursor) {
@@ -404,9 +398,9 @@ impl EventHandler {
                                     .transport(
                                         kuni_id,
                                         *target_id,
-                                        target_kin,
-                                        target_hei,
-                                        target_kome,
+                                        target_kin.to_display(),
+                                        target_hei.to_display(),
+                                        target_kome.to_display(),
                                     )
                                     .await;
 
@@ -501,15 +495,13 @@ impl EventHandler {
                             sub_state: crate::screen::WarSubState::SelectTactic,
                         };
                     }
-                    KeyCode::Down => {
-                        if cursor < 3 {
-                            app.screen = ScreenState::War {
-                                attacker_kuni: attacker_id,
-                                defender_kuni: defender_id,
-                                cursor: cursor + 1,
-                                sub_state: crate::screen::WarSubState::SelectTactic,
-                            };
-                        }
+                    KeyCode::Down if cursor < 3 => {
+                        app.screen = ScreenState::War {
+                            attacker_kuni: attacker_id,
+                            defender_kuni: defender_id,
+                            cursor: cursor + 1,
+                            sub_state: crate::screen::WarSubState::SelectTactic,
+                        };
                     }
                     KeyCode::Enter => {
                         use engine::domain::service::battle_service::Tactic;
@@ -532,7 +524,7 @@ impl EventHandler {
                                 defender_id,
                                 tactic,
                                 Tactic::Normal,
-                                Amount::from_display(100), // 投入兵力
+                                DisplayAmount::new(100), // 投入兵力
                             )
                             .await?;
 

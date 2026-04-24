@@ -1,5 +1,6 @@
 use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
+use engine::domain::model::value_objects::DisplayAmount;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -161,7 +162,15 @@ fn render_domestic(
             kuni.stats.tyu.value(),
         )
     } else {
-        (0, 0, 0, 0, 0, 0, 0)
+        (
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
+            DisplayAmount::new(0),
+            0,
+        )
     };
 
     let daimyo_name = app

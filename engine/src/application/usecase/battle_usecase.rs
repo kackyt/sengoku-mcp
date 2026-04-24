@@ -1,6 +1,6 @@
 use crate::domain::{
     error::DomainError,
-    model::value_objects::{Amount, KuniId},
+    model::value_objects::{DisplayAmount, KuniId},
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
     service::battle_service::{BattleResult, BattleService, Tactic},
@@ -33,7 +33,7 @@ impl BattleUseCase {
         defender_id: KuniId,
         attacker_tactic: Tactic,
         defender_tactic: Tactic,
-        attacker_troops: Amount,
+        attacker_troops: DisplayAmount,
     ) -> Result<BattleResult, anyhow::Error> {
         let attacker = self
             .kuni_repo
@@ -50,7 +50,8 @@ impl BattleUseCase {
             return Err(DomainError::NotAdjacent.into());
         }
 
-        if attacker_troops.value() > attacker.resource.hei.value() {
+        let internal_troops = attacker_troops.to_internal();
+        if internal_troops.value() > attacker.resource.hei.value() {
             return Err(anyhow::anyhow!("攻撃側の兵数が不足しています"));
         }
 
@@ -59,7 +60,7 @@ impl BattleUseCase {
             defender,
             attacker_tactic,
             defender_tactic,
-            attacker_troops.value(),
+            internal_troops.value(),
         )?;
 
         // 戦闘後の状態を保存
