@@ -1,5 +1,5 @@
+use crate::domain::model::value_objects::{KuniId, Amount};
 use serde::{Deserialize, Serialize};
-use crate::domain::model::value_objects::{KuniId, DisplayAmount};
 
 /// 戦闘時の策
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,13 +43,13 @@ pub struct WarStatus {
     pub defender_id: KuniId,
 
     // 攻撃側
-    pub attacker_hei: DisplayAmount,
-    pub attacker_kome: DisplayAmount,
+    pub attacker_hei: Amount,
+    pub attacker_kome: Amount,
     pub attacker_morale: u32,
 
     // 防御側
-    pub defender_hei: DisplayAmount,
-    pub defender_kome: DisplayAmount,
+    pub defender_hei: Amount,
+    pub defender_kome: Amount,
     pub defender_morale: u32,
 
     pub winner: Option<BattleSide>,

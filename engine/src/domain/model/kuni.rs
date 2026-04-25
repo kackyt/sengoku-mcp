@@ -93,8 +93,8 @@ impl Kuni {
         let internal_amount = amount.to_internal();
         let gain = internal_amount.mul_percent(rng);
 
-        self.consume_resource(Amount::new(0), Amount::new(0), internal_amount)?;
-        self.add_resource(gain, Amount::new(0), Amount::new(0));
+        self.consume_resource(Amount::zero(), Amount::zero(), internal_amount)?;
+        self.add_resource(gain, Amount::zero(), Amount::zero());
         Ok(gain.to_display())
     }
 
@@ -105,8 +105,8 @@ impl Kuni {
         let internal_amount = amount.to_internal();
         let cost = internal_amount.mul_percent(rng);
 
-        self.consume_resource(cost, Amount::new(0), Amount::new(0))?;
-        self.add_resource(Amount::new(0), Amount::new(0), internal_amount);
+        self.consume_resource(cost, Amount::zero(), Amount::zero())?;
+        self.add_resource(Amount::zero(), Amount::zero(), internal_amount);
         Ok(cost.to_display())
     }
 
@@ -133,7 +133,7 @@ impl Kuni {
         let internal_investment = investment.to_internal();
         let gain = internal_investment.mul_percent(multiplier);
 
-        self.consume_resource(internal_investment, Amount::new(0), Amount::new(0))?;
+        self.consume_resource(internal_investment, Amount::zero(), Amount::zero())?;
         self.stats.machi = self.stats.machi.add(gain);
         Ok(gain.to_display())
     }
@@ -151,10 +151,10 @@ impl Kuni {
             return Err(DomainError::InsufficientResource("人口不足".to_string()));
         }
 
-        self.consume_resource(Amount::new(cost), Amount::new(0), Amount::new(0))?;
+        self.consume_resource(Amount::new(cost), Amount::zero(), Amount::zero())?;
         self.modify_jinko(-(population_cost as i32));
         self.modify_tyu(-(tyu_loss as i32));
-        self.add_resource(Amount::new(0), internal_amount, Amount::new(0));
+        self.add_resource(Amount::zero(), internal_amount, Amount::zero());
         Ok(())
     }
 
@@ -163,7 +163,7 @@ impl Kuni {
     /// 獲得：忠誠度 += 投入量 / 2, 人口 += 投入量
     pub fn dismiss_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
-        self.consume_resource(Amount::new(0), internal_amount, Amount::new(0))?;
+        self.consume_resource(Amount::zero(), internal_amount, Amount::zero())?;
         self.modify_jinko(internal_amount.value() as i32);
         self.modify_tyu((amount.value() / 2) as i32); // 忠誠度は表示値をベースにする
         Ok(())
@@ -173,7 +173,7 @@ impl Kuni {
     /// 獲得：忠誠度 += 投入量 * (50 + random(50)) / 100
     pub fn give_charity(&mut self, amount: DisplayAmount) -> Result<u32, DomainError> {
         let internal_amount = amount.to_internal();
-        self.consume_resource(Amount::new(0), Amount::new(0), internal_amount)?;
+        self.consume_resource(Amount::zero(), Amount::zero(), internal_amount)?;
         let before = self.stats.tyu.value();
 
         let multiplier: u32 = rand::thread_rng().gen_range(50..=100);

@@ -34,7 +34,7 @@ impl BattleService {
         }
 
         // --- ダメージ計算と策の効果 ---
-        let mut base_damage = status.attacker_hei.to_internal();
+        let base_damage = status.attacker_hei;
 
         let damage = match (attacker_tactic, defender_tactic) {
             (Tactic::Normal, Tactic::Normal) => base_damage.mul_percent(Self::DMG_NORMAL),
@@ -51,62 +51,48 @@ impl BattleService {
             }
             (Tactic::Fire, Tactic::Fire) => {
                 // 火計同士で自軍に被害
-                let loss = (status.attacker_hei.to_internal().value() * Self::FIRE_HEI_LOSS_RATE)
-                    / Self::PERCENT_BASE;
-                status.attacker_hei = status
-                    .attacker_hei
-                    .to_internal()
-                    .sub(Amount::new(loss))
-                    .to_display();
+                let loss =
+                    (status.attacker_hei.value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
+                status.attacker_hei = status.attacker_hei.sub(Amount::new(loss));
                 status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE);
                 base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (Tactic::Fire, _) => {
                 // 火計成功
-                let loss = (status.defender_kome.to_internal().value() * Self::FIRE_KOME_LOSS_RATE)
-                    / Self::PERCENT_BASE;
-                status.defender_kome = status
-                    .defender_kome
-                    .to_internal()
-                    .sub(Amount::new(loss))
-                    .to_display();
-                status.defender_morale = status
-                    .defender_morale
-                    .saturating_sub(Self::MORALE_CHANGE as u32);
-                status.attacker_morale = status
-                    .attacker_morale
-                    .saturating_add(Self::MORALE_CHANGE as u32);
+                let loss =
+                    (status.defender_kome.value() * Self::FIRE_KOME_LOSS_RATE) / Self::PERCENT_BASE;
+                status.defender_kome = status.defender_kome.sub(Amount::new(loss));
+                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE);
+                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE);
                 base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (_, Tactic::Inspire) => {
                 status.defender_morale = status.defender_morale.saturating_add(15);
-                Amount::new(0)
+                Amount::zero()
             }
             _ => base_damage.mul_percent(Self::DMG_DEFAULT),
         };
 
         // ダメージ適用
-        status.defender_hei = status.defender_hei.to_internal().sub(damage).to_display();
+        status.defender_hei = status.defender_hei.sub(damage);
 
         // --- 兵糧消費 ---
-        let food_cost = (status.attacker_hei.to_internal().value() * Self::FOOD_CONSUMPTION_RATE)
-            / Self::PERCENT_BASE;
-        let a_kome_internal = status.attacker_kome.to_internal();
-        if a_kome_internal.value() < food_cost {
-            status.attacker_kome = Amount::new(0).to_display();
+        let food_cost = status.attacker_hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
+        if status.attacker_kome < food_cost {
+            status.attacker_kome = Amount::zero();
             status.attacker_morale = status.attacker_morale.saturating_sub(40);
         } else {
-            status.attacker_kome = a_kome_internal.sub(Amount::new(food_cost)).to_display();
+            status.attacker_kome = status.attacker_kome.sub(food_cost);
         }
 
         // --- 勝敗判定 ---
-        status.winner = if status.defender_hei.to_internal().value() == 0
-            || status.defender_kome.to_internal().value() == 0
+        status.winner = if status.defender_hei.is_zero()
+            || status.defender_kome.is_zero()
             || status.defender_morale == 0
         {
             Some(BattleSide::Attacker)
-        } else if status.attacker_hei.to_internal().value() == 0
-            || status.attacker_kome.to_internal().value() == 0
+        } else if status.attacker_hei.is_zero()
+            || status.attacker_kome.is_zero()
             || status.attacker_morale == 0
         {
             Some(BattleSide::Defender)
@@ -116,23 +102,12 @@ impl BattleService {
 
         // --- 勝利時のリソース接収 ---
         if status.winner == Some(BattleSide::Attacker) {
-            let a_hei = status
-                .attacker_hei
-                .to_internal()
-                .add(status.defender_hei.to_internal());
-            let a_kome = status
-                .attacker_kome
-                .to_internal()
-                .add(status.defender_kome.to_internal());
-            status.attacker_hei = a_hei.to_display();
-            status.attacker_kome = a_kome.to_display();
+            status.attacker_hei = status.attacker_hei.add(status.defender_hei);
+            status.attacker_kome = status.attacker_kome.add(status.defender_kome);
         }
 
         // 優勢度計算
-        status.advantage = Self::calculate_advantage(
-            status.attacker_hei.to_internal().value(),
-            status.defender_hei.to_internal().value(),
-        );
+        status.advantage = Self::calculate_advantage(status.attacker_hei, status.defender_hei);
 
         Ok(status)
     }
@@ -151,10 +126,12 @@ impl BattleService {
     }
 
     /// 戦況の優劣を判定します
-    pub fn calculate_advantage(attacker_hei: u32, defender_hei: u32) -> BattleAdvantage {
-        if attacker_hei > defender_hei * 2 {
+    pub fn calculate_advantage(attacker_hei: Amount, defender_hei: Amount) -> BattleAdvantage {
+        let a_val = attacker_hei.value();
+        let d_val = defender_hei.value();
+        if a_val > d_val * 2 {
             BattleAdvantage::Advantage
-        } else if defender_hei > attacker_hei * 2 {
+        } else if d_val > a_val * 2 {
             BattleAdvantage::Disadvantage
         } else {
             BattleAdvantage::Even

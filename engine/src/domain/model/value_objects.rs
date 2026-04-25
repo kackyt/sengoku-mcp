@@ -10,6 +10,14 @@ impl DisplayAmount {
         Self(val)
     }
 
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
     /// 内部単位の Amount に変換します
     pub fn to_internal(&self) -> Amount {
         Amount(self.0 * INTERNAL_SCALE)
@@ -36,6 +44,14 @@ pub struct Amount(pub u32);
 impl Amount {
     pub fn new(val: u32) -> Self {
         Self(val)
+    }
+
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
     }
 
     /// 表示用の単位 DisplayAmount に変換します（端数は切り捨て）

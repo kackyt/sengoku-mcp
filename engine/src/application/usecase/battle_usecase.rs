@@ -61,8 +61,8 @@ impl BattleUseCase {
 
                     occupied.set_daimyo_id(home.daimyo_id);
                     // 占領地に軍勢を配置（統合）
-                    occupied.resource.hei = next_status.attacker_hei.to_internal();
-                    occupied.resource.kome = next_status.attacker_kome.to_internal();
+                    occupied.resource.hei = next_status.attacker_hei;
+                    occupied.resource.kome = next_status.attacker_kome;
                     // 忠誠度は一旦低めに設定
                     occupied.modify_tyu(-50);
                     self.kuni_repo.save(&occupied).await?;
@@ -78,8 +78,8 @@ impl BattleUseCase {
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
 
-                    defender.resource.hei = next_status.defender_hei.to_internal();
-                    defender.resource.kome = next_status.defender_kome.to_internal();
+                    defender.resource.hei = next_status.defender_hei;
+                    defender.resource.kome = next_status.defender_kome;
                     defender.stats.tyu =
                         crate::domain::model::value_objects::Rate::new(next_status.defender_morale);
                     self.kuni_repo.save(&defender).await?;
@@ -96,7 +96,7 @@ impl BattleUseCase {
         Ok(next_status)
     }
 
-    /// start_war の戻り値も修正
+    /// 合戦を開始します
     pub async fn start_war(
         &self,
         attacker_id: KuniId,
@@ -117,14 +117,14 @@ impl BattleUseCase {
         let hei_internal = hei.to_internal();
         let kome_internal = kome.to_internal();
 
-        if attacker.resource.hei.value() < hei_internal.value() {
+        if attacker.resource.hei < hei_internal {
             return Err(anyhow::anyhow!("兵数が不足しています"));
         }
-        if attacker.resource.kome.value() < kome_internal.value() {
+        if attacker.resource.kome < kome_internal {
             return Err(anyhow::anyhow!("兵糧が不足しています"));
         }
 
-        attacker.consume_resource(Amount::new(0), hei_internal, kome_internal)?;
+        attacker.consume_resource(Amount::zero(), hei_internal, kome_internal)?;
         self.kuni_repo.save(&attacker).await?;
 
         let defender = self
@@ -136,11 +136,11 @@ impl BattleUseCase {
         let status = WarStatus {
             attacker_id,
             defender_id,
-            attacker_hei: hei,
-            attacker_kome: kome,
+            attacker_hei: hei_internal,
+            attacker_kome: kome_internal,
             attacker_morale: attacker.stats.tyu.value(),
-            defender_hei: defender.resource.hei.to_display(),
-            defender_kome: defender.resource.kome.to_display(),
+            defender_hei: defender.resource.hei,
+            defender_kome: defender.resource.kome,
             defender_morale: defender.stats.tyu.value(),
             winner: None,
             advantage: BattleAdvantage::Even,
