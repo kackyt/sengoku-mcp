@@ -38,87 +38,54 @@ impl BattleUseCase {
         attacker_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
         let defender_tactic = BattleService::decide_tactic();
-        let mut attacker_proxy = self
-            .kuni_repo
-            .find_by_id(&status.attacker_id)
-            .await?
-            .ok_or_else(|| {
-                anyhow::anyhow!("攻撃側の国が見つかりません: {:?}", status.attacker_id)
-            })?;
 
-        // 攻撃側の状態を反映
-        attacker_proxy.resource.hei = status.attacker_hei.to_internal();
-        attacker_proxy.resource.kome = status.attacker_kome.to_internal();
-        attacker_proxy.stats.tyu = crate::domain::model::value_objects::Rate::new(status.attacker_morale);
-
-        let mut defender_proxy = self
-            .kuni_repo
-            .find_by_id(&status.defender_id)
-            .await?
-            .ok_or_else(|| {
-                anyhow::anyhow!("防御側の国が見つかりません: {:?}", status.defender_id)
-            })?;
-
-        // 防御側の状態も反映（対称性）
-        defender_proxy.resource.hei = status.defender_hei.to_internal();
-        defender_proxy.resource.kome = status.defender_kome.to_internal();
-        defender_proxy.stats.tyu = crate::domain::model::value_objects::Rate::new(status.defender_morale);
-
-        let result = BattleService::calculate_turn(
-            attacker_proxy,
-            defender_proxy,
-            attacker_tactic,
-            defender_tactic,
-            status.attacker_hei.to_internal().value(),
-        )?;
-
-        let advantage = BattleService::calculate_advantage(
-            result.attacker_kuni.resource.hei.value(),
-            result.defender_kuni.resource.hei.value(),
-        );
-        let next_status = WarStatus {
-            attacker_id: status.attacker_id,
-            defender_id: status.defender_id,
-            attacker_hei: result.attacker_kuni.resource.hei.to_display(),
-            attacker_kome: result.attacker_kuni.resource.kome.to_display(),
-            attacker_morale: result.attacker_kuni.stats.tyu.value(),
-            defender_hei: result.defender_kuni.resource.hei.to_display(),
-            defender_kome: result.defender_kuni.resource.kome.to_display(),
-            defender_morale: result.defender_kuni.stats.tyu.value(),
-            winner: result.winner,
-            advantage,
-        };
+        let next_status = BattleService::calculate_turn(status, attacker_tactic, defender_tactic)?;
 
         // 戦争決着時の処理
-        if let Some(winner) = result.winner {
+        if let Some(winner) = next_status.winner {
             match winner {
                 BattleSide::Attacker => {
                     // 攻撃側勝利：占領処理
-                    let mut occupied = result.defender_kuni;
+                    let mut occupied = self
+                        .kuni_repo
+                        .find_by_id(&next_status.defender_id)
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
+
                     // 本国の支配者を確認
                     let home = self
                         .kuni_repo
-                        .find_by_id(&status.attacker_id)
+                        .find_by_id(&next_status.attacker_id)
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("本国が見つかりません"))?;
 
                     occupied.set_daimyo_id(home.daimyo_id);
                     // 占領地に軍勢を配置（統合）
-                    occupied.resource.hei = result.attacker_kuni.resource.hei;
-                    occupied.resource.kome = result.attacker_kuni.resource.kome;
+                    occupied.resource.hei = next_status.attacker_hei.to_internal();
+                    occupied.resource.kome = next_status.attacker_kome.to_internal();
                     // 忠誠度は一旦低めに設定
                     occupied.modify_tyu(-50);
                     self.kuni_repo.save(&occupied).await?;
 
                     // 合戦状態を削除
-                    self.battle_repo.delete_by_attacker(&status.attacker_id).await?;
+                    self.battle_repo.delete_by_attacker(&next_status.attacker_id).await?;
                 }
                 BattleSide::Defender => {
-                    // 防御側勝利：領土防衛成功
-                    self.kuni_repo.save(&result.defender_kuni).await?;
+                    // 防御側勝利：領土防衛成功（防御側の損害を反映）
+                    let mut defender = self
+                        .kuni_repo
+                        .find_by_id(&next_status.defender_id)
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
+
+                    defender.resource.hei = next_status.defender_hei.to_internal();
+                    defender.resource.kome = next_status.defender_kome.to_internal();
+                    defender.stats.tyu =
+                        crate::domain::model::value_objects::Rate::new(next_status.defender_morale);
+                    self.kuni_repo.save(&defender).await?;
 
                     // 合戦状態を削除
-                    self.battle_repo.delete_by_attacker(&status.attacker_id).await?;
+                    self.battle_repo.delete_by_attacker(&next_status.attacker_id).await?;
                 }
             }
         } else {

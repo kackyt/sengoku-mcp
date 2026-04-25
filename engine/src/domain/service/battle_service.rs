@@ -1,18 +1,6 @@
 use crate::domain::error::DomainError;
-use crate::domain::model::battle::{BattleAdvantage, BattleSide, Tactic};
-use crate::domain::model::kuni::Kuni;
+use crate::domain::model::battle::{BattleAdvantage, BattleSide, Tactic, WarStatus};
 use crate::domain::model::value_objects::Amount;
-
-/// 戦闘結果
-#[derive(Debug)]
-pub struct BattleResult {
-    /// 攻撃側の国（戦闘後の状態）
-    pub attacker_kuni: Kuni,
-    /// 防御側の国（戦闘後の状態）
-    pub defender_kuni: Kuni,
-    /// 勝者
-    pub winner: Option<BattleSide>, // 決着がつかない場合は None
-}
 
 /// 戦闘計算を行うドメインサービス
 pub struct BattleService;
@@ -31,30 +19,22 @@ impl BattleService {
 
     /// 1ターンの戦闘計算を行います
     pub fn calculate_turn(
-        mut attacker: Kuni,
-        mut defender: Kuni,
+        mut status: WarStatus,
         attacker_tactic: Tactic,
         defender_tactic: Tactic,
-        attacker_troops: u32,
-    ) -> Result<BattleResult, DomainError> {
+    ) -> Result<WarStatus, DomainError> {
         // --- 退却判定 ---
         if attacker_tactic == Tactic::Retreat {
-            return Ok(BattleResult {
-                attacker_kuni: attacker,
-                defender_kuni: defender,
-                winner: Some(BattleSide::Defender),
-            });
+            status.winner = Some(BattleSide::Defender);
+            return Ok(status);
         }
         if defender_tactic == Tactic::Retreat {
-            return Ok(BattleResult {
-                attacker_kuni: attacker,
-                defender_kuni: defender,
-                winner: Some(BattleSide::Attacker),
-            });
+            status.winner = Some(BattleSide::Attacker);
+            return Ok(status);
         }
 
         // --- ダメージ計算と策の効果 ---
-        let mut base_damage = attacker_troops;
+        let mut base_damage = status.attacker_hei.to_internal().value();
 
         match (attacker_tactic, defender_tactic) {
             (Tactic::Normal, Tactic::Normal) => {
@@ -63,35 +43,31 @@ impl BattleService {
             (Tactic::Surprise, Tactic::Normal) => {
                 // 奇襲失敗（簡易的な判定）
                 base_damage = (base_damage * Self::DMG_SURPRISE_FAIL) / Self::PERCENT_BASE;
-                defender.modify_tyu(-Self::MORALE_CHANGE);
-                attacker.modify_tyu(Self::MORALE_CHANGE);
+                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE as u32);
+                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE as u32);
             }
             (Tactic::Surprise, Tactic::Surprise) => {
                 // 奇襲成功
                 base_damage = (base_damage * Self::DMG_SURPRISE_SUCCESS) / Self::PERCENT_BASE;
-                attacker.modify_tyu(-Self::MORALE_CHANGE);
+                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE as u32);
             }
             (Tactic::Fire, Tactic::Fire) => {
                 // 火計同士で自軍に被害
-                let loss =
-                    (attacker.resource.hei.value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
-                let _ =
-                    attacker.consume_resource(Amount::new(0), Amount::new(loss), Amount::new(0));
-                attacker.modify_tyu(-Self::MORALE_CHANGE);
+                let loss = (status.attacker_hei.to_internal().value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
+                status.attacker_hei = status.attacker_hei.to_internal().sub(Amount::new(loss)).to_display();
+                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE as u32);
                 base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
             (Tactic::Fire, _) => {
                 // 火計成功
-                let loss = (defender.resource.kome.value() * Self::FIRE_KOME_LOSS_RATE)
-                    / Self::PERCENT_BASE;
-                let _ =
-                    defender.consume_resource(Amount::new(0), Amount::new(0), Amount::new(loss));
-                defender.modify_tyu(-Self::MORALE_CHANGE);
-                attacker.modify_tyu(Self::MORALE_CHANGE);
+                let loss = (status.defender_kome.to_internal().value() * Self::FIRE_KOME_LOSS_RATE) / Self::PERCENT_BASE;
+                status.defender_kome = status.defender_kome.to_internal().sub(Amount::new(loss)).to_display();
+                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE as u32);
+                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE as u32);
                 base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
             (_, Tactic::Inspire) => {
-                defender.modify_tyu(15);
+                status.defender_morale = status.defender_morale.saturating_add(15);
                 base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
             }
             _ => {
@@ -100,27 +76,29 @@ impl BattleService {
         }
 
         // ダメージ適用
-        let base_damage = base_damage.min(defender.resource.hei.value());
-        let _ = defender.consume_resource(Amount::new(0), Amount::new(base_damage), Amount::new(0));
+        let defender_hei_val = status.defender_hei.to_internal().value();
+        let actual_damage = base_damage.min(defender_hei_val);
+        status.defender_hei = status.defender_hei.to_internal().sub(Amount::new(actual_damage)).to_display();
 
         // --- 兵糧消費 ---
-        let food_cost = (attacker_troops * Self::FOOD_CONSUMPTION_RATE) / Self::PERCENT_BASE;
-        if attacker
-            .consume_resource(Amount::new(0), Amount::new(0), Amount::new(food_cost))
-            .is_err()
-        {
-            attacker.modify_tyu(-40); // 兵糧切れによる士気激減
+        let food_cost = (status.attacker_hei.to_internal().value() * Self::FOOD_CONSUMPTION_RATE) / Self::PERCENT_BASE;
+        let a_kome_internal = status.attacker_kome.to_internal();
+        if a_kome_internal.value() < food_cost {
+            status.attacker_kome = Amount::new(0).to_display();
+            status.attacker_morale = status.attacker_morale.saturating_sub(40);
+        } else {
+            status.attacker_kome = a_kome_internal.sub(Amount::new(food_cost)).to_display();
         }
 
         // --- 勝敗判定 ---
-        let winner = if defender.resource.hei.value() == 0
-            || defender.resource.kome.value() == 0
-            || defender.stats.tyu.value() == 0
+        status.winner = if status.defender_hei.to_internal().value() == 0
+            || status.defender_kome.to_internal().value() == 0
+            || status.defender_morale == 0
         {
             Some(BattleSide::Attacker)
-        } else if attacker.resource.hei.value() == 0
-            || attacker.resource.kome.value() == 0
-            || attacker.stats.tyu.value() == 0
+        } else if status.attacker_hei.to_internal().value() == 0
+            || status.attacker_kome.to_internal().value() == 0
+            || status.attacker_morale == 0
         {
             Some(BattleSide::Defender)
         } else {
@@ -128,19 +106,20 @@ impl BattleService {
         };
 
         // --- 勝利時のリソース接収 ---
-        if winner == Some(BattleSide::Attacker) {
-            attacker.add_resource(
-                Amount::new(0),
-                defender.resource.hei,
-                defender.resource.kome,
-            );
+        if status.winner == Some(BattleSide::Attacker) {
+            let a_hei = status.attacker_hei.to_internal().add(status.defender_hei.to_internal());
+            let a_kome = status.attacker_kome.to_internal().add(status.defender_kome.to_internal());
+            status.attacker_hei = a_hei.to_display();
+            status.attacker_kome = a_kome.to_display();
         }
 
-        Ok(BattleResult {
-            attacker_kuni: attacker,
-            defender_kuni: defender,
-            winner,
-        })
+        // 優勢度計算
+        status.advantage = Self::calculate_advantage(
+            status.attacker_hei.to_internal().value(),
+            status.defender_hei.to_internal().value(),
+        );
+
+        Ok(status)
     }
 
     /// 敵の策を決定します
