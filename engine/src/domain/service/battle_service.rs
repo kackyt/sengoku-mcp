@@ -1,22 +1,7 @@
 use crate::domain::error::DomainError;
+use crate::domain::model::battle::{BattleAdvantage, BattleSide, Tactic};
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::value_objects::Amount;
-use serde::{Deserialize, Serialize};
-
-/// 戦闘時の策
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Tactic {
-    /// 通常
-    Normal,
-    /// 奇襲
-    Surprise,
-    /// 火計
-    Fire,
-    /// 鼓舞
-    Inspire,
-    /// 退却
-    Retreat,
-}
 
 /// 戦闘結果
 #[derive(Debug)]
@@ -27,15 +12,6 @@ pub struct BattleResult {
     pub defender_kuni: Kuni,
     /// 勝者
     pub winner: Option<BattleSide>, // 決着がつかない場合は None
-}
-
-/// 戦闘の陣営
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BattleSide {
-    /// 攻撃側
-    Attacker,
-    /// 防御側
-    Defender,
 }
 
 /// 戦闘計算を行うドメインサービス
@@ -165,5 +141,29 @@ impl BattleService {
             defender_kuni: defender,
             winner,
         })
+    }
+
+    /// 敵の策を決定します
+    pub fn decide_tactic() -> Tactic {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        match rng.gen_range(0..4) {
+            0 => Tactic::Normal,
+            1 => Tactic::Surprise,
+            2 => Tactic::Fire,
+            3 => Tactic::Inspire,
+            _ => Tactic::Normal,
+        }
+    }
+
+    /// 戦況の優劣を判定します
+    pub fn calculate_advantage(attacker_hei: u32, defender_hei: u32) -> BattleAdvantage {
+        if attacker_hei > defender_hei * 2 {
+            BattleAdvantage::Advantage
+        } else if defender_hei > attacker_hei * 2 {
+            BattleAdvantage::Disadvantage
+        } else {
+            BattleAdvantage::Even
+        }
     }
 }

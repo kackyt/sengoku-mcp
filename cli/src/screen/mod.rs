@@ -1,4 +1,4 @@
-use engine::application::usecase::battle_usecase::WarStatus;
+use engine::domain::model::battle::WarStatus;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,9 +1,11 @@
 use engine::domain::error::DomainError;
+use engine::domain::model::battle::WarStatus;
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::event::GameEvent;
 use engine::domain::model::game_state::GameState;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
+use engine::domain::repository::battle_repository::BattleRepository;
 use engine::domain::repository::daimyo_repository::DaimyoRepository;
 use engine::domain::repository::event_dispatcher::EventDispatcher;
 use engine::domain::repository::game_state_repository::GameStateRepository;
@@ -231,5 +233,44 @@ impl DaimyoRepository for InMemoryDaimyoRepository {
         // 順序を安定させるためにIDでソート
         daimyos.sort_by_key(|d| d.id);
         Ok(daimyos)
+    }
+}
+
+/// インメモリでの合戦リポジトリの仮実装
+pub struct InMemoryBattleRepository {
+    battles: Arc<RwLock<HashMap<KuniId, WarStatus>>>,
+}
+
+impl InMemoryBattleRepository {
+    pub fn new() -> Self {
+        Self {
+            battles: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl Default for InMemoryBattleRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl BattleRepository for InMemoryBattleRepository {
+    async fn save(&self, status: &WarStatus) -> anyhow::Result<()> {
+        let mut guard = self.battles.write().await;
+        guard.insert(status.attacker_id, status.clone());
+        Ok(())
+    }
+
+    async fn find_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<Option<WarStatus>> {
+        let guard = self.battles.read().await;
+        Ok(guard.get(attacker_id).cloned())
+    }
+
+    async fn delete_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<()> {
+        let mut guard = self.battles.write().await;
+        guard.remove(attacker_id);
+        Ok(())
     }
 }

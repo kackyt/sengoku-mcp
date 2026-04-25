@@ -189,7 +189,28 @@ impl EventHandler {
                                 },
                             };
                         }
-                        DomesticCommand::War | DomesticCommand::Transport => {
+                        DomesticCommand::War => {
+                            // 進行中の合戦があるか確認
+                            if let Ok(Some(status)) =
+                                app.battle_usecase.get_active_war(kuni_id).await
+                            {
+                                app.screen = ScreenState::War {
+                                    status,
+                                    cursor: 0,
+                                    sub_state: crate::screen::WarSubState::Normal,
+                                };
+                            } else {
+                                app.screen = ScreenState::Domestic {
+                                    selected_kuni: kuni_id,
+                                    cursor,
+                                    sub_state: DomesticSubState::SelectTargetKuni {
+                                        command,
+                                        cursor: 0,
+                                    },
+                                };
+                            }
+                        }
+                        DomesticCommand::Transport => {
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: kuni_id,
                                 cursor,
@@ -572,7 +593,7 @@ impl EventHandler {
     async fn handle_war(
         app: &mut App,
         key: KeyEvent,
-        status: engine::application::usecase::battle_usecase::WarStatus,
+        status: engine::domain::model::battle::WarStatus,
         cursor: usize,
         sub_state: crate::screen::WarSubState,
     ) -> Result<()> {
@@ -612,7 +633,7 @@ impl EventHandler {
                     };
                 }
                 KeyCode::Enter => {
-                    use engine::domain::service::battle_service::Tactic;
+                    use engine::domain::model::battle::Tactic;
                     let tactic = match cursor {
                         0 => Tactic::Normal,
                         1 => Tactic::Surprise,
@@ -628,13 +649,22 @@ impl EventHandler {
 
                     let result_status = app
                         .battle_usecase
-                        .execute_battle_turn(status.clone(), tactic, Tactic::Normal)
+                        .execute_battle_turn(status.clone(), tactic)
                         .await?;
 
                     let msg = if let Some(winner) = result_status.winner {
-                        format!("戦闘終了！勝者: {:?}", winner)
+                        use engine::domain::model::battle::BattleSide;
+                        match winner {
+                            BattleSide::Attacker => "我が軍の勝利！敵国を占領したぞ！".to_string(),
+                            BattleSide::Defender => "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string(),
+                        }
                     } else {
-                        "激しい戦闘が繰り広げられた...！".to_string()
+                        use engine::domain::model::battle::BattleAdvantage;
+                        match result_status.advantage {
+                            BattleAdvantage::Advantage => "我が軍が圧倒している！".to_string(),
+                            BattleAdvantage::Even => "一進一退の攻防が続いている...！".to_string(),
+                            BattleAdvantage::Disadvantage => "我が軍は苦戦を強いられている...！".to_string(),
+                        }
                     };
 
                     if result_status.winner.is_some() {

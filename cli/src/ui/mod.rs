@@ -248,10 +248,10 @@ fn render_domestic(
 }
 
 fn render_war(
-    app: &App,
+    _app: &App,
     f: &mut Frame,
     area: Rect,
-    status: &engine::application::usecase::battle_usecase::WarStatus,
+    status: &engine::domain::model::battle::WarStatus,
     cursor: usize,
     sub_state: &crate::screen::WarSubState,
 ) {
@@ -270,15 +270,15 @@ fn render_war(
         )]),
         Line::from(vec![
             Span::raw("兵力: "),
-            Span::styled(status.hei.to_string(), Style::default().fg(Color::White)),
+            Span::styled(status.attacker_hei.to_string(), Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::raw("兵糧: "),
-            Span::styled(status.kome.to_string(), Style::default().fg(Color::White)),
+            Span::styled(status.attacker_kome.to_string(), Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::raw("士気: "),
-            Span::styled(status.morale.to_string(), Style::default().fg(Color::White)),
+            Span::styled(status.attacker_morale.to_string(), Style::default().fg(Color::White)),
         ]),
     ];
     let attacker_p = Paragraph::new(attacker_status).block(
@@ -289,33 +289,30 @@ fn render_war(
     f.render_widget(attacker_p, chunks[0]);
 
     // Right: Defender (Enemy Territory)
-    // 敵国の情報は app.defender_kuni に入っているはず
-    if let Some(defender) = &app.defender_kuni {
-        let defender_status = vec![
-            Line::from(vec![Span::styled(
-                "敵軍（守備軍）",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            )]),
-            Line::from(vec![
-                Span::raw("兵力: "),
-                Span::raw(defender.resource.hei.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("食料: "),
-                Span::raw(defender.resource.kome.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("士気: "),
-                Span::raw(defender.stats.tyu.value().to_string()),
-            ]),
-        ];
-        let defender_p = Paragraph::new(defender_status).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Red)),
-        );
-        f.render_widget(defender_p, chunks[1]);
-    }
+    let defender_status = vec![
+        Line::from(vec![Span::styled(
+            "敵軍（守備軍）",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::raw("兵力: "),
+            Span::raw(status.defender_hei.to_string()),
+        ]),
+        Line::from(vec![
+            Span::raw("食料: "),
+            Span::raw(status.defender_kome.to_string()),
+        ]),
+        Line::from(vec![
+            Span::raw("士気: "),
+            Span::raw(status.defender_morale.to_string()),
+        ]),
+    ];
+    let defender_p = Paragraph::new(defender_status).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red)),
+    );
+    f.render_widget(defender_p, chunks[1]);
 
     // Tactic Selection Overlay
     if let crate::screen::WarSubState::SelectTactic = sub_state {

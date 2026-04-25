@@ -1,31 +1,20 @@
 use crate::domain::{
     error::DomainError,
+    model::battle::{BattleAdvantage, BattleSide, Tactic, WarStatus},
     model::value_objects::{Amount, DisplayAmount, KuniId},
+    repository::battle_repository::BattleRepository,
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
-    service::battle_service::{BattleService, Tactic},
+    service::battle_service::BattleService,
 };
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
-use crate::domain::service::battle_service::BattleSide;
-
-/// 合戦中の軍勢ステータス
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct WarStatus {
-    pub attacker_id: KuniId,
-    pub defender_id: KuniId,
-    pub hei: DisplayAmount,
-    pub kome: DisplayAmount,
-    pub morale: u32,
-    pub winner: Option<BattleSide>,
-}
 
 /// 合戦に関するユースケース
 #[allow(dead_code)]
 pub struct BattleUseCase {
     kuni_repo: Arc<dyn KuniRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
+    battle_repo: Arc<dyn BattleRepository>,
 }
 
 impl BattleUseCase {
@@ -33,10 +22,12 @@ impl BattleUseCase {
     pub fn new(
         kuni_repo: Arc<dyn KuniRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
+        battle_repo: Arc<dyn BattleRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,
+            battle_repo,
         }
     }
 
@@ -45,8 +36,8 @@ impl BattleUseCase {
         &self,
         status: WarStatus,
         attacker_tactic: Tactic,
-        defender_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
+        let defender_tactic = BattleService::decide_tactic();
         let mut attacker_proxy = self
             .kuni_repo
             .find_by_id(&status.attacker_id)
@@ -55,12 +46,12 @@ impl BattleUseCase {
                 anyhow::anyhow!("攻撃側の国が見つかりません: {:?}", status.attacker_id)
             })?;
 
-        // 軍勢の状態を一時的にKuniに反映（計算用）
-        attacker_proxy.resource.hei = status.hei.to_internal();
-        attacker_proxy.resource.kome = status.kome.to_internal();
-        attacker_proxy.stats.tyu = crate::domain::model::value_objects::Rate::new(status.morale);
+        // 攻撃側の状態を反映
+        attacker_proxy.resource.hei = status.attacker_hei.to_internal();
+        attacker_proxy.resource.kome = status.attacker_kome.to_internal();
+        attacker_proxy.stats.tyu = crate::domain::model::value_objects::Rate::new(status.attacker_morale);
 
-        let defender = self
+        let mut defender_proxy = self
             .kuni_repo
             .find_by_id(&status.defender_id)
             .await?
@@ -68,21 +59,34 @@ impl BattleUseCase {
                 anyhow::anyhow!("防御側の国が見つかりません: {:?}", status.defender_id)
             })?;
 
+        // 防御側の状態も反映（対称性）
+        defender_proxy.resource.hei = status.defender_hei.to_internal();
+        defender_proxy.resource.kome = status.defender_kome.to_internal();
+        defender_proxy.stats.tyu = crate::domain::model::value_objects::Rate::new(status.defender_morale);
+
         let result = BattleService::calculate_turn(
             attacker_proxy,
-            defender,
+            defender_proxy,
             attacker_tactic,
             defender_tactic,
-            status.hei.to_internal().value(),
+            status.attacker_hei.to_internal().value(),
         )?;
 
+        let advantage = BattleService::calculate_advantage(
+            result.attacker_kuni.resource.hei.value(),
+            result.defender_kuni.resource.hei.value(),
+        );
         let next_status = WarStatus {
             attacker_id: status.attacker_id,
             defender_id: status.defender_id,
-            hei: result.attacker_kuni.resource.hei.to_display(),
-            kome: result.attacker_kuni.resource.kome.to_display(),
-            morale: result.attacker_kuni.stats.tyu.value(),
+            attacker_hei: result.attacker_kuni.resource.hei.to_display(),
+            attacker_kome: result.attacker_kuni.resource.kome.to_display(),
+            attacker_morale: result.attacker_kuni.stats.tyu.value(),
+            defender_hei: result.defender_kuni.resource.hei.to_display(),
+            defender_kome: result.defender_kuni.resource.kome.to_display(),
+            defender_morale: result.defender_kuni.stats.tyu.value(),
             winner: result.winner,
+            advantage,
         };
 
         // 戦争決着時の処理
@@ -104,18 +108,22 @@ impl BattleUseCase {
                     occupied.resource.kome = result.attacker_kuni.resource.kome;
                     // 忠誠度は一旦低めに設定
                     occupied.modify_tyu(-50);
-
                     self.kuni_repo.save(&occupied).await?;
+
+                    // 合戦状態を削除
+                    self.battle_repo.delete_by_attacker(&status.attacker_id).await?;
                 }
                 BattleSide::Defender => {
                     // 防御側勝利：領土防衛成功
                     self.kuni_repo.save(&result.defender_kuni).await?;
-                    // 攻撃軍は全滅または退却したため、本国への還元はなし（簡易化）
+
+                    // 合戦状態を削除
+                    self.battle_repo.delete_by_attacker(&status.attacker_id).await?;
                 }
             }
         } else {
-            // 継続中：防御側の消耗のみ保存
-            self.kuni_repo.save(&result.defender_kuni).await?;
+            // 継続中：合戦状態のみを保存。KuniRepositoryには書き込まない。
+            self.battle_repo.save(&next_status).await?;
         }
 
         Ok(next_status)
@@ -152,13 +160,32 @@ impl BattleUseCase {
         attacker.consume_resource(Amount::new(0), hei_internal, kome_internal)?;
         self.kuni_repo.save(&attacker).await?;
 
-        Ok(WarStatus {
+        let defender = self
+            .kuni_repo
+            .find_by_id(&defender_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません: {:?}", defender_id))?;
+
+        let status = WarStatus {
             attacker_id,
             defender_id,
-            hei,
-            kome,
-            morale: attacker.stats.tyu.value(),
+            attacker_hei: hei,
+            attacker_kome: kome,
+            attacker_morale: attacker.stats.tyu.value(),
+            defender_hei: defender.resource.hei.to_display(),
+            defender_kome: defender.resource.kome.to_display(),
+            defender_morale: defender.stats.tyu.value(),
             winner: None,
-        })
+            advantage: BattleAdvantage::Even,
+        };
+
+        self.battle_repo.save(&status).await?;
+
+        Ok(status)
+    }
+
+    /// 進行中の合戦情報を取得します
+    pub async fn get_active_war(&self, attacker_id: KuniId) -> Result<Option<WarStatus>, anyhow::Error> {
+        self.battle_repo.find_by_attacker(&attacker_id).await
     }
 }
