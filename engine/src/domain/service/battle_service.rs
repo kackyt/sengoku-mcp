@@ -11,7 +11,6 @@ impl BattleService {
     const DMG_SURPRISE_SUCCESS: u32 = 300;
     const DMG_SURPRISE_FAIL: u32 = 40;
     const DMG_DEFAULT: u32 = 60;
-    const PERCENT_BASE: u32 = 100;
     const MORALE_CHANGE: u32 = 10;
     const FOOD_CONSUMPTION_RATE: u32 = 30;
     const FIRE_HEI_LOSS_RATE: u32 = 30;
@@ -51,17 +50,15 @@ impl BattleService {
             }
             (Tactic::Fire, Tactic::Fire) => {
                 // 火計同士で自軍に被害
-                let loss =
-                    (status.attacker_hei.value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
-                status.attacker_hei = status.attacker_hei.sub(Amount::new(loss));
+                let loss = status.attacker_hei.mul_percent(Self::FIRE_HEI_LOSS_RATE);
+                status.attacker_hei = status.attacker_hei.sub(loss);
                 status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE);
                 base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (Tactic::Fire, _) => {
                 // 火計成功
-                let loss =
-                    (status.defender_kome.value() * Self::FIRE_KOME_LOSS_RATE) / Self::PERCENT_BASE;
-                status.defender_kome = status.defender_kome.sub(Amount::new(loss));
+                let loss = status.defender_kome.mul_percent(Self::FIRE_KOME_LOSS_RATE);
+                status.defender_kome = status.defender_kome.sub(loss);
                 status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE);
                 status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE);
                 base_damage.mul_percent(Self::DMG_DEFAULT)
@@ -127,11 +124,9 @@ impl BattleService {
 
     /// 戦況の優劣を判定します
     pub fn calculate_advantage(attacker_hei: Amount, defender_hei: Amount) -> BattleAdvantage {
-        let a_val = attacker_hei.value();
-        let d_val = defender_hei.value();
-        if a_val > d_val * 2 {
+        if attacker_hei > defender_hei.add(defender_hei) {
             BattleAdvantage::Advantage
-        } else if d_val > a_val * 2 {
+        } else if defender_hei > attacker_hei.add(attacker_hei) {
             BattleAdvantage::Disadvantage
         } else {
             BattleAdvantage::Even

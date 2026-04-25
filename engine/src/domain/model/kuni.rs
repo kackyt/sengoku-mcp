@@ -139,20 +139,20 @@ impl Kuni {
     }
 
     /// 兵を徴募します。
-    /// 消費：金 -= 投入量 /2, 人口 -= 投入量, 忠誠度 -= 投入量 / 2
+    /// 消費：金 -= 投入量 / 2, 人口 -= 投入量, 忠誠度 -= 投入量 / 2
     /// 獲得：兵 += 投入量
     pub fn recruit_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
-        let cost = internal_amount.value() / 2;
-        let population_cost = internal_amount.value();
-        let tyu_loss = amount.value() / 2; // 忠誠度は 0-100 なので表示値をベースにする
+        let cost = internal_amount.mul_percent(50);
+        // 忠誠度の減少量は投入量（表示値）の半分
+        let tyu_loss = internal_amount.to_display().value() / 2;
 
-        if self.resource.jinko.value() < population_cost {
+        if self.resource.jinko < internal_amount {
             return Err(DomainError::InsufficientResource("人口不足".to_string()));
         }
 
-        self.consume_resource(Amount::new(cost), Amount::zero(), Amount::zero())?;
-        self.modify_jinko(-(population_cost as i32));
+        self.consume_resource(cost, Amount::zero(), Amount::zero())?;
+        self.modify_jinko(-internal_amount.as_i32());
         self.modify_tyu(-(tyu_loss as i32));
         self.add_resource(Amount::zero(), internal_amount, Amount::zero());
         Ok(())
@@ -163,9 +163,11 @@ impl Kuni {
     /// 獲得：忠誠度 += 投入量 / 2, 人口 += 投入量
     pub fn dismiss_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
+        let tyu_gain = internal_amount.to_display().value() / 2;
+
         self.consume_resource(Amount::zero(), internal_amount, Amount::zero())?;
-        self.modify_jinko(internal_amount.value() as i32);
-        self.modify_tyu((amount.value() / 2) as i32); // 忠誠度は表示値をベースにする
+        self.modify_jinko(internal_amount.as_i32());
+        self.modify_tyu(tyu_gain as i32);
         Ok(())
     }
 
@@ -179,7 +181,7 @@ impl Kuni {
         let multiplier: u32 = rand::thread_rng().gen_range(50..=100);
         let tyu_gain = internal_amount.mul_percent(multiplier);
 
-        self.modify_tyu(tyu_gain.value() as i32);
+        self.modify_tyu(tyu_gain.to_display().value() as i32);
         Ok(self.stats.tyu.value().saturating_sub(before))
     }
 }
