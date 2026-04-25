@@ -12,7 +12,7 @@ impl BattleService {
     const DMG_SURPRISE_FAIL: u32 = 40;
     const DMG_DEFAULT: u32 = 60;
     const PERCENT_BASE: u32 = 100;
-    const MORALE_CHANGE: i32 = 10;
+    const MORALE_CHANGE: u32 = 10;
     const FOOD_CONSUMPTION_RATE: u32 = 30;
     const FIRE_HEI_LOSS_RATE: u32 = 30;
     const FIRE_KOME_LOSS_RATE: u32 = 50;
@@ -34,54 +34,63 @@ impl BattleService {
         }
 
         // --- ダメージ計算と策の効果 ---
-        let mut base_damage = status.attacker_hei.to_internal().value();
+        let mut base_damage = status.attacker_hei.to_internal();
 
-        match (attacker_tactic, defender_tactic) {
-            (Tactic::Normal, Tactic::Normal) => {
-                base_damage = (base_damage * Self::DMG_NORMAL) / Self::PERCENT_BASE;
-            }
+        let damage = match (attacker_tactic, defender_tactic) {
+            (Tactic::Normal, Tactic::Normal) => base_damage.mul_percent(Self::DMG_NORMAL),
             (Tactic::Surprise, Tactic::Normal) => {
                 // 奇襲失敗（簡易的な判定）
-                base_damage = (base_damage * Self::DMG_SURPRISE_FAIL) / Self::PERCENT_BASE;
-                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE as u32);
-                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE as u32);
+                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE);
+                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE);
+                base_damage.mul_percent(Self::DMG_SURPRISE_FAIL)
             }
             (Tactic::Surprise, Tactic::Surprise) => {
                 // 奇襲成功
-                base_damage = (base_damage * Self::DMG_SURPRISE_SUCCESS) / Self::PERCENT_BASE;
-                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE as u32);
+                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE);
+                base_damage.mul_percent(Self::DMG_SURPRISE_SUCCESS)
             }
             (Tactic::Fire, Tactic::Fire) => {
                 // 火計同士で自軍に被害
-                let loss = (status.attacker_hei.to_internal().value() * Self::FIRE_HEI_LOSS_RATE) / Self::PERCENT_BASE;
-                status.attacker_hei = status.attacker_hei.to_internal().sub(Amount::new(loss)).to_display();
-                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE as u32);
-                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
+                let loss = (status.attacker_hei.to_internal().value() * Self::FIRE_HEI_LOSS_RATE)
+                    / Self::PERCENT_BASE;
+                status.attacker_hei = status
+                    .attacker_hei
+                    .to_internal()
+                    .sub(Amount::new(loss))
+                    .to_display();
+                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE);
+                base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (Tactic::Fire, _) => {
                 // 火計成功
-                let loss = (status.defender_kome.to_internal().value() * Self::FIRE_KOME_LOSS_RATE) / Self::PERCENT_BASE;
-                status.defender_kome = status.defender_kome.to_internal().sub(Amount::new(loss)).to_display();
-                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE as u32);
-                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE as u32);
-                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
+                let loss = (status.defender_kome.to_internal().value() * Self::FIRE_KOME_LOSS_RATE)
+                    / Self::PERCENT_BASE;
+                status.defender_kome = status
+                    .defender_kome
+                    .to_internal()
+                    .sub(Amount::new(loss))
+                    .to_display();
+                status.defender_morale = status
+                    .defender_morale
+                    .saturating_sub(Self::MORALE_CHANGE as u32);
+                status.attacker_morale = status
+                    .attacker_morale
+                    .saturating_add(Self::MORALE_CHANGE as u32);
+                base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (_, Tactic::Inspire) => {
                 status.defender_morale = status.defender_morale.saturating_add(15);
-                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
+                Amount::new(0)
             }
-            _ => {
-                base_damage = (base_damage * Self::DMG_DEFAULT) / Self::PERCENT_BASE;
-            }
-        }
+            _ => base_damage.mul_percent(Self::DMG_DEFAULT),
+        };
 
         // ダメージ適用
-        let defender_hei_val = status.defender_hei.to_internal().value();
-        let actual_damage = base_damage.min(defender_hei_val);
-        status.defender_hei = status.defender_hei.to_internal().sub(Amount::new(actual_damage)).to_display();
+        status.defender_hei = status.defender_hei.to_internal().sub(damage).to_display();
 
         // --- 兵糧消費 ---
-        let food_cost = (status.attacker_hei.to_internal().value() * Self::FOOD_CONSUMPTION_RATE) / Self::PERCENT_BASE;
+        let food_cost = (status.attacker_hei.to_internal().value() * Self::FOOD_CONSUMPTION_RATE)
+            / Self::PERCENT_BASE;
         let a_kome_internal = status.attacker_kome.to_internal();
         if a_kome_internal.value() < food_cost {
             status.attacker_kome = Amount::new(0).to_display();
@@ -107,8 +116,14 @@ impl BattleService {
 
         // --- 勝利時のリソース接収 ---
         if status.winner == Some(BattleSide::Attacker) {
-            let a_hei = status.attacker_hei.to_internal().add(status.defender_hei.to_internal());
-            let a_kome = status.attacker_kome.to_internal().add(status.defender_kome.to_internal());
+            let a_hei = status
+                .attacker_hei
+                .to_internal()
+                .add(status.defender_hei.to_internal());
+            let a_kome = status
+                .attacker_kome
+                .to_internal()
+                .add(status.defender_kome.to_internal());
             status.attacker_hei = a_hei.to_display();
             status.attacker_kome = a_kome.to_display();
         }
