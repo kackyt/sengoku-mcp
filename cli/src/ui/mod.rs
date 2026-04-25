@@ -31,8 +31,10 @@ pub fn draw(app: &App, f: &mut Frame) {
             sub_state,
         } => render_domestic(app, f, chunks[1], *selected_kuni, *cursor, sub_state),
         ScreenState::War {
-            cursor, sub_state, ..
-        } => render_war(app, f, chunks[1], *cursor, sub_state),
+            status,
+            cursor,
+            sub_state,
+        } => render_war(app, f, chunks[1], status, *cursor, sub_state),
         ScreenState::GameOver { winner } => render_game_over(app, f, chunks[1], *winner),
     }
 
@@ -85,7 +87,9 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
         ScreenState::SelectDaimyo { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
         ScreenState::Domestic { sub_state, .. } => match sub_state {
             DomesticSubState::Normal => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
-            DomesticSubState::InputAmount { .. } => "数字: 入力 | Enter: 決定 | Esc: 戻る",
+            DomesticSubState::InputAmount { .. }
+            | DomesticSubState::InputWarHeihe { .. }
+            | DomesticSubState::InputWarKome { .. } => "数字: 入力 | Enter: 決定 | Esc: 戻る",
             DomesticSubState::SelectTargetKuni { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
             DomesticSubState::ShowMessage { .. } => "Enter/Esc: 閉じる",
         },
@@ -247,6 +251,7 @@ fn render_war(
     app: &App,
     f: &mut Frame,
     area: Rect,
+    status: &engine::application::usecase::battle_usecase::WarStatus,
     cursor: usize,
     sub_state: &crate::screen::WarSubState,
 ) {
@@ -255,35 +260,42 @@ fn render_war(
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    // Left: Attacker
-    if let Some(attacker) = &app.attacker_kuni {
-        let attacker_status = vec![
-            Line::from(vec![Span::raw("自軍")]),
-            Line::from(vec![
-                Span::raw("兵力: "),
-                Span::raw(attacker.resource.hei.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("食料: "),
-                Span::raw(attacker.resource.kome.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("士気: "),
-                Span::raw(attacker.stats.tyu.value().to_string()),
-            ]),
-        ];
-        let attacker_p = Paragraph::new(attacker_status).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Blue)),
-        );
-        f.render_widget(attacker_p, chunks[0]);
-    }
+    // Left: Attacker (Army)
+    let attacker_status = vec![
+        Line::from(vec![Span::styled(
+            "自軍（攻撃軍）",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::raw("兵力: "),
+            Span::styled(status.hei.to_string(), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::raw("兵糧: "),
+            Span::styled(status.kome.to_string(), Style::default().fg(Color::White)),
+        ]),
+        Line::from(vec![
+            Span::raw("士気: "),
+            Span::styled(status.morale.to_string(), Style::default().fg(Color::White)),
+        ]),
+    ];
+    let attacker_p = Paragraph::new(attacker_status).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Blue)),
+    );
+    f.render_widget(attacker_p, chunks[0]);
 
-    // Right: Defender
+    // Right: Defender (Enemy Territory)
+    // 敵国の情報は app.defender_kuni に入っているはず
     if let Some(defender) = &app.defender_kuni {
         let defender_status = vec![
-            Line::from(vec![Span::raw("敵軍")]),
+            Line::from(vec![Span::styled(
+                "敵軍（守備軍）",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )]),
             Line::from(vec![
                 Span::raw("兵力: "),
                 Span::raw(defender.resource.hei.to_display().to_string()),
@@ -307,13 +319,14 @@ fn render_war(
 
     // Tactic Selection Overlay
     if let crate::screen::WarSubState::SelectTactic = sub_state {
-        let area = centered_rect(40, 30, area);
+        let area = centered_rect(40, 40, area);
         f.render_widget(Clear, area);
         let tactics = vec![
             ListItem::new("1. 通常"),
             ListItem::new("2. 奇襲"),
             ListItem::new("3. 火計"),
             ListItem::new("4. 鼓舞"),
+            ListItem::new("5. 退却"),
         ];
         let list = List::new(tactics)
             .block(Block::default().title("戦術選択").borders(Borders::ALL))
@@ -358,31 +371,50 @@ fn render_game_over(
 }
 
 fn render_modals(app: &App, f: &mut Frame) {
-    if let ScreenState::Domestic {
-        selected_kuni,
-        cursor: _,
-        sub_state,
-    } = &app.screen
-    {
-        match sub_state {
+    match &app.screen {
+        ScreenState::Domestic {
+            selected_kuni,
+            sub_state,
+            ..
+        } => match sub_state {
             DomesticSubState::InputAmount { command, input } => {
                 render_input_modal(f, *command, input);
             }
             DomesticSubState::SelectTargetKuni { command, cursor } => {
                 render_select_target_modal(app, f, *selected_kuni, *command, *cursor);
             }
+            DomesticSubState::InputWarHeihe { input, .. } => {
+                render_war_input_modal(f, "出陣兵数入力", input);
+            }
+            DomesticSubState::InputWarKome { input, .. } => {
+                render_war_input_modal(f, "出陣兵糧入力", input);
+            }
             DomesticSubState::ShowMessage { message, .. } => {
                 render_message_modal(f, message);
             }
             _ => {}
+        },
+        ScreenState::War {
+            sub_state: crate::screen::WarSubState::ShowMessage { message, .. },
+            ..
+        } => {
+            render_message_modal(f, message);
         }
-    } else if let ScreenState::War {
-        sub_state: crate::screen::WarSubState::ShowMessage { message, .. },
-        ..
-    } = &app.screen
-    {
-        render_message_modal(f, message);
+        _ => {}
     }
+}
+
+fn render_war_input_modal(f: &mut Frame, title: &str, input: &str) {
+    let area = centered_rect(60, 20, f.area());
+    f.render_widget(Clear, area);
+
+    let p = Paragraph::new(format!("> {}", input)).block(
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(p, area);
 }
 
 fn render_message_modal(f: &mut Frame, message: &str) {

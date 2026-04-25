@@ -243,14 +243,18 @@ async fn test_battle_execution_success_when_adjacent() {
     let neighbor_repo = Arc::new(mock_neighbor);
 
     let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone());
-    let result = usecase
-        .execute_battle_turn(
+    let initial_status = usecase
+        .start_war(
             attacker_id,
             defender_id,
-            Tactic::Normal,
-            Tactic::Normal,
             DisplayAmount::new(5),
+            DisplayAmount::new(10),
         )
+        .await
+        .expect("合戦開始成功");
+
+    let result = usecase
+        .execute_battle_turn(initial_status, Tactic::Normal, Tactic::Normal)
         .await
         .expect("合戦成功");
 
@@ -258,14 +262,12 @@ async fn test_battle_execution_success_when_adjacent() {
     let updated_attacker = repo.find_by_id(&attacker_id).await.unwrap().unwrap();
     let updated_defender = repo.find_by_id(&defender_id).await.unwrap().unwrap();
 
-    assert_eq!(
-        updated_attacker.resource.hei.value(),
-        result.attacker_kuni.resource.hei.value()
-    );
-    assert_eq!(
-        updated_defender.resource.hei.value(),
-        result.defender_kuni.resource.hei.value()
-    );
+    // 出陣した分、本国の兵力が減っていることを確認 (100 - 5 = 95)
+    assert_eq!(updated_attacker.resource.hei.to_display().value(), 95);
+    // 戦場の兵力は 5 以下（ダメージを受けている可能性があるため）
+    assert!(result.hei.value() <= 5);
+    // 防御側の兵力はリポジトリから取得して確認 (ダメージを受けて減っているはず)
+    assert!(updated_defender.resource.hei.to_display().value() < 100);
 }
 
 #[tokio::test]
@@ -282,12 +284,11 @@ async fn test_battle_execution_fails_when_not_adjacent() {
 
     let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone());
     let result = usecase
-        .execute_battle_turn(
+        .start_war(
             attacker_id,
             defender_id,
-            Tactic::Normal,
-            Tactic::Normal,
             DisplayAmount::new(5),
+            DisplayAmount::new(10),
         )
         .await;
 

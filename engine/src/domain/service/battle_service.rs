@@ -1,9 +1,10 @@
 use crate::domain::error::DomainError;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::value_objects::Amount;
+use serde::{Deserialize, Serialize};
 
 /// 戦闘時の策
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tactic {
     /// 通常
     Normal,
@@ -13,6 +14,8 @@ pub enum Tactic {
     Fire,
     /// 鼓舞
     Inspire,
+    /// 退却
+    Retreat,
 }
 
 /// 戦闘結果
@@ -27,7 +30,7 @@ pub struct BattleResult {
 }
 
 /// 戦闘の陣営
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BattleSide {
     /// 攻撃側
     Attacker,
@@ -58,6 +61,22 @@ impl BattleService {
         defender_tactic: Tactic,
         attacker_troops: u32,
     ) -> Result<BattleResult, DomainError> {
+        // --- 退却判定 ---
+        if attacker_tactic == Tactic::Retreat {
+            return Ok(BattleResult {
+                attacker_kuni: attacker,
+                defender_kuni: defender,
+                winner: Some(BattleSide::Defender),
+            });
+        }
+        if defender_tactic == Tactic::Retreat {
+            return Ok(BattleResult {
+                attacker_kuni: attacker,
+                defender_kuni: defender,
+                winner: Some(BattleSide::Attacker),
+            });
+        }
+
         // --- ダメージ計算と策の効果 ---
         let mut base_damage = attacker_troops;
 

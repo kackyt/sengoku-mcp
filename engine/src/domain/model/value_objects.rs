@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// 表示用の金額、人数、量などを表す単位（整数）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct DisplayAmount(pub u32);
 
 impl DisplayAmount {
@@ -29,7 +30,7 @@ impl fmt::Display for DisplayAmount {
 /// PRDで定義される BIAS (100倍) を内部スケールとして使用します。
 pub const INTERNAL_SCALE: u32 = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Amount(pub u32);
 
 impl Amount {
@@ -66,7 +67,7 @@ impl fmt::Display for Amount {
 }
 
 /// 割合（0-100%）を表す型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Rate(pub u32);
 
 impl Rate {
@@ -80,7 +81,7 @@ impl Rate {
 }
 
 /// 委任状態を表す型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IninFlag(pub bool);
 
 impl IninFlag {
@@ -94,7 +95,7 @@ impl IninFlag {
 }
 
 /// ユニットの識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UnitId(pub uuid::Uuid);
 
 impl Default for UnitId {
@@ -110,7 +111,7 @@ impl UnitId {
 }
 
 /// 国の識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct KuniId(pub uuid::Uuid);
 
 impl Default for KuniId {
@@ -126,11 +127,11 @@ impl KuniId {
 }
 
 /// 国名を表す型
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct KuniName(pub String);
 
 /// 大名の識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct DaimyoId(pub uuid::Uuid);
 
 impl Default for DaimyoId {
@@ -146,7 +147,7 @@ impl DaimyoId {
 }
 
 /// 経過ターン数を表す型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TurnNumber(pub u32);
 
 impl TurnNumber {
@@ -160,7 +161,7 @@ impl TurnNumber {
 }
 
 /// 行動順のインデックスを表す型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ActionOrderIndex(pub usize);
 
 impl ActionOrderIndex {
@@ -174,7 +175,7 @@ impl ActionOrderIndex {
 }
 
 /// イベントの詳細やログメッセージを表す型
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EventMessage(pub String);
 
 impl EventMessage {

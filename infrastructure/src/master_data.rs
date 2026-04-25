@@ -1,9 +1,7 @@
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::resource::{DevelopmentStats, Resource};
-use engine::domain::model::value_objects::{
-    Amount, DaimyoId, DisplayAmount, IninFlag, KuniId, Rate,
-};
+use engine::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId, Rate};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -220,7 +218,7 @@ mod tests {
 
         let ezo_id = result.id_map.get(&1).unwrap();
         let ezo = result.kunis.iter().find(|k| k.id == *ezo_id).unwrap();
-        assert_eq!(ezo.resource.kin.value(), 800); // 10倍
+        assert_eq!(ezo.resource.kin.value(), 8000); // 100倍
 
         let kakizaki = result
             .daimyos

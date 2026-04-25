@@ -1,3 +1,4 @@
+use engine::application::usecase::battle_usecase::WarStatus;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,8 +13,7 @@ pub enum ScreenState {
         sub_state: DomesticSubState,
     },
     War {
-        attacker_kuni: KuniId,
-        defender_kuni: KuniId,
+        status: WarStatus,
         cursor: usize,
         sub_state: WarSubState,
     },
@@ -32,6 +32,15 @@ pub enum DomesticSubState {
     SelectTargetKuni {
         command: DomesticCommand,
         cursor: usize,
+    },
+    InputWarHeihe {
+        target_id: KuniId,
+        input: String,
+    },
+    InputWarKome {
+        target_id: KuniId,
+        hei: u32,
+        input: String,
     },
     ShowMessage {
         message: String,

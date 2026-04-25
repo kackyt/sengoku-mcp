@@ -67,11 +67,9 @@ impl App {
     pub async fn update_cache(&mut self) -> Result<()> {
         let (selected_id, attacker_id, defender_id) = match &self.screen {
             ScreenState::Domestic { selected_kuni, .. } => (Some(*selected_kuni), None, None),
-            ScreenState::War {
-                attacker_kuni,
-                defender_kuni,
-                ..
-            } => (None, Some(*attacker_kuni), Some(*defender_kuni)),
+            ScreenState::War { status, .. } => {
+                (None, Some(status.attacker_id), Some(status.defender_id))
+            }
             _ => (None, None, None),
         };
 
