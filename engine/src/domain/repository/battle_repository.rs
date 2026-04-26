@@ -7,10 +7,10 @@ use async_trait::async_trait;
 pub trait BattleRepository: Send + Sync {
     /// 攻撃側の国IDをキーとして合戦状態を保存します
     async fn save(&self, status: &WarStatus) -> anyhow::Result<()>;
-    
+
     /// 攻撃側の国IDに関連付けられた合戦状態を取得します
     async fn find_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<Option<WarStatus>>;
-    
+
     /// 合戦が終了した際、状態を削除します
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<()>;
 }

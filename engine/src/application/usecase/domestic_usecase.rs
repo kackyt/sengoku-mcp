@@ -1,6 +1,6 @@
 use crate::domain::{
     error::DomainError,
-    model::value_objects::{DisplayAmount, IninFlag, KuniId},
+    model::value_objects::{Amount, DisplayAmount, IninFlag, KuniId},
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
 };
@@ -177,8 +177,10 @@ impl DomesticUseCase {
         let hei_internal = hei.to_internal();
         let kome_internal = kome.to_internal();
 
-        from_kuni.consume_resource(kin_internal, hei_internal, kome_internal)?;
-        to_kuni.add_resource(kin_internal, hei_internal, kome_internal);
+        from_kuni.consume_resource(kin_internal, hei_internal, kome_internal, Amount::zero())?;
+        to_kuni
+            .resource
+            .add(kin_internal, hei_internal, kome_internal, Amount::zero());
 
         self.kuni_repo.save(&from_kuni).await?;
         self.kuni_repo.save(&to_kuni).await.map_err(|e| e.into())

@@ -2,14 +2,13 @@ use crate::application::usecase::battle_usecase::BattleUseCase;
 use crate::application::usecase::domestic_usecase::DomesticUseCase;
 use crate::application::usecase::turn_usecase::TurnUseCase;
 use crate::domain::error::DomainError;
-use crate::domain::model::{
-    kuni::Kuni,
-    resource::{DevelopmentStats, Resource},
-    value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId},
-};
+use crate::domain::model::battle::{Tactic, WarStatus};
+use crate::domain::model::kuni::Kuni;
+use crate::domain::model::resource::{DevelopmentStats, Resource};
+use crate::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId};
+use crate::domain::repository::battle_repository::BattleRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
-use crate::domain::service::battle_service::Tactic;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -86,6 +85,38 @@ impl NeighborRepository for MockNeighborRepository {
         self.adjacency_map
             .get(a)
             .is_some_and(|neighbors| neighbors.contains(b))
+    }
+}
+
+struct MockBattleRepository {
+    wars: Mutex<HashMap<KuniId, WarStatus>>,
+}
+
+impl MockBattleRepository {
+    fn new() -> Self {
+        Self {
+            wars: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl BattleRepository for MockBattleRepository {
+    async fn find_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<Option<WarStatus>> {
+        Ok(self.wars.lock().unwrap().get(attacker_id).cloned())
+    }
+
+    async fn save(&self, status: &WarStatus) -> anyhow::Result<()> {
+        self.wars
+            .lock()
+            .unwrap()
+            .insert(status.attacker.kuni_id, status.clone());
+        Ok(())
+    }
+
+    async fn delete_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<()> {
+        self.wars.lock().unwrap().remove(attacker_id);
+        Ok(())
     }
 }
 
@@ -241,8 +272,9 @@ async fn test_battle_execution_success_when_adjacent() {
     repo.setup(defender);
     mock_neighbor.add_neighbor(attacker_id, defender_id);
     let neighbor_repo = Arc::new(mock_neighbor);
+    let battle_repo = Arc::new(MockBattleRepository::new());
 
-    let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone());
+    let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone(), battle_repo.clone());
     let initial_status = usecase
         .start_war(
             attacker_id,
@@ -254,20 +286,19 @@ async fn test_battle_execution_success_when_adjacent() {
         .expect("合戦開始成功");
 
     let result = usecase
-        .execute_battle_turn(initial_status, Tactic::Normal, Tactic::Normal)
+        .execute_battle_turn(initial_status, Tactic::Normal)
         .await
         .expect("合戦成功");
 
     // 状態が保存されているか確認
     let updated_attacker = repo.find_by_id(&attacker_id).await.unwrap().unwrap();
-    let updated_defender = repo.find_by_id(&defender_id).await.unwrap().unwrap();
 
     // 出陣した分、本国の兵力が減っていることを確認 (100 - 5 = 95)
     assert_eq!(updated_attacker.resource.hei.to_display().value(), 95);
-    // 戦場の兵力は 5 以下（ダメージを受けている可能性があるため）
-    assert!(result.hei.value() <= 5);
-    // 防御側の兵力はリポジトリから取得して確認 (ダメージを受けて減っているはず)
-    assert!(updated_defender.resource.hei.to_display().value() < 100);
+    // 戦場の兵力は 500 以下（ダメージを受けている可能性があるため）
+    assert!(result.attacker.hei.value() <= 500); // 500 = 5 * INTERNAL_SCALE
+                                                 // 防御側の状態が変化していることを確認（兵力減少、または鼓舞による士気向上）
+    assert!(result.defender.hei.value() < 10000 || result.defender.morale.value() > 60);
 }
 
 #[tokio::test]
@@ -282,7 +313,8 @@ async fn test_battle_execution_fails_when_not_adjacent() {
     repo.setup(attacker);
     repo.setup(defender);
 
-    let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone());
+    let battle_repo = Arc::new(MockBattleRepository::new());
+    let usecase = BattleUseCase::new(repo.clone(), neighbor_repo.clone(), battle_repo.clone());
     let result = usecase
         .start_war(
             attacker_id,

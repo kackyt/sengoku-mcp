@@ -136,8 +136,11 @@ async fn build_app() -> Result<App> {
 
     // ユースケースの構築
     let domestic_usecase = DomesticUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
-    let battle_usecase =
-        BattleUseCase::new(kuni_repo.clone(), neighbor_repo.clone(), battle_repo.clone());
+    let battle_usecase = BattleUseCase::new(
+        kuni_repo.clone(),
+        neighbor_repo.clone(),
+        battle_repo.clone(),
+    );
     let turn_progression_usecase = TurnProgressionUseCase::new(
         kuni_repo.clone(),
         daimyo_repo.clone(),

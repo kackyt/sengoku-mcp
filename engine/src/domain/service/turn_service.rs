@@ -1,6 +1,6 @@
 use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
-use crate::domain::model::value_objects::{Amount, DaimyoId};
+use crate::domain::model::value_objects::{Amount, DaimyoId, Rate};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -23,16 +23,16 @@ impl TurnService {
                     // Plague
                     let drop: u32 = rng.gen_range(5..=9);
                     let jinko_loss = kuni.resource.jinko.value() * drop / 100;
-                    kuni.modify_jinko(-(jinko_loss as i32));
+                    kuni.resource.jinko -= Amount::new(jinko_loss);
                     // Additional stat losses
-                    kuni.modify_tyu(-20);
+                    kuni.stats.tyu -= Rate::new(20);
                 } else {
                     // Famine
                     let drop: u32 = rng.gen_range(5..=19);
                     let jinko_loss = kuni.resource.jinko.value() * drop / 100;
-                    kuni.modify_jinko(-(jinko_loss as i32));
+                    kuni.resource.jinko -= Amount::new(jinko_loss);
                     // Additional stat losses
-                    kuni.modify_tyu(-15);
+                    kuni.stats.tyu -= Rate::new(15);
                 }
             }
 
@@ -40,7 +40,7 @@ impl TurnService {
             if turn % 4 == 0 {
                 let growth: u32 = rng.gen_range(10..=12);
                 let jinko_gain = kuni.resource.jinko.value() * growth / 100;
-                kuni.modify_jinko(jinko_gain as i32);
+                kuni.resource.jinko += Amount::new(jinko_gain);
             }
 
             // Resource generation (turn % 4 == 2)
@@ -58,10 +58,11 @@ impl TurnService {
                     + jinko * rng.gen_range(10..=14) / 100
                     + kokudaka * rng.gen_range(25..=39) / 100;
 
-                kuni.add_resource(
+                kuni.resource.add(
                     Amount::new(kin_gain),
                     Amount::new(0),
                     Amount::new(kome_gain),
+                    Amount::new(0),
                 );
             }
         }

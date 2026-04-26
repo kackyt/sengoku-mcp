@@ -610,7 +610,7 @@ impl EventHandler {
                 }
                 KeyCode::Esc => {
                     app.screen = ScreenState::Domestic {
-                        selected_kuni: status.attacker_id,
+                        selected_kuni: status.attacker_id(),
                         cursor: 0,
                         sub_state: DomesticSubState::Normal,
                     };
@@ -643,7 +643,7 @@ impl EventHandler {
                         _ => Tactic::Normal,
                     };
 
-                    if !Self::check_player_turn(app, status.attacker_id, 0).await? {
+                    if !Self::check_player_turn(app, status.attacker_id(), 0).await? {
                         return Ok(());
                     }
 
@@ -656,14 +656,18 @@ impl EventHandler {
                         use engine::domain::model::battle::BattleSide;
                         match winner {
                             BattleSide::Attacker => "我が軍の勝利！敵国を占領したぞ！".to_string(),
-                            BattleSide::Defender => "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string(),
+                            BattleSide::Defender => {
+                                "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string()
+                            }
                         }
                     } else {
                         use engine::domain::model::battle::BattleAdvantage;
                         match result_status.advantage {
                             BattleAdvantage::Advantage => "我が軍が圧倒している！".to_string(),
                             BattleAdvantage::Even => "一進一退の攻防が続いている...！".to_string(),
-                            BattleAdvantage::Disadvantage => "我が軍は苦戦を強いられている...！".to_string(),
+                            BattleAdvantage::Disadvantage => {
+                                "我が軍は苦戦を強いられている...！".to_string()
+                            }
                         }
                     };
 
@@ -675,7 +679,7 @@ impl EventHandler {
                             .progress_until_player_turn(app.selected_daimyo_id)
                             .await?;
                         app.screen = ScreenState::Domestic {
-                            selected_kuni: status.attacker_id,
+                            selected_kuni: status.attacker_id(),
                             cursor: 0,
                             sub_state: DomesticSubState::ShowMessage {
                                 message: msg,

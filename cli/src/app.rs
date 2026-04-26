@@ -68,7 +68,7 @@ impl App {
         let (selected_id, attacker_id, defender_id) = match &self.screen {
             ScreenState::Domestic { selected_kuni, .. } => (Some(*selected_kuni), None, None),
             ScreenState::War { status, .. } => {
-                (None, Some(status.attacker_id), Some(status.defender_id))
+                (None, Some(status.attacker_id()), Some(status.defender_id()))
             }
             _ => (None, None, None),
         };

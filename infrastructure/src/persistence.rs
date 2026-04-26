@@ -259,7 +259,7 @@ impl Default for InMemoryBattleRepository {
 impl BattleRepository for InMemoryBattleRepository {
     async fn save(&self, status: &WarStatus) -> anyhow::Result<()> {
         let mut guard = self.battles.write().await;
-        guard.insert(status.attacker_id, status.clone());
+        guard.insert(status.attacker.kuni_id, status.clone());
         Ok(())
     }
 

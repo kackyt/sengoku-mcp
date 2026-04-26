@@ -270,15 +270,24 @@ fn render_war(
         )]),
         Line::from(vec![
             Span::raw("兵力: "),
-            Span::styled(status.attacker_hei.to_display().to_string(), Style::default().fg(Color::White)),
+            Span::styled(
+                status.attacker.hei.to_display().to_string(),
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(vec![
             Span::raw("兵糧: "),
-            Span::styled(status.attacker_kome.to_display().to_string(), Style::default().fg(Color::White)),
+            Span::styled(
+                status.attacker.kome.to_display().to_string(),
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(vec![
             Span::raw("士気: "),
-            Span::styled(status.attacker_morale.to_string(), Style::default().fg(Color::White)),
+            Span::styled(
+                status.attacker.morale.value().to_string(),
+                Style::default().fg(Color::White),
+            ),
         ]),
     ];
     let attacker_p = Paragraph::new(attacker_status).block(
@@ -296,15 +305,15 @@ fn render_war(
         )]),
         Line::from(vec![
             Span::raw("兵力: "),
-            Span::raw(status.defender_hei.to_display().to_string()),
+            Span::raw(status.defender.hei.to_display().to_string()),
         ]),
         Line::from(vec![
             Span::raw("食料: "),
-            Span::raw(status.defender_kome.to_display().to_string()),
+            Span::raw(status.defender.kome.to_display().to_string()),
         ]),
         Line::from(vec![
             Span::raw("士気: "),
-            Span::raw(status.defender_morale.to_string()),
+            Span::raw(status.defender.morale.value().to_string()),
         ]),
     ];
     let defender_p = Paragraph::new(defender_status).block(

@@ -1,4 +1,5 @@
 use crate::domain::error::DomainError;
+use crate::domain::model::battle::ArmyStatus;
 use crate::domain::model::resource::{DevelopmentStats, Resource};
 use crate::domain::model::value_objects::{
     Amount, DaimyoId, DisplayAmount, IninFlag, KuniId, KuniName, Rate,
@@ -52,38 +53,51 @@ impl Kuni {
         self.inin = inin;
     }
 
-    /// 資源を追加します
-    pub fn add_resource(&mut self, kin: Amount, hei: Amount, kome: Amount) {
-        self.resource.add(kin, hei, kome);
-    }
-
     /// 資源を消費します。不足している場合は DomainError を返します。
     pub fn consume_resource(
         &mut self,
         kin: Amount,
         hei: Amount,
         kome: Amount,
+        jinko: Amount,
     ) -> Result<(), DomainError> {
         self.resource
-            .consume(kin, hei, kome)
+            .consume(kin, hei, kome, jinko)
             .map_err(|e| DomainError::InsufficientResource(e.to_string()))
     }
 
-    /// 人口を増減させます
-    pub fn modify_jinko(&mut self, delta: i32) {
-        let current = self.resource.jinko.value() as i32;
-        let next = (current + delta).max(0) as u32;
-        self.resource.jinko = Amount::new(next);
+    // --- 出陣・占領・防衛成功 (Battle関連) ---
+
+    /// 出陣（必要な兵力と兵糧の保有検証と消費をカプセル化）
+    pub fn dispatch_army(&mut self, hei: Amount, kome: Amount) -> Result<ArmyStatus, DomainError> {
+        self.consume_resource(Amount::zero(), hei, kome, Amount::zero())?;
+        Ok(ArmyStatus {
+            kuni_id: self.id,
+            hei,
+            kome,
+            morale: self.stats.tyu, // 出陣時の士気は忠誠度を引き継ぐ
+        })
     }
 
-    /// 忠誠度を増減させます
-    pub fn modify_tyu(&mut self, delta: i32) {
-        let current = self.stats.tyu.value() as i32;
-        let next = (current + delta).clamp(0, 100) as u32;
-        self.stats.tyu = Rate::new(next);
+    /// 他国を占領した時の事後処理
+    /// （surviving_attacker はすでに敗者のリソースを合算済みの状態）
+    pub fn occupy(&mut self, new_daimyo: DaimyoId, surviving_attacker: &ArmyStatus) {
+        self.daimyo_id = new_daimyo;
+        // 占領地に合算済みの軍勢（兵・兵糧）を配置
+        self.resource.hei = surviving_attacker.hei;
+        self.resource.kome = surviving_attacker.kome;
+        self.stats.tyu -= Rate::new(50); // 占領直後のペナルティ
     }
 
-    // --- 内政ロジック (Usecaseから移譲) ---
+    /// 防衛成功時の事後処理
+    pub fn survive_defense(&mut self, surviving_defender: &ArmyStatus) {
+        self.resource.hei = surviving_defender.hei;
+        self.resource.kome = surviving_defender.kome;
+        // 防衛後の忠誠度は、防衛軍の士気に置き換わる（または調整）
+        self.stats.tyu = surviving_defender.morale;
+    }
+
+    // --- 内政ロジック (原子的な更新) ---
     // 各計算式は PRD.md の「資源計算式」章に基づいています。
 
     /// 米を売却します。
@@ -93,8 +107,13 @@ impl Kuni {
         let internal_amount = amount.to_internal();
         let gain = internal_amount.mul_percent(rng);
 
-        self.consume_resource(Amount::zero(), Amount::zero(), internal_amount)?;
-        self.add_resource(gain, Amount::zero(), Amount::zero());
+        self.consume_resource(
+            Amount::zero(),
+            Amount::zero(),
+            internal_amount,
+            Amount::zero(),
+        )?;
+        self.resource.kin += gain;
         Ok(gain.to_display())
     }
 
@@ -105,8 +124,8 @@ impl Kuni {
         let internal_amount = amount.to_internal();
         let cost = internal_amount.mul_percent(rng);
 
-        self.consume_resource(cost, Amount::zero(), Amount::zero())?;
-        self.add_resource(Amount::zero(), Amount::zero(), internal_amount);
+        self.consume_resource(cost, Amount::zero(), Amount::zero(), Amount::zero())?;
+        self.resource.kome += internal_amount;
         Ok(cost.to_display())
     }
 
@@ -118,11 +137,15 @@ impl Kuni {
     ) -> Result<DisplayAmount, DomainError> {
         let multiplier: u32 = rand::thread_rng().gen_range(45..=55);
         let internal_investment = investment.to_internal();
-        // 投入量（表示値）の45-54倍が内部値の上昇量となる
         let gain = internal_investment.mul_percent(multiplier);
 
-        self.consume_resource(internal_investment, Amount::new(0), Amount::new(0))?;
-        self.stats.kokudaka = self.stats.kokudaka.add(gain);
+        self.consume_resource(
+            internal_investment,
+            Amount::zero(),
+            Amount::zero(),
+            Amount::zero(),
+        )?;
+        self.stats.kokudaka += gain;
         Ok(gain.to_display())
     }
 
@@ -133,8 +156,13 @@ impl Kuni {
         let internal_investment = investment.to_internal();
         let gain = internal_investment.mul_percent(multiplier);
 
-        self.consume_resource(internal_investment, Amount::zero(), Amount::zero())?;
-        self.stats.machi = self.stats.machi.add(gain);
+        self.consume_resource(
+            internal_investment,
+            Amount::zero(),
+            Amount::zero(),
+            Amount::zero(),
+        )?;
+        self.stats.machi += gain;
         Ok(gain.to_display())
     }
 
@@ -144,17 +172,11 @@ impl Kuni {
     pub fn recruit_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
         let cost = internal_amount.mul_percent(50);
-        // 忠誠度の減少量は投入量（表示値）の半分
-        let tyu_loss = internal_amount.to_display().value() / 2;
+        let tyu_loss = amount.value() / 2;
 
-        if self.resource.jinko < internal_amount {
-            return Err(DomainError::InsufficientResource("人口不足".to_string()));
-        }
-
-        self.consume_resource(cost, Amount::zero(), Amount::zero())?;
-        self.modify_jinko(-internal_amount.as_i32());
-        self.modify_tyu(-(tyu_loss as i32));
-        self.add_resource(Amount::zero(), internal_amount, Amount::zero());
+        self.consume_resource(cost, Amount::zero(), Amount::zero(), internal_amount)?;
+        self.stats.tyu -= Rate::new(tyu_loss);
+        self.resource.hei += internal_amount;
         Ok(())
     }
 
@@ -163,11 +185,16 @@ impl Kuni {
     /// 獲得：忠誠度 += 投入量 / 2, 人口 += 投入量
     pub fn dismiss_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
-        let tyu_gain = internal_amount.to_display().value() / 2;
+        let tyu_gain = amount.value() / 2;
 
-        self.consume_resource(Amount::zero(), internal_amount, Amount::zero())?;
-        self.modify_jinko(internal_amount.as_i32());
-        self.modify_tyu(tyu_gain as i32);
+        self.consume_resource(
+            Amount::zero(),
+            internal_amount,
+            Amount::zero(),
+            Amount::zero(),
+        )?;
+        self.resource.jinko += internal_amount;
+        self.stats.tyu += Rate::new(tyu_gain);
         Ok(())
     }
 
@@ -175,13 +202,18 @@ impl Kuni {
     /// 獲得：忠誠度 += 投入量 * (50 + random(50)) / 100
     pub fn give_charity(&mut self, amount: DisplayAmount) -> Result<u32, DomainError> {
         let internal_amount = amount.to_internal();
-        self.consume_resource(Amount::zero(), Amount::zero(), internal_amount)?;
+        self.consume_resource(
+            Amount::zero(),
+            Amount::zero(),
+            internal_amount,
+            Amount::zero(),
+        )?;
         let before = self.stats.tyu.value();
 
         let multiplier: u32 = rand::thread_rng().gen_range(50..=100);
         let tyu_gain = internal_amount.mul_percent(multiplier);
 
-        self.modify_tyu(tyu_gain.to_display().value() as i32);
+        self.stats.tyu += Rate::new(tyu_gain.to_display().value());
         Ok(self.stats.tyu.value().saturating_sub(before))
     }
 }

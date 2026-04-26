@@ -33,65 +33,50 @@ impl BattleService {
         }
 
         // --- ダメージ計算と策の効果 ---
-        let base_damage = status.attacker_hei;
+        let base_damage = status.attacker.hei;
 
         let damage = match (attacker_tactic, defender_tactic) {
             (Tactic::Normal, Tactic::Normal) => base_damage.mul_percent(Self::DMG_NORMAL),
             (Tactic::Surprise, Tactic::Normal) => {
-                // 奇襲失敗（簡易的な判定）
-                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE);
-                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE);
+                status.defender.modify_morale(-(Self::MORALE_CHANGE as i32));
+                status.attacker.modify_morale(Self::MORALE_CHANGE as i32);
                 base_damage.mul_percent(Self::DMG_SURPRISE_FAIL)
             }
             (Tactic::Surprise, Tactic::Surprise) => {
-                // 奇襲成功
-                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE);
+                status.attacker.modify_morale(-(Self::MORALE_CHANGE as i32));
                 base_damage.mul_percent(Self::DMG_SURPRISE_SUCCESS)
             }
             (Tactic::Fire, Tactic::Fire) => {
-                // 火計同士で自軍に被害
-                let loss = status.attacker_hei.mul_percent(Self::FIRE_HEI_LOSS_RATE);
-                status.attacker_hei = status.attacker_hei.sub(loss);
-                status.attacker_morale = status.attacker_morale.saturating_sub(Self::MORALE_CHANGE);
+                let loss = status.attacker.hei.mul_percent(Self::FIRE_HEI_LOSS_RATE);
+                status.attacker.take_damage(loss);
+                status.attacker.modify_morale(-(Self::MORALE_CHANGE as i32));
                 base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (Tactic::Fire, _) => {
-                // 火計成功
-                let loss = status.defender_kome.mul_percent(Self::FIRE_KOME_LOSS_RATE);
-                status.defender_kome = status.defender_kome.sub(loss);
-                status.defender_morale = status.defender_morale.saturating_sub(Self::MORALE_CHANGE);
-                status.attacker_morale = status.attacker_morale.saturating_add(Self::MORALE_CHANGE);
+                let loss = status.defender.kome.mul_percent(Self::FIRE_KOME_LOSS_RATE);
+                status.defender.lose_kome(loss);
+                status.defender.modify_morale(-(Self::MORALE_CHANGE as i32));
+                status.attacker.modify_morale(Self::MORALE_CHANGE as i32);
                 base_damage.mul_percent(Self::DMG_DEFAULT)
             }
             (_, Tactic::Inspire) => {
-                status.defender_morale = status.defender_morale.saturating_add(15);
+                status.defender.modify_morale(15);
                 Amount::zero()
             }
             _ => base_damage.mul_percent(Self::DMG_DEFAULT),
         };
 
         // ダメージ適用
-        status.defender_hei = status.defender_hei.sub(damage);
+        status.defender.take_damage(damage);
 
         // --- 兵糧消費 ---
-        let food_cost = status.attacker_hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
-        if status.attacker_kome < food_cost {
-            status.attacker_kome = Amount::zero();
-            status.attacker_morale = status.attacker_morale.saturating_sub(40);
-        } else {
-            status.attacker_kome = status.attacker_kome.sub(food_cost);
-        }
+        let food_cost = status.attacker.hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
+        status.attacker.pay_maintenance(food_cost);
 
         // --- 勝敗判定 ---
-        status.winner = if status.defender_hei.is_zero()
-            || status.defender_kome.is_zero()
-            || status.defender_morale == 0
-        {
+        status.winner = if status.defender.is_destroyed() {
             Some(BattleSide::Attacker)
-        } else if status.attacker_hei.is_zero()
-            || status.attacker_kome.is_zero()
-            || status.attacker_morale == 0
-        {
+        } else if status.attacker.is_destroyed() {
             Some(BattleSide::Defender)
         } else {
             None
@@ -99,12 +84,11 @@ impl BattleService {
 
         // --- 勝利時のリソース接収 ---
         if status.winner == Some(BattleSide::Attacker) {
-            status.attacker_hei = status.attacker_hei.add(status.defender_hei);
-            status.attacker_kome = status.attacker_kome.add(status.defender_kome);
+            status.attacker.plunder(&status.defender);
         }
 
         // 優勢度計算
-        status.advantage = Self::calculate_advantage(status.attacker_hei, status.defender_hei);
+        status.advantage = Self::calculate_advantage(status.attacker.hei, status.defender.hei);
 
         Ok(status)
     }

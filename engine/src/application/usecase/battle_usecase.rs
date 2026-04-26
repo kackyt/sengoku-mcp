@@ -1,7 +1,7 @@
 use crate::domain::{
     error::DomainError,
     model::battle::{BattleAdvantage, BattleSide, Tactic, WarStatus},
-    model::value_objects::{Amount, DisplayAmount, KuniId},
+    model::value_objects::{DisplayAmount, KuniId},
     repository::battle_repository::BattleRepository,
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
@@ -48,44 +48,41 @@ impl BattleUseCase {
                     // 攻撃側勝利：占領処理
                     let mut occupied = self
                         .kuni_repo
-                        .find_by_id(&next_status.defender_id)
+                        .find_by_id(&next_status.defender_id())
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
 
                     // 本国の支配者を確認
                     let home = self
                         .kuni_repo
-                        .find_by_id(&next_status.attacker_id)
+                        .find_by_id(&next_status.attacker_id())
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("本国が見つかりません"))?;
 
-                    occupied.set_daimyo_id(home.daimyo_id);
-                    // 占領地に軍勢を配置（統合）
-                    occupied.resource.hei = next_status.attacker_hei;
-                    occupied.resource.kome = next_status.attacker_kome;
-                    // 忠誠度は一旦低めに設定
-                    occupied.modify_tyu(-50);
+                    // 占領処理（合算とステータス更新をドメインモデルに委譲）
+                    occupied.occupy(home.daimyo_id, &next_status.attacker);
                     self.kuni_repo.save(&occupied).await?;
 
                     // 合戦状態を削除
-                    self.battle_repo.delete_by_attacker(&next_status.attacker_id).await?;
+                    self.battle_repo
+                        .delete_by_attacker(&next_status.attacker_id())
+                        .await?;
                 }
                 BattleSide::Defender => {
-                    // 防御側勝利：領土防衛成功（防御側の損害を反映）
+                    // 防御側勝利：領土防衛成功
                     let mut defender = self
                         .kuni_repo
-                        .find_by_id(&next_status.defender_id)
+                        .find_by_id(&next_status.defender_id())
                         .await?
                         .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
 
-                    defender.resource.hei = next_status.defender_hei;
-                    defender.resource.kome = next_status.defender_kome;
-                    defender.stats.tyu =
-                        crate::domain::model::value_objects::Rate::new(next_status.defender_morale);
+                    defender.survive_defense(&next_status.defender);
                     self.kuni_repo.save(&defender).await?;
 
                     // 合戦状態を削除
-                    self.battle_repo.delete_by_attacker(&next_status.attacker_id).await?;
+                    self.battle_repo
+                        .delete_by_attacker(&next_status.attacker_id())
+                        .await?;
                 }
             }
         } else {
@@ -117,14 +114,8 @@ impl BattleUseCase {
         let hei_internal = hei.to_internal();
         let kome_internal = kome.to_internal();
 
-        if attacker.resource.hei < hei_internal {
-            return Err(anyhow::anyhow!("兵数が不足しています"));
-        }
-        if attacker.resource.kome < kome_internal {
-            return Err(anyhow::anyhow!("兵糧が不足しています"));
-        }
-
-        attacker.consume_resource(Amount::zero(), hei_internal, kome_internal)?;
+        // 出陣処理（兵力・兵糧の検証と消費）
+        let attacker_army = attacker.dispatch_army(hei_internal, kome_internal)?;
         self.kuni_repo.save(&attacker).await?;
 
         let defender = self
@@ -133,15 +124,17 @@ impl BattleUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません: {:?}", defender_id))?;
 
+        // 防御側の軍勢ステータス作成
+        let defender_army = crate::domain::model::battle::ArmyStatus {
+            kuni_id: defender_id,
+            hei: defender.resource.hei,
+            kome: defender.resource.kome,
+            morale: defender.stats.tyu,
+        };
+
         let status = WarStatus {
-            attacker_id,
-            defender_id,
-            attacker_hei: hei_internal,
-            attacker_kome: kome_internal,
-            attacker_morale: attacker.stats.tyu.value(),
-            defender_hei: defender.resource.hei,
-            defender_kome: defender.resource.kome,
-            defender_morale: defender.stats.tyu.value(),
+            attacker: attacker_army,
+            defender: defender_army,
             winner: None,
             advantage: BattleAdvantage::Even,
         };
@@ -152,7 +145,10 @@ impl BattleUseCase {
     }
 
     /// 進行中の合戦情報を取得します
-    pub async fn get_active_war(&self, attacker_id: KuniId) -> Result<Option<WarStatus>, anyhow::Error> {
+    pub async fn get_active_war(
+        &self,
+        attacker_id: KuniId,
+    ) -> Result<Option<WarStatus>, anyhow::Error> {
         self.battle_repo.find_by_attacker(&attacker_id).await
     }
 }

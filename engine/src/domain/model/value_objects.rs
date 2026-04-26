@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::ops::{AddAssign, SubAssign};
 
 /// 表示用の金額、人数、量などを表す単位（整数）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -80,6 +81,18 @@ impl Amount {
     }
 }
 
+impl AddAssign for Amount {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 = self.0.saturating_add(rhs.0);
+    }
+}
+
+impl SubAssign for Amount {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 = self.0.saturating_sub(rhs.0);
+    }
+}
+
 impl fmt::Display for Amount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -97,6 +110,26 @@ impl Rate {
 
     pub fn value(&self) -> u32 {
         self.0
+    }
+
+    pub fn add(&self, other: Rate) -> Self {
+        Self((self.0 + other.0).min(100))
+    }
+
+    pub fn sub(&self, other: Rate) -> Self {
+        Self(self.0.saturating_sub(other.0))
+    }
+}
+
+impl AddAssign for Rate {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 = (self.0 + rhs.0).min(100);
+    }
+}
+
+impl SubAssign for Rate {
+    fn sub_assign(&mut self, rhs: Self) {
+        self.0 = self.0.saturating_sub(rhs.0);
     }
 }
 
