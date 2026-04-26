@@ -8,7 +8,7 @@ mod tests {
         game_state::GameState,
         kuni::Kuni,
         resource::{DevelopmentStats, Resource},
-        value_objects::{DaimyoId, IninFlag, KuniId},
+        value_objects::{ActionOrderIndex, DaimyoId, IninFlag, KuniId, TurnNumber},
     };
     use crate::domain::repository::{
         daimyo_repository::DaimyoRepository, event_dispatcher::EventDispatcher,
@@ -67,9 +67,6 @@ mod tests {
             Self {
                 daimyos: Arc::new(RwLock::new(HashMap::new())),
             }
-        }
-        async fn setup(&self, daimyo: Daimyo) {
-            self.daimyos.write().await.insert(daimyo.id, daimyo);
         }
     }
     #[async_trait]
@@ -150,7 +147,7 @@ mod tests {
     #[tokio::test]
     async fn test_full_turn_progression() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
-        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
+        let _daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
@@ -160,14 +157,11 @@ mod tests {
         let kuni1 = create_test_kuni(daimyo1.id);
         let kuni2 = create_test_kuni(daimyo2.id);
 
-        daimyo_repo.setup(daimyo1.clone()).await;
-        daimyo_repo.setup(daimyo2.clone()).await;
         kuni_repo.setup(kuni1.clone()).await;
         kuni_repo.setup(kuni2.clone()).await;
 
         let usecase = TurnProgressionUseCase::new(
             kuni_repo.clone(),
-            daimyo_repo.clone(),
             state_repo.clone(),
             event_dispatcher.clone(),
         );
@@ -199,7 +193,7 @@ mod tests {
 
         let state2 = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state2.current_turn().value(), 2); // すでにターンが進んでいる
-        assert!(state2.current_daimyo().is_some());
+        assert!(state2.current_kuni_id().is_some());
 
         let final_events = event_dispatcher.get_events().await;
         assert!(final_events
@@ -213,27 +207,23 @@ mod tests {
     #[tokio::test]
     async fn test_complete_current_action_save() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
-        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
         let daimyo1 = create_test_daimyo("大名1");
         let daimyo2 = create_test_daimyo("大名2");
-        daimyo_repo.setup(daimyo1.clone()).await;
-        daimyo_repo.setup(daimyo2.clone()).await;
+        let kuni1 = create_test_kuni(daimyo1.id);
+        let kuni2 = create_test_kuni(daimyo2.id);
+        kuni_repo.setup(kuni1.clone()).await;
+        kuni_repo.setup(kuni2.clone()).await;
 
-        let usecase = TurnProgressionUseCase::new(
-            kuni_repo,
-            daimyo_repo,
-            state_repo.clone(),
-            event_dispatcher,
-        );
+        let usecase = TurnProgressionUseCase::new(kuni_repo, state_repo.clone(), event_dispatcher);
 
-        // 初期状態セットアップ（ターン1, 行動順 [d1, d2], インデックス0）
+        // 初期状態セットアップ（ターン1, 行動順 [k1, k2], インデックス0）
         let initial_state = GameState::new(
-            crate::domain::model::value_objects::TurnNumber::new(1),
-            vec![daimyo1.id, daimyo2.id],
-            crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            TurnNumber::new(1),
+            vec![kuni1.id, kuni2.id],
+            ActionOrderIndex::new(0),
         )
         .unwrap();
         state_repo.save(&initial_state).await.unwrap();
@@ -249,27 +239,19 @@ mod tests {
     #[tokio::test]
     async fn test_complete_current_action_finish_turn() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
-        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
         let daimyo1 = create_test_daimyo("大名1");
-        daimyo_repo.setup(daimyo1.clone()).await;
+        let kuni1 = create_test_kuni(daimyo1.id);
+        kuni_repo.setup(kuni1.clone()).await;
 
-        let usecase = TurnProgressionUseCase::new(
-            kuni_repo,
-            daimyo_repo,
-            state_repo.clone(),
-            event_dispatcher.clone(),
-        );
+        let usecase =
+            TurnProgressionUseCase::new(kuni_repo, state_repo.clone(), event_dispatcher.clone());
 
-        // 初期状態セットアップ（ターン1, 行動順 [d1], インデックス0）
-        let initial_state = GameState::new(
-            crate::domain::model::value_objects::TurnNumber::new(1),
-            vec![daimyo1.id],
-            crate::domain::model::value_objects::ActionOrderIndex::new(0),
-        )
-        .unwrap();
+        // 初期状態セットアップ（ターン1, 行動順 [k1], インデックス0）
+        let initial_state =
+            GameState::new(TurnNumber::new(1), vec![kuni1.id], ActionOrderIndex::new(0)).unwrap();
         state_repo.save(&initial_state).await.unwrap();
 
         // 最後の行動完了 -> ターン終了分岐 (index 0 -> 1 -> 次のターンへ)
@@ -289,27 +271,23 @@ mod tests {
     #[tokio::test]
     async fn test_progress_until_player_turn_success() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
-        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
         let daimyo1 = create_test_daimyo("プレイヤー");
         let daimyo_cpu = create_test_daimyo("CPU");
-        daimyo_repo.setup(daimyo1.clone()).await;
-        daimyo_repo.setup(daimyo_cpu.clone()).await;
+        let kuni1 = create_test_kuni(daimyo1.id);
+        let kuni_cpu = create_test_kuni(daimyo_cpu.id);
+        kuni_repo.setup(kuni1.clone()).await;
+        kuni_repo.setup(kuni_cpu.clone()).await;
 
-        let usecase = TurnProgressionUseCase::new(
-            kuni_repo,
-            daimyo_repo,
-            state_repo.clone(),
-            event_dispatcher,
-        );
+        let usecase = TurnProgressionUseCase::new(kuni_repo, state_repo.clone(), event_dispatcher);
 
         // 初期状態で CPU -> プレイヤー の順とする
         let initial_state = GameState::new(
-            crate::domain::model::value_objects::TurnNumber::new(1),
-            vec![daimyo_cpu.id, daimyo1.id],
-            crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            TurnNumber::new(1),
+            vec![kuni_cpu.id, kuni1.id],
+            ActionOrderIndex::new(0),
         )
         .unwrap();
         state_repo.save(&initial_state).await.unwrap();
@@ -321,73 +299,9 @@ mod tests {
             .expect("成功するはず");
 
         let state = state_repo.get().await.unwrap().unwrap();
-        assert_eq!(state.current_daimyo(), Some(daimyo1.id));
         assert_eq!(state.current_action_index().value(), 1);
-    }
 
-    #[tokio::test]
-    async fn test_progress_until_player_turn_unreachable() {
-        let kuni_repo = Arc::new(MockKuniRepository::new());
-        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
-        let state_repo = Arc::new(MockGameStateRepository::new());
-        let event_dispatcher = Arc::new(MockEventDispatcher::new());
-
-        let daimyo_cpu = create_test_daimyo("CPU");
-        daimyo_repo.setup(daimyo_cpu.clone()).await;
-
-        let usecase = TurnProgressionUseCase::new(
-            kuni_repo,
-            daimyo_repo,
-            state_repo.clone(),
-            event_dispatcher,
-        );
-
-        // CPU一人のみの状態
-        let initial_state = GameState::new(
-            crate::domain::model::value_objects::TurnNumber::new(1),
-            vec![daimyo_cpu.id],
-            crate::domain::model::value_objects::ActionOrderIndex::new(0),
-        )
-        .unwrap();
-        state_repo.save(&initial_state).await.unwrap();
-
-        // 存在しない大名IDを指定して実行
-        let unknown_id = DaimyoId(Uuid::new_v4());
-        let result = usecase.progress_until_player_turn(Some(unknown_id)).await;
-
-        // エラーになるはず
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("プレイヤーの手番に到達できませんでした"));
-    }
-
-    #[tokio::test]
-    async fn test_progress_until_player_turn_initial_start() {
-        let kuni_repo = Arc::new(MockKuniRepository::new());
-        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
-        let state_repo = Arc::new(MockGameStateRepository::new());
-        let event_dispatcher = Arc::new(MockEventDispatcher::new());
-
-        let daimyo1 = create_test_daimyo("プレイヤー");
-        daimyo_repo.setup(daimyo1.clone()).await;
-
-        let usecase = TurnProgressionUseCase::new(
-            kuni_repo,
-            daimyo_repo,
-            state_repo.clone(),
-            event_dispatcher,
-        );
-
-        // GameState が None の状態から開始
-        usecase
-            .progress_until_player_turn(Some(daimyo1.id))
-            .await
-            .expect("初期化されて成功するはず");
-
-        let state = state_repo.get().await.unwrap().unwrap();
-        assert_eq!(state.current_daimyo(), Some(daimyo1.id));
-        assert_eq!(state.current_turn().value(), 1);
+        let current_kuni_id = state.current_kuni_id().unwrap();
+        assert_eq!(current_kuni_id, kuni1.id);
     }
 }

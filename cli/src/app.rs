@@ -86,6 +86,24 @@ impl App {
         self.defender_kuni = snapshot.defender_kuni;
         self.kuni_names = snapshot.kuni_names;
 
+        // 手番の国と表示されている国がズレないように強制同期
+        if let Some(current) = &self.current_kuni {
+            if let ScreenState::Domestic {
+                selected_kuni,
+                cursor,
+                sub_state,
+            } = &self.screen
+            {
+                if *selected_kuni != current.id {
+                    self.screen = ScreenState::Domestic {
+                        selected_kuni: current.id,
+                        cursor: *cursor,
+                        sub_state: sub_state.clone(),
+                    };
+                }
+            }
+        }
+
         Ok(())
     }
 

@@ -1,14 +1,14 @@
 use crate::domain::error::DomainError;
-use crate::domain::model::value_objects::{ActionOrderIndex, DaimyoId, TurnNumber};
+use crate::domain::model::value_objects::{ActionOrderIndex, KuniId, TurnNumber};
 
 /// ゲームの進行状態全体を表すドメインモデル
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameState {
     /// 現在のターン（季節）
     current_turn: TurnNumber,
-    /// このターンで行動する大名の順番
-    action_order: Vec<DaimyoId>,
-    /// 現在行動中の大名のインデックス（`action_order`のインデックス）
+    /// このターンで行動する国の順番
+    action_order: Vec<KuniId>,
+    /// 現在行動中の国のインデックス（`action_order`のインデックス）
     current_action_index: ActionOrderIndex,
 }
 
@@ -16,7 +16,7 @@ impl GameState {
     /// 新規ゲーム状態を生成します。
     pub fn new(
         current_turn: TurnNumber,
-        action_order: Vec<DaimyoId>,
+        action_order: Vec<KuniId>,
         current_action_index: ActionOrderIndex,
     ) -> Result<Self, DomainError> {
         if current_action_index.value() > action_order.len() {
@@ -35,7 +35,7 @@ impl GameState {
         self.current_turn
     }
 
-    pub fn action_order(&self) -> &[DaimyoId] {
+    pub fn action_order(&self) -> &[KuniId] {
         &self.action_order
     }
 
@@ -43,16 +43,16 @@ impl GameState {
         self.current_action_index
     }
 
-    /// 現在行動中の大名IDを取得します。
+    /// 現在行動中の国IDを取得します。
     /// 順番が終了している場合は `None` を返します。
-    pub fn current_daimyo(&self) -> Option<DaimyoId> {
+    pub fn current_kuni_id(&self) -> Option<KuniId> {
         self.action_order
             .get(self.current_action_index.value())
             .copied()
     }
 
-    /// 次の行動大名に進みます。
-    /// すでに最後の大名だった場合、インデックスは要素数と同じになり、`current_daimyo` は `None` を返します。
+    /// 次の行動国に進みます。
+    /// すでに最後の国だった場合、インデックスは要素数と同じになり、`current_kuni_id` は `None` を返します。
     pub fn advance_action(&mut self) {
         if self.current_action_index.value() < self.action_order.len() {
             self.current_action_index =
@@ -66,7 +66,7 @@ impl GameState {
     }
 
     /// 新しいターンを開始し、行動順序をリセットします。
-    pub fn start_new_turn(&mut self, new_order: Vec<DaimyoId>) {
+    pub fn start_new_turn(&mut self, new_order: Vec<KuniId>) {
         self.current_turn = TurnNumber::new(self.current_turn.value() + 1);
         self.action_order = new_order;
         self.current_action_index = ActionOrderIndex::new(0);

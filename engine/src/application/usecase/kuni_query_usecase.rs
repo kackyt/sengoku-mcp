@@ -90,11 +90,13 @@ impl KuniQueryUseCase {
             snapshot.defender_kuni = self.kuni_repo.find_by_id(&id).await?;
         }
 
-        // 現在の手番大名を強制的に取得（これまでの処理で設定されなかった場合）
-        if snapshot.current_daimyo.is_none() {
-            if let Some(state) = self.game_state_repo.get().await? {
-                if let Some(daimyo_id) = state.current_daimyo() {
-                    snapshot.current_daimyo = self.daimyo_repo.find_by_id(&daimyo_id).await?;
+        // 現在の手番情報を取得
+        if let Some(state) = self.game_state_repo.get().await? {
+            snapshot.current_turn = Some(state.current_turn().value());
+            if let Some(kuni_id) = state.current_kuni_id() {
+                if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
+                    snapshot.current_kuni = Some(kuni.clone());
+                    snapshot.current_daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
                 }
             }
         }

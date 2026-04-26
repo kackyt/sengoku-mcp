@@ -1,6 +1,5 @@
 use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
-use engine::domain::model::value_objects::DisplayAmount;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -155,27 +154,46 @@ fn render_domestic(
         .split(area);
 
     // Left: Status
+    let is_player_turn = app.is_player_turn();
     let (kin, kome, hei, jinko, koko, machi, tyu) = if let Some(kuni) = &app.current_kuni {
-        (
-            kuni.resource.kin.to_display(),
-            kuni.resource.kome.to_display(),
-            kuni.resource.hei.to_display(),
-            kuni.resource.jinko.to_display(),
-            kuni.stats.kokudaka.to_display(),
-            kuni.stats.machi.to_display(),
-            kuni.stats.tyu.value(),
-        )
+        if is_player_turn {
+            (
+                kuni.resource.kin.to_display().to_string(),
+                kuni.resource.kome.to_display().to_string(),
+                kuni.resource.hei.to_display().to_string(),
+                kuni.resource.jinko.to_display().to_string(),
+                kuni.stats.kokudaka.to_display().to_string(),
+                kuni.stats.machi.to_display().to_string(),
+                kuni.stats.tyu.value().to_string(),
+            )
+        } else {
+            (
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+            )
+        }
     } else {
         (
-            DisplayAmount::new(0),
-            DisplayAmount::new(0),
-            DisplayAmount::new(0),
-            DisplayAmount::new(0),
-            DisplayAmount::new(0),
-            DisplayAmount::new(0),
-            0,
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
         )
     };
+
+    let kuni_name = app
+        .current_kuni
+        .as_ref()
+        .map(|k| k.name.0.as_str())
+        .unwrap_or("不明");
 
     let daimyo_name = app
         .current_daimyo
@@ -184,6 +202,16 @@ fn render_domestic(
         .unwrap_or("不明");
 
     let status_text = vec![
+        Line::from(vec![
+            Span::styled("【手番: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                kuni_name,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("】", Style::default().fg(Color::Yellow)),
+        ]),
         Line::from(vec![
             Span::raw("大名: "),
             Span::styled(daimyo_name, Style::default().fg(Color::Green)),

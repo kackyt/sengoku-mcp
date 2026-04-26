@@ -24,12 +24,11 @@ pub enum CpuActionDecision {
 pub struct CpuActionDecisionService;
 
 impl CpuActionDecisionService {
-    pub fn decide(daimyo_id: DaimyoId, kunis: &[Kuni], rng: &mut impl Rng) -> CpuActionDecision {
-        if kunis.is_empty() {
-            return CpuActionDecision::Rest;
-        }
-
-        let target_kuni = &kunis[0];
+    pub fn decide(
+        daimyo_id: DaimyoId,
+        target_kuni: &Kuni,
+        rng: &mut impl Rng,
+    ) -> CpuActionDecision {
         let action = rng.gen_range(0..4);
 
         match action {

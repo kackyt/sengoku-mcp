@@ -1,15 +1,14 @@
-use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
-use crate::domain::model::value_objects::{Amount, DaimyoId, Rate};
+use crate::domain::model::value_objects::{Amount, KuniId, Rate};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
 pub struct TurnService;
 
 impl TurnService {
-    /// ターンの行動順序（大名のIDの配列）をランダムに決定する
-    pub fn determine_action_order(daimyos: &[Daimyo], rng: &mut impl Rng) -> Vec<DaimyoId> {
-        let mut order: Vec<DaimyoId> = daimyos.iter().map(|d| d.id).collect();
+    /// ターンの行動順序（国のIDの配列）をランダムに決定する
+    pub fn determine_action_order(kunis: &[Kuni], rng: &mut impl Rng) -> Vec<KuniId> {
+        let mut order: Vec<KuniId> = kunis.iter().map(|k| k.id).collect();
         order.shuffle(rng);
         order
     }

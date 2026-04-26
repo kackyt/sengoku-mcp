@@ -2,7 +2,6 @@ use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
-use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DisplayAmount, KuniId};
 
 pub struct EventHandler;
@@ -80,13 +79,15 @@ impl EventHandler {
                     .progress_until_player_turn(app.selected_daimyo_id)
                     .await?;
 
-                let kunis: Vec<Kuni> = app
-                    .kuni_query_usecase
-                    .get_kunis_by_daimyo(&selected_daimyo.id)
-                    .await?;
-                if let Some(first_kuni) = kunis.first() {
+                let state = app
+                    .turn_progression_usecase
+                    .get_state()
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+                if let Some(kuni_id) = state.current_kuni_id() {
                     app.screen = ScreenState::Domestic {
-                        selected_kuni: first_kuni.id,
+                        selected_kuni: kuni_id,
                         cursor: 0,
                         sub_state: DomesticSubState::Normal,
                     };
@@ -179,8 +180,17 @@ impl EventHandler {
                             app.turn_progression_usecase
                                 .progress_until_player_turn(app.selected_daimyo_id)
                                 .await?;
+
+                            let state = app
+                                .turn_progression_usecase
+                                .get_state()
+                                .await?
+                                .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+                            let next_kuni_id = state.current_kuni_id().unwrap_or(kuni_id);
+
                             app.screen = ScreenState::Domestic {
-                                selected_kuni: kuni_id,
+                                selected_kuni: next_kuni_id,
                                 cursor,
                                 sub_state: DomesticSubState::ShowMessage {
                                     message: "他国の情報を調査しました。各国の行動が進みました。"
@@ -322,8 +332,16 @@ impl EventHandler {
                                 .progress_until_player_turn(app.selected_daimyo_id)
                                 .await?;
 
+                            let state = app
+                                .turn_progression_usecase
+                                .get_state()
+                                .await?
+                                .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+                            let next_kuni_id = state.current_kuni_id().unwrap_or(kuni_id);
+
                             app.screen = ScreenState::Domestic {
-                                selected_kuni: kuni_id,
+                                selected_kuni: next_kuni_id,
                                 cursor,
                                 sub_state: DomesticSubState::ShowMessage {
                                     message: result_msg,
@@ -426,8 +444,19 @@ impl EventHandler {
                                         app.turn_progression_usecase
                                             .progress_until_player_turn(app.selected_daimyo_id)
                                             .await?;
+                                        let state = app
+                                            .turn_progression_usecase
+                                            .get_state()
+                                            .await?
+                                            .ok_or_else(|| {
+                                                anyhow::anyhow!("GameStateが見つかりません")
+                                            })?;
+
+                                        let next_kuni_id =
+                                            state.current_kuni_id().unwrap_or(kuni_id);
+
                                         app.screen = ScreenState::Domestic {
-                                            selected_kuni: kuni_id,
+                                            selected_kuni: next_kuni_id,
                                             cursor,
                                             sub_state: DomesticSubState::ShowMessage {
                                                 message: "資源を輸送しました".to_string(),
@@ -678,8 +707,16 @@ impl EventHandler {
                         app.turn_progression_usecase
                             .progress_until_player_turn(app.selected_daimyo_id)
                             .await?;
+                        let state = app
+                            .turn_progression_usecase
+                            .get_state()
+                            .await?
+                            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+                        let next_kuni_id = state.current_kuni_id().unwrap_or(status.attacker_id());
+
                         app.screen = ScreenState::Domestic {
-                            selected_kuni: status.attacker_id(),
+                            selected_kuni: next_kuni_id,
                             cursor: 0,
                             sub_state: DomesticSubState::ShowMessage {
                                 message: msg,
@@ -720,13 +757,11 @@ impl EventHandler {
     }
 
     async fn check_player_turn(app: &mut App, kuni_id: KuniId, cursor: usize) -> Result<bool> {
-        let snapshot = app
-            .kuni_query_usecase
-            .get_ui_snapshot(None, None, None)
-            .await?;
         if let Some(player_id) = app.selected_daimyo_id
-            && let Some(current_daimyo) = snapshot.current_daimyo
+            && let Some(current_daimyo) = &app.current_daimyo
+            && let Some(current_kuni) = &app.current_kuni
             && current_daimyo.id == player_id
+            && current_kuni.id == kuni_id
         {
             return Ok(true);
         }
