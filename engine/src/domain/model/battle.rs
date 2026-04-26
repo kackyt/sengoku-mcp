@@ -56,12 +56,22 @@ impl ArmyStatus {
         self.kome -= loss;
     }
 
-    /// 士気を変動させる（火計や鼓舞などの効果。負の数なら低下）
+    /// 士気を上昇させる
+    pub fn add_morale(&mut self, amount: u32) {
+        self.morale += Rate::new(amount);
+    }
+
+    /// 士気を低下させる
+    pub fn sub_morale(&mut self, amount: u32) {
+        self.morale -= Rate::new(amount);
+    }
+
+    /// 士気を変動させる（負の数なら低下）
     pub fn modify_morale(&mut self, delta: i32) {
         if delta > 0 {
-            self.morale += Rate::new(delta as u32);
+            self.add_morale(delta as u32);
         } else {
-            self.morale -= Rate::new(delta.unsigned_abs());
+            self.sub_morale(delta.unsigned_abs());
         }
     }
 

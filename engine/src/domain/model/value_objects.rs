@@ -3,7 +3,9 @@ use std::fmt;
 use std::ops::{AddAssign, SubAssign};
 
 /// 表示用の金額、人数、量などを表す単位（整数）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct DisplayAmount(pub u32);
 
 impl DisplayAmount {
@@ -39,7 +41,9 @@ impl fmt::Display for DisplayAmount {
 /// PRDで定義される BIAS (100倍) を内部スケールとして使用します。
 pub const INTERNAL_SCALE: u32 = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Amount(pub u32);
 
 impl Amount {
@@ -100,7 +104,9 @@ impl fmt::Display for Amount {
 }
 
 /// 割合（0-100%）を表す型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Rate(pub u32);
 
 impl Rate {

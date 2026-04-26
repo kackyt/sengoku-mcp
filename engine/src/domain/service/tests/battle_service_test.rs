@@ -27,61 +27,68 @@ mod tests {
 
     #[test]
     fn test_normal_tactic_damage() {
-        let status = create_test_status(500, 1000, 1000, 1000);
+        // 攻撃側 2000, 防御側 1000
+        let status = create_test_status(2000, 1000, 1000, 1000);
 
         let result = BattleService::calculate_turn(status, Tactic::Normal, Tactic::Normal).unwrap();
 
-        // 500 * 1.8 = 900 damage expected on defender
-        assert_eq!(result.defender.hei.value(), 1000 - 900);
+        // 攻撃側からのダメージ: 2000 * 1.8 = 3600 -> 防御側は 0
+        assert_eq!(result.defender.hei.value(), 0);
 
-        // Attacker food cost: 500 * 0.3 = 150
-        assert_eq!(result.attacker.kome.value(), 1000 - 150);
+        // 防御側からの反撃ダメージ (Normal vs Normal):
+        // 1000 * 1.8 = 1800 -> 攻撃側(2000)は 200
+        assert_eq!(result.attacker.hei.value(), 200);
 
-        assert_eq!(result.winner, None);
+        // 防御側が全滅したため攻撃側の勝利
+        assert_eq!(result.winner, Some(BattleSide::Attacker));
     }
 
     #[test]
-    fn test_surprise_tactic_advantage() {
-        let status = create_test_status(500, 1000, 1000, 1000);
+    fn test_surprise_tactic_counter_damage() {
+        let status = create_test_status(1000, 1000, 500, 1000);
 
+        // 攻撃側: Surprise, 防御側: Normal (不一致 -> Surprise Success 300%)
         let result =
             BattleService::calculate_turn(status, Tactic::Surprise, Tactic::Normal).unwrap();
 
-        // 500 * 0.4 = 200 damage on defender
-        assert_eq!(result.defender.hei.value(), 1000 - 200);
+        // 攻撃側からのダメージ: 1000 * 3.0 = 3000 -> 防御側(500)は 0
+        assert_eq!(result.defender.hei.value(), 0);
 
-        // Attacker food cost: 500 * 0.3 = 150
-        assert_eq!(result.attacker.kome.value(), 1000 - 150);
+        // 防御側からの反撃ダメージ (Normal vs Surprise -> Surprise Fail 40%):
+        // 500 * 0.4 = 200 -> 攻撃側(1000)は 800
+        assert_eq!(result.attacker.hei.value(), 800);
 
-        // Morale changes: attacker +10, defender -10
+        // Morale changes:
+        // Atk(Surprise) vs Def(Normal): Atk +10, Def -10
         assert_eq!(result.attacker.morale.value(), 60);
         assert_eq!(result.defender.morale.value(), 40);
+
+        // 防御側全滅
+        assert_eq!(result.winner, Some(BattleSide::Attacker));
     }
 
     #[test]
-    fn test_fire_tactic_defender_food_loss() {
-        let status = create_test_status(500, 1000, 1000, 1000);
+    fn test_fire_tactic_counter_effect() {
+        let status = create_test_status(1000, 1000, 1000, 1000);
 
-        let result = BattleService::calculate_turn(status, Tactic::Fire, Tactic::Normal).unwrap();
+        // 両軍 火計 (Fire vs Fire -> Atk: Fail 40%, Def: Default 60%)
+        let result = BattleService::calculate_turn(status, Tactic::Fire, Tactic::Fire).unwrap();
 
-        // Defender loses 50% food
-        assert_eq!(result.defender.kome.value(), 500);
-
-        // Morale changes: attacker +10, defender -10
-        assert_eq!(result.attacker.morale.value(), 60);
-        assert_eq!(result.defender.morale.value(), 40);
-
-        assert_eq!(result.winner, None);
+        // 攻撃側の火計ダメージ: 1000 * 0.4 = 400 -> 防御側 600
+        // 防御側の火計反撃: 1000 * 0.6 = 600 -> 攻撃側 400
+        assert_eq!(result.defender.hei.value(), 600);
+        assert_eq!(result.attacker.hei.value(), 400);
     }
 
     #[test]
     fn test_battle_victory_condition() {
-        let status = create_test_status(1000, 1000, 1000, 1000);
-        // 攻撃側の兵1000人で攻撃。1.8倍ダメージで1800ダメージ。
-        // 防御側の兵は1000人なので、0になるはず。
+        let status = create_test_status(1000, 1000, 100, 1000);
+        // 攻撃側 1000人, 防御側 100人
         let result = BattleService::calculate_turn(status, Tactic::Normal, Tactic::Normal).unwrap();
 
         assert_eq!(result.defender.hei.value(), 0);
+        // 反撃: 100 * 1.8 = 180 -> 攻撃側 1000 - 180 = 820
+        assert_eq!(result.attacker.hei.value(), 820);
         assert_eq!(result.winner, Some(BattleSide::Attacker));
     }
 }

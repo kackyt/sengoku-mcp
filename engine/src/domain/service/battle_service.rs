@@ -11,9 +11,8 @@ impl BattleService {
     const DMG_SURPRISE_SUCCESS: u32 = 300;
     const DMG_SURPRISE_FAIL: u32 = 40;
     const DMG_DEFAULT: u32 = 60;
-    const MORALE_CHANGE: u32 = 10;
+    const MORALE_CHANGE: i32 = 10;
     const FOOD_CONSUMPTION_RATE: u32 = 30;
-    const FIRE_HEI_LOSS_RATE: u32 = 30;
     const FIRE_KOME_LOSS_RATE: u32 = 50;
 
     /// 1ターンの戦闘計算を行います
@@ -32,44 +31,111 @@ impl BattleService {
             return Ok(status);
         }
 
-        // --- ダメージ計算と策の効果 ---
-        let base_damage = status.attacker.hei;
+        let atk_hei = status.attacker.hei;
+        let def_hei = status.defender.hei;
+        let def_kome = status.defender.kome;
 
-        let damage = match (attacker_tactic, defender_tactic) {
-            (Tactic::Normal, Tactic::Normal) => base_damage.mul_percent(Self::DMG_NORMAL),
-            (Tactic::Surprise, Tactic::Normal) => {
-                status.defender.modify_morale(-(Self::MORALE_CHANGE as i32));
-                status.attacker.modify_morale(Self::MORALE_CHANGE as i32);
-                base_damage.mul_percent(Self::DMG_SURPRISE_FAIL)
-            }
-            (Tactic::Surprise, Tactic::Surprise) => {
-                status.attacker.modify_morale(-(Self::MORALE_CHANGE as i32));
-                base_damage.mul_percent(Self::DMG_SURPRISE_SUCCESS)
-            }
-            (Tactic::Fire, Tactic::Fire) => {
-                let loss = status.attacker.hei.mul_percent(Self::FIRE_HEI_LOSS_RATE);
-                status.attacker.take_damage(loss);
-                status.attacker.modify_morale(-(Self::MORALE_CHANGE as i32));
-                base_damage.mul_percent(Self::DMG_DEFAULT)
-            }
-            (Tactic::Fire, _) => {
-                let loss = status.defender.kome.mul_percent(Self::FIRE_KOME_LOSS_RATE);
-                status.defender.lose_kome(loss);
-                status.defender.modify_morale(-(Self::MORALE_CHANGE as i32));
-                status.attacker.modify_morale(Self::MORALE_CHANGE as i32);
-                base_damage.mul_percent(Self::DMG_DEFAULT)
-            }
-            (_, Tactic::Inspire) => {
-                status.defender.modify_morale(15);
-                Amount::zero()
-            }
-            _ => base_damage.mul_percent(Self::DMG_DEFAULT),
-        };
+        // 組み合わせによる一括計算
+        let (atk_to_def_dmg, def_to_atk_dmg, atk_m_mod, def_m_mod, def_kome_loss, atk_kome_loss) =
+            match (attacker_tactic, defender_tactic) {
+                // --- Normal vs ---
+                (Tactic::Normal, Tactic::Normal) => (
+                    atk_hei.mul_percent(Self::DMG_NORMAL),
+                    def_hei.mul_percent(Self::DMG_NORMAL),
+                    0,
+                    0,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                (Tactic::Normal, _) => (
+                    atk_hei.mul_percent(Self::DMG_DEFAULT),
+                    def_hei.mul_percent(Self::DMG_SURPRISE_FAIL),
+                    0,
+                    0,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                // --- Surprise vs ---
+                (Tactic::Surprise, Tactic::Surprise) => (
+                    atk_hei.mul_percent(Self::DMG_SURPRISE_FAIL),
+                    def_hei.mul_percent(Self::DMG_SURPRISE_SUCCESS),
+                    -Self::MORALE_CHANGE,
+                    Self::MORALE_CHANGE,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                (Tactic::Surprise, _) => (
+                    atk_hei.mul_percent(Self::DMG_SURPRISE_SUCCESS),
+                    def_hei.mul_percent(Self::DMG_SURPRISE_FAIL),
+                    Self::MORALE_CHANGE,
+                    -Self::MORALE_CHANGE,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                // --- Fire vs ---
+                (Tactic::Fire, Tactic::Fire) => (
+                    atk_hei.mul_percent(Self::DMG_SURPRISE_FAIL),
+                    def_hei.mul_percent(Self::DMG_DEFAULT),
+                    -Self::MORALE_CHANGE,
+                    Self::MORALE_CHANGE,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                (Tactic::Fire, _) => (
+                    atk_hei.mul_percent(Self::DMG_DEFAULT),
+                    def_hei.mul_percent(Self::DMG_DEFAULT),
+                    Self::MORALE_CHANGE,
+                    -Self::MORALE_CHANGE,
+                    def_kome.mul_percent(Self::FIRE_KOME_LOSS_RATE),
+                    Amount::zero(),
+                ),
+                // --- Inspire vs ---
+                (Tactic::Inspire, Tactic::Inspire) => (
+                    Amount::zero(),
+                    Amount::zero(),
+                    15,
+                    15,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                (Tactic::Inspire, _) => (
+                    Amount::zero(),
+                    def_hei.mul_percent(Self::DMG_DEFAULT),
+                    15,
+                    0,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                // --- その他 ---
+                (_, Tactic::Inspire) => (
+                    atk_hei.mul_percent(Self::DMG_DEFAULT),
+                    Amount::zero(),
+                    0,
+                    15,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+                _ => (
+                    atk_hei.mul_percent(Self::DMG_DEFAULT),
+                    def_hei.mul_percent(Self::DMG_DEFAULT),
+                    0,
+                    0,
+                    Amount::zero(),
+                    Amount::zero(),
+                ),
+            };
 
-        // ダメージ適用
-        status.defender.take_damage(damage);
+        // --- 同時解決 ---
+        status.defender.take_damage(atk_to_def_dmg);
+        status.attacker.take_damage(def_to_atk_dmg);
 
-        // --- 兵糧消費 ---
+        status.attacker.modify_morale(atk_m_mod);
+        status.defender.modify_morale(def_m_mod);
+
+        status.defender.lose_kome(def_kome_loss);
+        status.attacker.lose_kome(atk_kome_loss);
+
+        // --- 兵糧消費 (維持費) ---
         let food_cost = status.attacker.hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
         status.attacker.pay_maintenance(food_cost);
 
@@ -82,13 +148,11 @@ impl BattleService {
             None
         };
 
-        // --- 勝利時のリソース接収 ---
         if status.winner == Some(BattleSide::Attacker) {
             status.attacker.plunder(&status.defender);
         }
 
-        // 優勢度計算
-        status.advantage = Self::calculate_advantage(status.attacker.hei, status.defender.hei);
+        status.advantage = Self::calculate_advantage(atk_to_def_dmg, def_to_atk_dmg);
 
         Ok(status)
     }
@@ -107,10 +171,10 @@ impl BattleService {
     }
 
     /// 戦況の優劣を判定します
-    pub fn calculate_advantage(attacker_hei: Amount, defender_hei: Amount) -> BattleAdvantage {
-        if attacker_hei > defender_hei.add(defender_hei) {
+    pub fn calculate_advantage(dmg_to_def: Amount, dmg_to_atk: Amount) -> BattleAdvantage {
+        if dmg_to_def > dmg_to_atk {
             BattleAdvantage::Advantage
-        } else if defender_hei > attacker_hei.add(attacker_hei) {
+        } else if dmg_to_atk > dmg_to_def {
             BattleAdvantage::Disadvantage
         } else {
             BattleAdvantage::Even
