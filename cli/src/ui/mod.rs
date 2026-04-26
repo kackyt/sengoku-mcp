@@ -406,16 +406,16 @@ fn render_game_over(
 
 fn render_modals(app: &App, f: &mut Frame) {
     match &app.screen {
-        ScreenState::Domestic {
-            selected_kuni,
-            sub_state,
-            ..
-        } => match sub_state {
+        ScreenState::Domestic { sub_state, .. } => match sub_state {
             DomesticSubState::InputAmount { command, input } => {
                 render_input_modal(f, *command, input);
             }
-            DomesticSubState::SelectTargetKuni { command, cursor } => {
-                render_select_target_modal(app, f, *selected_kuni, *command, *cursor);
+            DomesticSubState::SelectTargetKuni {
+                command,
+                targets,
+                cursor,
+            } => {
+                render_select_target_modal(app, f, *command, targets, *cursor);
             }
             DomesticSubState::InputWarHeihe { input, .. } => {
                 render_war_input_modal(f, "出陣兵数入力", input);
@@ -488,28 +488,27 @@ fn render_input_modal(f: &mut Frame, command: DomesticCommand, input: &str) {
 fn render_select_target_modal(
     app: &App,
     f: &mut Frame,
-    kuni_id: engine::domain::model::value_objects::KuniId,
     command: DomesticCommand,
+    targets: &[engine::domain::model::value_objects::KuniId],
     cursor: usize,
 ) {
     let area = centered_rect(60, 40, f.area());
     f.render_widget(Clear, area);
 
-    let neighbors = app.kuni_query_usecase.get_neighbor_ids(&kuni_id);
     let title = match command {
         DomesticCommand::War => "攻撃対象選択",
         DomesticCommand::Transport => "輸送先選択",
         _ => "対象選択",
     };
 
-    if neighbors.is_empty() {
-        let p = Paragraph::new("隣接する国がありません。")
+    if targets.is_empty() {
+        let p = Paragraph::new("対象となる隣接国がありません。")
             .block(Block::default().title(title).borders(Borders::ALL));
         f.render_widget(p, area);
         return;
     }
 
-    let items: Vec<ListItem> = neighbors
+    let items: Vec<ListItem> = targets
         .iter()
         .map(|target_id| {
             let name = app

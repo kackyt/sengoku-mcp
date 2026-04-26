@@ -194,22 +194,32 @@ impl EventHandler {
                                     sub_state: crate::screen::WarSubState::Normal,
                                 };
                             } else {
+                                let targets = app
+                                    .kuni_query_usecase
+                                    .get_filtered_neighbor_ids(&kuni_id, true)
+                                    .await?;
                                 app.screen = ScreenState::Domestic {
                                     selected_kuni: kuni_id,
                                     cursor,
                                     sub_state: DomesticSubState::SelectTargetKuni {
                                         command,
+                                        targets,
                                         cursor: 0,
                                     },
                                 };
                             }
                         }
                         DomesticCommand::Transport => {
+                            let targets = app
+                                .kuni_query_usecase
+                                .get_filtered_neighbor_ids(&kuni_id, false)
+                                .await?;
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: kuni_id,
                                 cursor,
                                 sub_state: DomesticSubState::SelectTargetKuni {
                                     command,
+                                    targets,
                                     cursor: 0,
                                 },
                             };
@@ -344,109 +354,107 @@ impl EventHandler {
             },
             DomesticSubState::SelectTargetKuni {
                 command,
+                targets,
                 cursor: target_cursor,
-            } => {
-                let neighbors = app.kuni_query_usecase.get_neighbor_ids(&kuni_id);
-                match key.code {
-                    KeyCode::Up => {
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::SelectTargetKuni {
-                                command,
-                                cursor: target_cursor.saturating_sub(1),
-                            },
-                        };
-                    }
-                    KeyCode::Down
-                        if !neighbors.is_empty() && target_cursor < neighbors.len() - 1 =>
-                    {
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::SelectTargetKuni {
-                                command,
-                                cursor: target_cursor + 1,
-                            },
-                        };
-                    }
-                    KeyCode::Enter => {
-                        if let Some(target_id) = neighbors.get(target_cursor) {
-                            if command == DomesticCommand::War {
+            } => match key.code {
+                KeyCode::Up => {
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::SelectTargetKuni {
+                            command,
+                            targets: targets.clone(),
+                            cursor: target_cursor.saturating_sub(1),
+                        },
+                    };
+                }
+                KeyCode::Down if !targets.is_empty() && target_cursor < targets.len() - 1 => {
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::SelectTargetKuni {
+                            command,
+                            targets: targets.clone(),
+                            cursor: target_cursor + 1,
+                        },
+                    };
+                }
+                KeyCode::Enter => {
+                    if let Some(target_id) = targets.get(target_cursor) {
+                        if command == DomesticCommand::War {
+                            app.screen = ScreenState::Domestic {
+                                selected_kuni: kuni_id,
+                                cursor,
+                                sub_state: DomesticSubState::InputWarHeihe {
+                                    target_id: *target_id,
+                                    input: String::new(),
+                                },
+                            };
+                        } else if command == DomesticCommand::Transport {
+                            let Some(kuni) = app.current_kuni.as_ref() else {
                                 app.screen = ScreenState::Domestic {
                                     selected_kuni: kuni_id,
                                     cursor,
-                                    sub_state: DomesticSubState::InputWarHeihe {
-                                        target_id: *target_id,
-                                        input: String::new(),
+                                    sub_state: DomesticSubState::ShowMessage {
+                                        message: "国の情報が取得できませんでした".to_string(),
+                                        next_state: Box::new(DomesticSubState::Normal),
                                     },
                                 };
-                            } else if command == DomesticCommand::Transport {
-                                let Some(kuni) = app.current_kuni.as_ref() else {
+                                return Ok(());
+                            };
+                            let target_kin = kuni.resource.kin.mul_percent(10);
+                            let target_hei = kuni.resource.hei.mul_percent(10);
+                            let target_kome = kuni.resource.kome.mul_percent(10);
+
+                            let result = app
+                                .domestic_usecase
+                                .transport(
+                                    kuni_id,
+                                    *target_id,
+                                    target_kin.to_display(),
+                                    target_hei.to_display(),
+                                    target_kome.to_display(),
+                                )
+                                .await;
+
+                            match result {
+                                Ok(_) => {
+                                    app.turn_progression_usecase
+                                        .complete_current_action()
+                                        .await?;
+
                                     app.screen = ScreenState::Domestic {
                                         selected_kuni: kuni_id,
                                         cursor,
                                         sub_state: DomesticSubState::ShowMessage {
-                                            message: "国の情報が取得できませんでした".to_string(),
+                                            message: "資源を輸送しました".to_string(),
                                             next_state: Box::new(DomesticSubState::Normal),
                                         },
                                     };
-                                    return Ok(());
-                                };
-                                let target_kin = kuni.resource.kin.mul_percent(10);
-                                let target_hei = kuni.resource.hei.mul_percent(10);
-                                let target_kome = kuni.resource.kome.mul_percent(10);
-
-                                let result = app
-                                    .domestic_usecase
-                                    .transport(
-                                        kuni_id,
-                                        *target_id,
-                                        target_kin.to_display(),
-                                        target_hei.to_display(),
-                                        target_kome.to_display(),
-                                    )
-                                    .await;
-
-                                match result {
-                                    Ok(_) => {
-                                        app.turn_progression_usecase
-                                            .complete_current_action()
-                                            .await?;
-
-                                        app.screen = ScreenState::Domestic {
-                                            selected_kuni: kuni_id,
-                                            cursor,
-                                            sub_state: DomesticSubState::ShowMessage {
-                                                message: "資源を輸送しました".to_string(),
-                                                next_state: Box::new(DomesticSubState::Normal),
-                                            },
-                                        };
-                                    }
-                                    Err(e) => {
-                                        app.screen = ScreenState::Domestic {
-                                            selected_kuni: kuni_id,
-                                            cursor,
-                                            sub_state: DomesticSubState::ShowMessage {
-                                                message: format!("エラー: {}", e),
-                                                next_state: Box::new(DomesticSubState::Normal),
-                                            },
-                                        };
-                                    }
+                                }
+                                Err(e) => {
+                                    app.screen = ScreenState::Domestic {
+                                        selected_kuni: kuni_id,
+                                        cursor,
+                                        sub_state: DomesticSubState::ShowMessage {
+                                            message: format!("エラー: {}", e),
+                                            next_state: Box::new(DomesticSubState::Normal),
+                                        },
+                                    };
                                 }
                             }
                         }
                     }
-                    KeyCode::Esc => {
-                        app.screen = ScreenState::Domestic {
-                            selected_kuni: kuni_id,
-                            cursor,
-                            sub_state: DomesticSubState::Normal,
-                        };
-                    }
-                    _ => {}
                 }
-            }
+                KeyCode::Esc => {
+                    app.screen = ScreenState::Domestic {
+                        selected_kuni: kuni_id,
+                        cursor,
+                        sub_state: DomesticSubState::Normal,
+                    };
+                }
+                _ => {}
+            },
             DomesticSubState::InputWarHeihe {
                 target_id,
                 mut input,

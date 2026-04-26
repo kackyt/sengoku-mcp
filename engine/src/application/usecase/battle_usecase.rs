@@ -124,6 +124,10 @@ impl BattleUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません: {:?}", defender_id))?;
 
+        if attacker.daimyo_id == defender.daimyo_id {
+            return Err(anyhow::anyhow!("自領には攻め込めません"));
+        }
+
         // 防御側の軍勢ステータス作成
         let defender_army = crate::domain::model::battle::ArmyStatus {
             kuni_id: defender_id,

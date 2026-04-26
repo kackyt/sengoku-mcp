@@ -87,21 +87,22 @@ impl App {
         self.kuni_names = snapshot.kuni_names;
 
         // 手番の国と表示されている国がズレないように強制同期
-        if let Some(current) = &self.current_kuni {
-            if let ScreenState::Domestic {
-                selected_kuni,
-                cursor,
-                sub_state,
-            } = &self.screen
-            {
-                if *selected_kuni != current.id {
-                    self.screen = ScreenState::Domestic {
-                        selected_kuni: current.id,
-                        cursor: *cursor,
-                        sub_state: sub_state.clone(),
-                    };
-                }
+        match (&self.current_kuni, &self.screen) {
+            (
+                Some(current),
+                ScreenState::Domestic {
+                    selected_kuni,
+                    cursor,
+                    sub_state,
+                },
+            ) if *selected_kuni != current.id => {
+                self.screen = ScreenState::Domestic {
+                    selected_kuni: current.id,
+                    cursor: *cursor,
+                    sub_state: sub_state.clone(),
+                };
             }
+            _ => {}
         }
 
         Ok(())
@@ -129,14 +130,20 @@ impl App {
             // プレイヤーの手番でない場合は自動進行
             if self.selected_daimyo_id.is_some() && !self.is_player_turn() {
                 match &self.screen {
-                    ScreenState::Domestic { sub_state, .. } if matches!(sub_state, DomesticSubState::Normal) => {
+                    ScreenState::Domestic {
+                        sub_state: DomesticSubState::Normal,
+                        ..
+                    } => {
                         // 1ステップ進める
                         self.turn_progression_usecase.progress().await?;
                         // CPUの行動を見せるために少し待機
                         tokio::time::sleep(Duration::from_millis(500)).await;
                         continue;
                     }
-                    ScreenState::War { sub_state, .. } if matches!(sub_state, crate::screen::WarSubState::Normal) => {
+                    ScreenState::War {
+                        sub_state: crate::screen::WarSubState::Normal,
+                        ..
+                    } => {
                         // 1ステップ進める
                         self.turn_progression_usecase.progress().await?;
                         // CPUの行動を見せるために少し待機

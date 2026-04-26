@@ -31,6 +31,7 @@ pub enum DomesticSubState {
     },
     SelectTargetKuni {
         command: DomesticCommand,
+        targets: Vec<KuniId>,
         cursor: usize,
     },
     InputWarHeihe {
