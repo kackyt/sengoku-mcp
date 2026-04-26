@@ -1,5 +1,5 @@
 use crate::handler::EventHandler;
-use crate::screen::ScreenState;
+use crate::screen::{DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{Event, KeyEventKind};
 use engine::application::usecase::{
@@ -129,7 +129,14 @@ impl App {
             // プレイヤーの手番でない場合は自動進行
             if self.selected_daimyo_id.is_some() && !self.is_player_turn() {
                 match &self.screen {
-                    ScreenState::Domestic { .. } | ScreenState::War { .. } => {
+                    ScreenState::Domestic { sub_state, .. } if matches!(sub_state, DomesticSubState::Normal) => {
+                        // 1ステップ進める
+                        self.turn_progression_usecase.progress().await?;
+                        // CPUの行動を見せるために少し待機
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
+                    ScreenState::War { sub_state, .. } if matches!(sub_state, crate::screen::WarSubState::Normal) => {
                         // 1ステップ進める
                         self.turn_progression_usecase.progress().await?;
                         // CPUの行動を見せるために少し待機
