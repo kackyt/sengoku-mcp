@@ -9,13 +9,13 @@ mod tests {
     fn create_test_status(a_hei: u32, a_kome: u32, d_hei: u32, d_kome: u32) -> WarStatus {
         WarStatus {
             attacker: ArmyStatus {
-                kuni_id: KuniId::new(),
+                kuni_id: KuniId::new(1),
                 hei: Amount::new(a_hei),
                 kome: Amount::new(a_kome),
                 morale: Rate::new(50),
             },
             defender: ArmyStatus {
-                kuni_id: KuniId::new(),
+                kuni_id: KuniId::new(2),
                 hei: Amount::new(d_hei),
                 kome: Amount::new(d_kome),
                 morale: Rate::new(50),

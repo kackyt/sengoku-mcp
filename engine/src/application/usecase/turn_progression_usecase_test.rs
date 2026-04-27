@@ -18,7 +18,6 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::RwLock;
-    use uuid::Uuid;
 
     // --- Mocks ---
 
@@ -128,12 +127,12 @@ mod tests {
     // --- Helpers ---
 
     fn create_test_daimyo(name: &str) -> Daimyo {
-        Daimyo::new(DaimyoId(Uuid::new_v4()), name)
+        Daimyo::new(DaimyoId(1), name)
     }
 
     fn create_test_kuni(daimyo_id: DaimyoId) -> Kuni {
         Kuni::new(
-            KuniId::new(),
+            KuniId::new(1),
             "TestKuni",
             daimyo_id,
             Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
@@ -152,10 +151,17 @@ mod tests {
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
         let daimyo1 = create_test_daimyo("織田信長");
-        let daimyo2 = create_test_daimyo("武田信玄");
+        let daimyo2 = Daimyo::new(DaimyoId(2), "武田信玄");
 
         let kuni1 = create_test_kuni(daimyo1.id);
-        let kuni2 = create_test_kuni(daimyo2.id);
+        let kuni2 = Kuni::new(
+            KuniId(2),
+            "TestKuni2",
+            daimyo2.id,
+            Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
+            DevelopmentStats::new(100 * 10, 100 * 10, 50),
+            IninFlag(false),
+        );
 
         kuni_repo.setup(kuni1.clone()).await;
         kuni_repo.setup(kuni2.clone()).await;
@@ -275,9 +281,16 @@ mod tests {
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
         let daimyo1 = create_test_daimyo("プレイヤー");
-        let daimyo_cpu = create_test_daimyo("CPU");
+        let daimyo_cpu = Daimyo::new(DaimyoId(2), "CPU");
         let kuni1 = create_test_kuni(daimyo1.id);
-        let kuni_cpu = create_test_kuni(daimyo_cpu.id);
+        let kuni_cpu = Kuni::new(
+            KuniId(2),
+            "CPUKuni",
+            daimyo_cpu.id,
+            Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
+            DevelopmentStats::new(100 * 10, 100 * 10, 50),
+            IninFlag(false),
+        );
         kuni_repo.setup(kuni1.clone()).await;
         kuni_repo.setup(kuni_cpu.clone()).await;
 

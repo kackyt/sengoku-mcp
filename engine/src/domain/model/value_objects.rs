@@ -170,18 +170,18 @@ impl UnitId {
 }
 
 /// 国の識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct KuniId(pub uuid::Uuid);
-
-impl Default for KuniId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+pub struct KuniId(pub u32);
 
 impl KuniId {
-    pub fn new() -> Self {
-        Self(uuid::Uuid::new_v4())
+    pub fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub fn value(&self) -> u32 {
+        self.0
     }
 }
 
@@ -190,18 +190,18 @@ impl KuniId {
 pub struct KuniName(pub String);
 
 /// 大名の識別子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct DaimyoId(pub uuid::Uuid);
-
-impl Default for DaimyoId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+pub struct DaimyoId(pub u32);
 
 impl DaimyoId {
-    pub fn new() -> Self {
-        Self(uuid::Uuid::new_v4())
+    pub fn new(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub fn value(&self) -> u32 {
+        self.0
     }
 }
 

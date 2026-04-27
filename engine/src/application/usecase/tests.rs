@@ -12,7 +12,6 @@ use crate::domain::repository::neighbor_repository::NeighborRepository;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use uuid::Uuid;
 
 // --- モックリポジトリ ---
 
@@ -122,14 +121,14 @@ impl BattleRepository for MockBattleRepository {
 
 // --- テストデータ作成ヘルパー ---
 
-fn create_test_kuni() -> Kuni {
-    let daimyo_id = DaimyoId(Uuid::new_v4());
+fn create_test_kuni(id: u32) -> Kuni {
+    let daimyo_id = DaimyoId(id);
     Kuni::new(
-        KuniId(Uuid::new_v4()),
-        "TestKuni".to_string(),
+        KuniId(id),
+        format!("TestKuni-{}", id),
         daimyo_id,
         Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 1000 * 10),
-        DevelopmentStats::new(100 * 100, 100 * 100, 60), // 石高と町は Amount なので 100 * INTERNAL_SCALE
+        DevelopmentStats::new(100 * 100, 100 * 100, 60),
         IninFlag(false),
     )
 }
@@ -140,7 +139,7 @@ fn create_test_kuni() -> Kuni {
 async fn test_domestic_sell_rice() {
     let repo = Arc::new(MockKuniRepository::new());
     let neighbor_repo = Arc::new(MockNeighborRepository::new());
-    let kuni = create_test_kuni();
+    let kuni = create_test_kuni(1);
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
@@ -161,7 +160,7 @@ async fn test_domestic_sell_rice() {
 async fn test_domestic_buy_rice() {
     let repo = Arc::new(MockKuniRepository::new());
     let neighbor_repo = Arc::new(MockNeighborRepository::new());
-    let kuni = create_test_kuni();
+    let kuni = create_test_kuni(1);
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
@@ -182,7 +181,7 @@ async fn test_domestic_buy_rice() {
 async fn test_domestic_recruit() {
     let repo = Arc::new(MockKuniRepository::new());
     let neighbor_repo = Arc::new(MockNeighborRepository::new());
-    let kuni = create_test_kuni();
+    let kuni = create_test_kuni(1);
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
@@ -201,8 +200,8 @@ async fn test_domestic_recruit() {
 async fn test_domestic_transport_success_when_adjacent() {
     let repo = Arc::new(MockKuniRepository::new());
     let mut mock_neighbor = MockNeighborRepository::new();
-    let from_kuni = create_test_kuni();
-    let to_kuni = create_test_kuni();
+    let from_kuni = create_test_kuni(1);
+    let to_kuni = create_test_kuni(2);
     let from_id = from_kuni.id;
     let to_id = to_kuni.id;
 
@@ -234,8 +233,8 @@ async fn test_domestic_transport_success_when_adjacent() {
 async fn test_domestic_transport_fails_when_not_adjacent() {
     let repo = Arc::new(MockKuniRepository::new());
     let neighbor_repo = Arc::new(MockNeighborRepository::new()); // No adjacency
-    let from_kuni = create_test_kuni();
-    let to_kuni = create_test_kuni();
+    let from_kuni = create_test_kuni(1);
+    let to_kuni = create_test_kuni(2);
     let from_id = from_kuni.id;
     let to_id = to_kuni.id;
 
@@ -263,8 +262,15 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
 async fn test_battle_execution_success_when_adjacent() {
     let repo = Arc::new(MockKuniRepository::new());
     let mut mock_neighbor = MockNeighborRepository::new();
-    let attacker = create_test_kuni();
-    let defender = create_test_kuni();
+    let attacker = create_test_kuni(1);
+    let defender = Kuni::new(
+        KuniId(2),
+        "Defender".to_string(),
+        DaimyoId(2), // Different daimyo
+        Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 1000 * 10),
+        DevelopmentStats::new(100 * 100, 100 * 100, 60),
+        IninFlag(false),
+    );
     let attacker_id = attacker.id;
     let defender_id = defender.id;
 
@@ -305,8 +311,8 @@ async fn test_battle_execution_success_when_adjacent() {
 async fn test_battle_execution_fails_when_not_adjacent() {
     let repo = Arc::new(MockKuniRepository::new());
     let neighbor_repo = Arc::new(MockNeighborRepository::new()); // No adjacency
-    let attacker = create_test_kuni();
-    let defender = create_test_kuni();
+    let attacker = create_test_kuni(1);
+    let defender = create_test_kuni(1);
     let attacker_id = attacker.id;
     let defender_id = defender.id;
 
@@ -334,7 +340,7 @@ async fn test_battle_execution_fails_when_not_adjacent() {
 #[tokio::test]
 async fn test_turn_progress() {
     let repo = Arc::new(MockKuniRepository::new());
-    let kuni = create_test_kuni();
+    let kuni = create_test_kuni(1);
     let _kuni_id = kuni.id;
     repo.setup(kuni);
 

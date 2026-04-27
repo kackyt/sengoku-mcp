@@ -116,9 +116,9 @@ impl MasterDataLoader {
             let daimyo_name = record.initial_daimyo;
             let daimyo = daimyo_map
                 .entry(daimyo_name.clone()) // キーとして1回クローン
-                .or_insert_with(|| Daimyo::new(DaimyoId::new(), daimyo_name)); // 存在しない場合のみそのまま使用
+                .or_insert_with(|| Daimyo::new(DaimyoId::new(record.id), daimyo_name)); // 存在しない場合、最初の出現国のIDを使用
 
-            let kuni_id = KuniId::new();
+            let kuni_id = KuniId::new(record.id);
             id_map.insert(record.id, kuni_id);
 
             // 資源データの構築
