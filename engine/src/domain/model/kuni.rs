@@ -86,7 +86,6 @@ impl Kuni {
         // 占領地に合算済みの軍勢（兵・兵糧）を配置
         self.resource.hei = surviving_attacker.hei;
         self.resource.kome = surviving_attacker.kome;
-        self.stats.tyu -= Rate::new(50); // 占領直後のペナルティ
     }
 
     /// 防衛成功時の事後処理

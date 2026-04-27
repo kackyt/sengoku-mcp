@@ -78,8 +78,10 @@ impl ArmyStatus {
     /// ターンの維持費（兵糧）を支払う。足りなければ士気が激減する
     pub fn pay_maintenance(&mut self, cost: Amount) {
         if self.kome < cost {
+            use rand::Rng;
             self.kome = Amount::zero();
-            self.morale -= Rate::new(40); // 飢えによる士気低下
+            let drop = rand::thread_rng().gen_range(30..=50);
+            self.morale -= Rate::new(drop); // 飢えによる士気低下
         } else {
             self.kome -= cost;
         }
