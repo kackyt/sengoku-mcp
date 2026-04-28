@@ -130,13 +130,13 @@ mod tests {
         Daimyo::new(DaimyoId(1), name)
     }
 
-    fn create_test_kuni(daimyo_id: DaimyoId) -> Kuni {
+    fn create_test_kuni(id: u32, daimyo_id: DaimyoId) -> Kuni {
         Kuni::new(
-            KuniId::new(1),
-            "TestKuni",
+            KuniId::new(id),
+            format!("TestKuni{}", id),
             daimyo_id,
-            Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
-            DevelopmentStats::new(100 * 10, 100 * 10, 50),
+            Resource::new(1000 * 100, 1000 * 100, 1000 * 100, 10000 * 100),
+            DevelopmentStats::new(100 * 100, 100 * 100, 50),
             IninFlag(false),
         )
     }
@@ -153,13 +153,13 @@ mod tests {
         let daimyo1 = create_test_daimyo("織田信長");
         let daimyo2 = Daimyo::new(DaimyoId(2), "武田信玄");
 
-        let kuni1 = create_test_kuni(daimyo1.id);
+        let kuni1 = create_test_kuni(1, daimyo1.id);
         let kuni2 = Kuni::new(
             KuniId(2),
             "TestKuni2",
             daimyo2.id,
-            Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
-            DevelopmentStats::new(100 * 10, 100 * 10, 50),
+            Resource::new(1000 * 100, 1000 * 100, 1000 * 100, 10000 * 100),
+            DevelopmentStats::new(100 * 100, 100 * 100, 50),
             IninFlag(false),
         );
 
@@ -218,8 +218,8 @@ mod tests {
 
         let daimyo1 = create_test_daimyo("大名1");
         let daimyo2 = create_test_daimyo("大名2");
-        let kuni1 = create_test_kuni(daimyo1.id);
-        let kuni2 = create_test_kuni(daimyo2.id);
+        let kuni1 = create_test_kuni(1, daimyo1.id);
+        let kuni2 = create_test_kuni(2, daimyo2.id);
         kuni_repo.setup(kuni1.clone()).await;
         kuni_repo.setup(kuni2.clone()).await;
 
@@ -249,7 +249,7 @@ mod tests {
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
         let daimyo1 = create_test_daimyo("大名1");
-        let kuni1 = create_test_kuni(daimyo1.id);
+        let kuni1 = create_test_kuni(1, daimyo1.id);
         kuni_repo.setup(kuni1.clone()).await;
 
         let usecase =
@@ -282,13 +282,13 @@ mod tests {
 
         let daimyo1 = create_test_daimyo("プレイヤー");
         let daimyo_cpu = Daimyo::new(DaimyoId(2), "CPU");
-        let kuni1 = create_test_kuni(daimyo1.id);
+        let kuni1 = create_test_kuni(1, daimyo1.id);
         let kuni_cpu = Kuni::new(
             KuniId(2),
             "CPUKuni",
             daimyo_cpu.id,
-            Resource::new(1000 * 10, 1000 * 10, 1000 * 10, 10000 * 10),
-            DevelopmentStats::new(100 * 10, 100 * 10, 50),
+            Resource::new(1000 * 100, 1000 * 100, 1000 * 100, 10000 * 100),
+            DevelopmentStats::new(100 * 100, 100 * 100, 50),
             IninFlag(false),
         );
         kuni_repo.setup(kuni1.clone()).await;

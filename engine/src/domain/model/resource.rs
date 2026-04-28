@@ -36,9 +36,11 @@ impl Resource {
         hei: Amount,
         kome: Amount,
         jinko: Amount,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), crate::domain::error::DomainError> {
         if !self.can_consume(kin, hei, kome, jinko) {
-            return Err("Insufficient resources");
+            return Err(crate::domain::error::DomainError::InsufficientResource(
+                "資源が不足しています".to_string(),
+            ));
         }
         self.kin -= kin;
         self.hei -= hei;

@@ -61,9 +61,7 @@ impl Kuni {
         kome: Amount,
         jinko: Amount,
     ) -> Result<(), DomainError> {
-        self.resource
-            .consume(kin, hei, kome, jinko)
-            .map_err(|e| DomainError::InsufficientResource(e.to_string()))
+        self.resource.consume(kin, hei, kome, jinko)
     }
 
     // --- 出陣・占領・防衛成功 (Battle関連) ---
@@ -210,9 +208,9 @@ impl Kuni {
         let before = self.stats.tyu.value();
 
         let multiplier: u32 = rand::thread_rng().gen_range(50..=100);
-        let tyu_gain = internal_amount.mul_percent(multiplier);
+        let tyu_gain = amount.value() * multiplier / 100;
 
-        self.stats.tyu += Rate::new(tyu_gain.to_display().value());
+        self.stats.tyu += Rate::new(tyu_gain);
         Ok(self.stats.tyu.value().saturating_sub(before))
     }
 }

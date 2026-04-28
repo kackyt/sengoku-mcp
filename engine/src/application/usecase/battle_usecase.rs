@@ -111,13 +111,6 @@ impl BattleUseCase {
             return Err(DomainError::NotAdjacent.into());
         }
 
-        let hei_internal = hei.to_internal();
-        let kome_internal = kome.to_internal();
-
-        // 出陣処理（兵力・兵糧の検証と消費）
-        let attacker_army = attacker.dispatch_army(hei_internal, kome_internal)?;
-        self.kuni_repo.save(&attacker).await?;
-
         let defender = self
             .kuni_repo
             .find_by_id(&defender_id)
@@ -127,6 +120,13 @@ impl BattleUseCase {
         if attacker.daimyo_id == defender.daimyo_id {
             return Err(anyhow::anyhow!("自領には攻め込めません"));
         }
+
+        let hei_internal = hei.to_internal();
+        let kome_internal = kome.to_internal();
+
+        // 出陣処理（兵力・兵糧の検証と消費）
+        let attacker_army = attacker.dispatch_army(hei_internal, kome_internal)?;
+        self.kuni_repo.save(&attacker).await?;
 
         // 防御側の軍勢ステータス作成
         let defender_army = crate::domain::model::battle::ArmyStatus {

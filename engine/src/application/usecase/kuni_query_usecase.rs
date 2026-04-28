@@ -94,9 +94,12 @@ impl KuniQueryUseCase {
         if let Some(state) = self.game_state_repo.get().await? {
             snapshot.current_turn = Some(state.current_turn().value());
             if let Some(kuni_id) = state.current_kuni_id() {
-                if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
-                    snapshot.current_kuni = Some(kuni.clone());
-                    snapshot.current_daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+                if snapshot.current_kuni.is_none() {
+                    if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
+                        snapshot.current_kuni = Some(kuni.clone());
+                        snapshot.current_daimyo =
+                            self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+                    }
                 }
             }
         }

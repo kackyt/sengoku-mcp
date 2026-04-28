@@ -136,8 +136,11 @@ impl BattleService {
         status.attacker.lose_kome(atk_kome_loss);
 
         // --- 兵糧消費 (維持費) ---
-        let food_cost = status.attacker.hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
-        status.attacker.pay_maintenance(food_cost);
+        let atk_food_cost = status.attacker.hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
+        status.attacker.pay_maintenance(atk_food_cost);
+
+        let def_food_cost = status.defender.hei.mul_percent(Self::FOOD_CONSUMPTION_RATE);
+        status.defender.pay_maintenance(def_food_cost);
 
         // --- 勝敗判定 ---
         status.winner = if status.defender.is_destroyed() {
