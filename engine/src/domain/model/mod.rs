@@ -1,3 +1,4 @@
+pub mod battle;
 pub mod daimyo;
 pub mod event;
 pub mod game_state;

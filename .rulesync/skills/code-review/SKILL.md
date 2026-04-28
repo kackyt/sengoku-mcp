@@ -69,6 +69,11 @@ git diff main...HEAD -- <filepath>
 | 🟡 警告 | SOLID原則違反（単一責任・開放閉鎖など） | SOLID/DRY原則 |
 | 🟡 警告 | DRY違反（重複ロジック） | SOLID/DRY原則 |
 | 🟡 警告 | プリミティブ型（`i32`, `String` 等）を直接フィールドに使用している | Newtypeパターンの徹底 |
+| 🔴 重大 | **[Amount型規約違反]** `DisplayAmount` をドメインロジックや計算式の中で直接使用している | Amount型規約：DisplayAmountは表示専用 |
+| 🔴 重大 | **[Amount型規約違反]** `Amount` / `DisplayAmount` を介さず `.value()` で生値を直接計算・比較している | Amount型規約：計算・比較はAmountで完結させる |
+| 🟡 警告 | `Amount::new(0)` を使用している（`Amount::zero()` を使うべき） | Amount型規約 |
+| 🟡 警告 | `.value() == 0` で判定している（`.is_zero()` を使うべき） | Amount型規約 |
+| 🟡 警告 | `Amount` メソッド（`add`, `sub`, `mul_percent`等）で代替可能な計算を `.value()` 経由で行っている | Amount型規約 |
 | 🟡 警告 | **[DDDドメインモデル]** DTO（`engine/src/application/dto/`）とドメインモデルの境界が曖昧（Entityが直接プレゼンテーション層に返される等） | DDD：DTO変換はApplication層で行う |
 | 🟡 警告 | **[DDDドメインモデル]** 集約ルート（Aggregate Root）を経由せずに集約内部のエンティティを外部から直接変更している | DDD：集約の整合性境界の維持 |
 | 🔵 提案 | `cargo clippy` / `cargo fmt` で検出される軽微な問題 | コードスタイル規約 |

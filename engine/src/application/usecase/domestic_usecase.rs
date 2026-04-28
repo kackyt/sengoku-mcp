@@ -1,6 +1,6 @@
 use crate::domain::{
     error::DomainError,
-    model::value_objects::{Amount, IninFlag, KuniId},
+    model::value_objects::{Amount, DisplayAmount, IninFlag, KuniId},
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
 };
@@ -26,7 +26,11 @@ impl DomesticUseCase {
     }
 
     /// 米を売却します
-    pub async fn sell_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
+    pub async fn sell_rice(
+        &self,
+        kuni_id: KuniId,
+        amount: DisplayAmount,
+    ) -> Result<DisplayAmount, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -40,7 +44,11 @@ impl DomesticUseCase {
     }
 
     /// 米を購入します
-    pub async fn buy_rice(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
+    pub async fn buy_rice(
+        &self,
+        kuni_id: KuniId,
+        amount: DisplayAmount,
+    ) -> Result<DisplayAmount, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -57,8 +65,8 @@ impl DomesticUseCase {
     pub async fn develop_land(
         &self,
         kuni_id: KuniId,
-        amount: Amount,
-    ) -> Result<u32, anyhow::Error> {
+        amount: DisplayAmount,
+    ) -> Result<DisplayAmount, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -72,7 +80,11 @@ impl DomesticUseCase {
     }
 
     /// 町作りを行います
-    pub async fn build_town(&self, kuni_id: KuniId, amount: Amount) -> Result<u32, anyhow::Error> {
+    pub async fn build_town(
+        &self,
+        kuni_id: KuniId,
+        amount: DisplayAmount,
+    ) -> Result<DisplayAmount, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -86,7 +98,11 @@ impl DomesticUseCase {
     }
 
     /// 兵を徴募します
-    pub async fn recruit(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn recruit(
+        &self,
+        kuni_id: KuniId,
+        amount: DisplayAmount,
+    ) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -99,7 +115,11 @@ impl DomesticUseCase {
     }
 
     /// 兵を解雇します
-    pub async fn dismiss(&self, kuni_id: KuniId, amount: Amount) -> Result<(), anyhow::Error> {
+    pub async fn dismiss(
+        &self,
+        kuni_id: KuniId,
+        amount: DisplayAmount,
+    ) -> Result<(), anyhow::Error> {
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -115,7 +135,7 @@ impl DomesticUseCase {
     pub async fn give_charity(
         &self,
         kuni_id: KuniId,
-        amount: Amount,
+        amount: DisplayAmount,
     ) -> Result<u32, anyhow::Error> {
         let mut kuni = self
             .kuni_repo
@@ -134,9 +154,9 @@ impl DomesticUseCase {
         &self,
         from_kuni_id: KuniId,
         to_kuni_id: KuniId,
-        kin: Amount,
-        hei: Amount,
-        kome: Amount,
+        kin: DisplayAmount,
+        hei: DisplayAmount,
+        kome: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
         let mut from_kuni = self
             .kuni_repo
@@ -153,11 +173,44 @@ impl DomesticUseCase {
             return Err(DomainError::NotAdjacent.into());
         }
 
-        from_kuni.consume_resource(kin, hei, kome)?;
-        to_kuni.add_resource(kin, hei, kome);
+        let kin_internal = kin.to_internal();
+        let hei_internal = hei.to_internal();
+        let kome_internal = kome.to_internal();
+
+        from_kuni.consume_resource(kin_internal, hei_internal, kome_internal, Amount::zero())?;
+        to_kuni
+            .resource
+            .add(kin_internal, hei_internal, kome_internal, Amount::zero());
 
         self.kuni_repo.save(&from_kuni).await?;
         self.kuni_repo.save(&to_kuni).await.map_err(|e| e.into())
+    }
+
+    /// 指定した割合で資源を輸送します（内政コマンド用）
+    pub async fn transport_with_rate(
+        &self,
+        from_kuni_id: KuniId,
+        to_kuni_id: KuniId,
+        rate_percent: u32,
+    ) -> Result<(), anyhow::Error> {
+        let from_kuni = self
+            .kuni_repo
+            .find_by_id(&from_kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("送り元の国が見つかりません: {:?}", from_kuni_id))?;
+
+        let kin = from_kuni.resource.kin.mul_percent(rate_percent);
+        let hei = from_kuni.resource.hei.mul_percent(rate_percent);
+        let kome = from_kuni.resource.kome.mul_percent(rate_percent);
+
+        self.transport(
+            from_kuni_id,
+            to_kuni_id,
+            kin.to_display(),
+            hei.to_display(),
+            kome.to_display(),
+        )
+        .await
     }
 
     /// 委任状態を設定します

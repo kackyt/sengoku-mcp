@@ -1,7 +1,7 @@
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::resource::{DevelopmentStats, Resource};
-use engine::domain::model::value_objects::{Amount, DaimyoId, IninFlag, KuniId, Rate};
+use engine::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId, Rate};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -116,23 +116,23 @@ impl MasterDataLoader {
             let daimyo_name = record.initial_daimyo;
             let daimyo = daimyo_map
                 .entry(daimyo_name.clone()) // キーとして1回クローン
-                .or_insert_with(|| Daimyo::new(DaimyoId::new(), daimyo_name)); // 存在しない場合のみそのまま使用
+                .or_insert_with(|| Daimyo::new(DaimyoId::new(record.id), daimyo_name)); // 存在しない場合、最初の出現国のIDを使用
 
-            let kuni_id = KuniId::new();
+            let kuni_id = KuniId::new(record.id);
             id_map.insert(record.id, kuni_id);
 
-            // 資源データの構築 (内部計算用に10倍する)
+            // 資源データの構築
             let resource = Resource {
-                kin: Amount::new(record.kin * 10),
-                hei: Amount::new(record.hei * 10),
-                kome: Amount::new(record.kome * 10),
-                jinko: Amount::new(record.jinko * 10),
+                kin: DisplayAmount::new(record.kin).to_internal(),
+                hei: DisplayAmount::new(record.hei).to_internal(),
+                kome: DisplayAmount::new(record.kome).to_internal(),
+                jinko: DisplayAmount::new(record.jinko).to_internal(),
             };
 
-            // 開発ステータスの構築 (内部計算用に10倍する)
+            // 開発ステータスの構築
             let stats = DevelopmentStats {
-                kokudaka: Amount::new(record.kokudaka * 10),
-                machi: Amount::new(record.machi * 10),
+                kokudaka: DisplayAmount::new(record.kokudaka).to_internal(),
+                machi: DisplayAmount::new(record.machi).to_internal(),
                 tyu: Rate::new(record.tyu), // 忠誠度は%なのでそのまま
             };
 
@@ -143,7 +143,7 @@ impl MasterDataLoader {
                 daimyo.id,
                 resource,
                 stats,
-                IninFlag::new(false),
+                IninFlag(false),
             );
             kunis.push(kuni);
         }
@@ -218,7 +218,7 @@ mod tests {
 
         let ezo_id = result.id_map.get(&1).unwrap();
         let ezo = result.kunis.iter().find(|k| k.id == *ezo_id).unwrap();
-        assert_eq!(ezo.resource.kin.value(), 800); // 10倍
+        assert_eq!(ezo.resource.kin.value(), 8000); // 100倍
 
         let kakizaki = result
             .daimyos

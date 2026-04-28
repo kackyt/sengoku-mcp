@@ -90,11 +90,16 @@ impl KuniQueryUseCase {
             snapshot.defender_kuni = self.kuni_repo.find_by_id(&id).await?;
         }
 
-        // 現在の手番大名を強制的に取得（これまでの処理で設定されなかった場合）
-        if snapshot.current_daimyo.is_none() {
-            if let Some(state) = self.game_state_repo.get().await? {
-                if let Some(daimyo_id) = state.current_daimyo() {
-                    snapshot.current_daimyo = self.daimyo_repo.find_by_id(&daimyo_id).await?;
+        // 現在の手番情報を取得
+        if let Some(state) = self.game_state_repo.get().await? {
+            snapshot.current_turn = Some(state.current_turn().value());
+            if let Some(kuni_id) = state.current_kuni_id() {
+                if snapshot.current_kuni.is_none() {
+                    if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
+                        snapshot.current_kuni = Some(kuni.clone());
+                        snapshot.current_daimyo =
+                            self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+                    }
                 }
             }
         }
@@ -128,5 +133,37 @@ impl KuniQueryUseCase {
     /// 指定した国の隣接国のID一覧を取得します
     pub fn get_neighbor_ids(&self, kuni_id: &KuniId) -> Vec<KuniId> {
         self.neighbor_repo.get_neighbors(kuni_id)
+    }
+
+    /// 攻撃可能または輸送可能な隣接国のID一覧を取得します
+    pub async fn get_filtered_neighbor_ids(
+        &self,
+        kuni_id: &KuniId,
+        is_attack: bool,
+    ) -> anyhow::Result<Vec<KuniId>> {
+        let neighbors = self.neighbor_repo.get_neighbors(kuni_id);
+        let mut filtered = Vec::new();
+        let current_kuni = self
+            .kuni_repo
+            .find_by_id(kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません"))?;
+
+        for nid in neighbors {
+            if let Some(k) = self.kuni_repo.find_by_id(&nid).await? {
+                if is_attack {
+                    // 攻撃：領主が異なる国のみ
+                    if k.daimyo_id != current_kuni.daimyo_id {
+                        filtered.push(nid);
+                    }
+                } else {
+                    // 輸送：領主が同じ国のみ
+                    if k.daimyo_id == current_kuni.daimyo_id {
+                        filtered.push(nid);
+                    }
+                }
+            }
+        }
+        Ok(filtered)
     }
 }

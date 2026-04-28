@@ -92,6 +92,7 @@ async fn build_app() -> Result<App> {
     let game_state_repo = Arc::new(InMemoryGameStateRepository::new());
     let event_dispatcher = Arc::new(InMemoryEventDispatcher::new());
     let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
+    let battle_repo = Arc::new(infrastructure::persistence::InMemoryBattleRepository::new());
 
     // マスターデータのロードと初期化
     let base_dir = if let Ok(env_path) = std::env::var("SENGOKU_MASTER_DATA") {
@@ -135,10 +136,13 @@ async fn build_app() -> Result<App> {
 
     // ユースケースの構築
     let domestic_usecase = DomesticUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
-    let battle_usecase = BattleUseCase::new(kuni_repo.clone(), neighbor_repo.clone());
+    let battle_usecase = BattleUseCase::new(
+        kuni_repo.clone(),
+        neighbor_repo.clone(),
+        battle_repo.clone(),
+    );
     let turn_progression_usecase = TurnProgressionUseCase::new(
         kuni_repo.clone(),
-        daimyo_repo.clone(),
         game_state_repo.clone(),
         event_dispatcher.clone(),
     );

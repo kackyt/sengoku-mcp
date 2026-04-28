@@ -8,13 +8,12 @@ mod tests {
     use crate::domain::service::turn_service::TurnService;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use uuid::Uuid;
 
     fn create_test_kuni(jinko: u32, tyu: u32) -> Kuni {
         Kuni::new(
-            KuniId::new(),
+            KuniId::new(1),
             "TestKuni".to_string(),
-            DaimyoId(Uuid::new_v4()),
+            DaimyoId(1),
             Resource::new(1000, 1000, 1000, jinko),
             DevelopmentStats::new(100, 100, tyu),
             IninFlag(false),

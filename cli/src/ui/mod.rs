@@ -30,8 +30,10 @@ pub fn draw(app: &App, f: &mut Frame) {
             sub_state,
         } => render_domestic(app, f, chunks[1], *selected_kuni, *cursor, sub_state),
         ScreenState::War {
-            cursor, sub_state, ..
-        } => render_war(app, f, chunks[1], *cursor, sub_state),
+            status,
+            cursor,
+            sub_state,
+        } => render_war(app, f, chunks[1], status, *cursor, sub_state),
         ScreenState::GameOver { winner } => render_game_over(app, f, chunks[1], *winner),
     }
 
@@ -84,7 +86,9 @@ fn render_footer(app: &App, f: &mut Frame, area: Rect) {
         ScreenState::SelectDaimyo { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
         ScreenState::Domestic { sub_state, .. } => match sub_state {
             DomesticSubState::Normal => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
-            DomesticSubState::InputAmount { .. } => "数字: 入力 | Enter: 決定 | Esc: 戻る",
+            DomesticSubState::InputAmount { .. }
+            | DomesticSubState::InputWarHeihe { .. }
+            | DomesticSubState::InputWarKome { .. } => "数字: 入力 | Enter: 決定 | Esc: 戻る",
             DomesticSubState::SelectTargetKuni { .. } => "↑/↓: 選択 | Enter: 決定 | Esc: 戻る",
             DomesticSubState::ShowMessage { .. } => "Enter/Esc: 閉じる",
         },
@@ -150,19 +154,46 @@ fn render_domestic(
         .split(area);
 
     // Left: Status
+    let is_player_turn = app.is_player_turn();
     let (kin, kome, hei, jinko, koko, machi, tyu) = if let Some(kuni) = &app.current_kuni {
-        (
-            kuni.resource.kin.to_display(),
-            kuni.resource.kome.to_display(),
-            kuni.resource.hei.to_display(),
-            kuni.resource.jinko.to_display(),
-            kuni.stats.kokudaka.to_display(),
-            kuni.stats.machi.to_display(),
-            kuni.stats.tyu.value(),
-        )
+        if is_player_turn {
+            (
+                kuni.resource.kin.to_display().to_string(),
+                kuni.resource.kome.to_display().to_string(),
+                kuni.resource.hei.to_display().to_string(),
+                kuni.resource.jinko.to_display().to_string(),
+                kuni.stats.kokudaka.to_display().to_string(),
+                kuni.stats.machi.to_display().to_string(),
+                kuni.stats.tyu.value().to_string(),
+            )
+        } else {
+            (
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+                "???".to_string(),
+            )
+        }
     } else {
-        (0, 0, 0, 0, 0, 0, 0)
+        (
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+        )
     };
+
+    let kuni_name = app
+        .current_kuni
+        .as_ref()
+        .map(|k| k.name.0.as_str())
+        .unwrap_or("不明");
 
     let daimyo_name = app
         .current_daimyo
@@ -171,6 +202,16 @@ fn render_domestic(
         .unwrap_or("不明");
 
     let status_text = vec![
+        Line::from(vec![
+            Span::styled("【手番: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                kuni_name,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("】", Style::default().fg(Color::Yellow)),
+        ]),
         Line::from(vec![
             Span::raw("大名: "),
             Span::styled(daimyo_name, Style::default().fg(Color::Green)),
@@ -235,9 +276,10 @@ fn render_domestic(
 }
 
 fn render_war(
-    app: &App,
+    _app: &App,
     f: &mut Frame,
     area: Rect,
+    status: &engine::domain::model::battle::WarStatus,
     cursor: usize,
     sub_state: &crate::screen::WarSubState,
 ) {
@@ -246,65 +288,79 @@ fn render_war(
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    // Left: Attacker
-    if let Some(attacker) = &app.attacker_kuni {
-        let attacker_status = vec![
-            Line::from(vec![Span::raw("自軍")]),
-            Line::from(vec![
-                Span::raw("兵力: "),
-                Span::raw(attacker.resource.hei.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("食料: "),
-                Span::raw(attacker.resource.kome.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("士気: "),
-                Span::raw(attacker.stats.tyu.value().to_string()),
-            ]),
-        ];
-        let attacker_p = Paragraph::new(attacker_status).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Blue)),
-        );
-        f.render_widget(attacker_p, chunks[0]);
-    }
+    // Left: Attacker (Army)
+    let attacker_status = vec![
+        Line::from(vec![Span::styled(
+            "自軍（攻撃軍）",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::raw("兵力: "),
+            Span::styled(
+                status.attacker.hei.to_display().to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("兵糧: "),
+            Span::styled(
+                status.attacker.kome.to_display().to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("士気: "),
+            Span::styled(
+                status.attacker.morale.value().to_string(),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+    ];
+    let attacker_p = Paragraph::new(attacker_status).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Blue)),
+    );
+    f.render_widget(attacker_p, chunks[0]);
 
-    // Right: Defender
-    if let Some(defender) = &app.defender_kuni {
-        let defender_status = vec![
-            Line::from(vec![Span::raw("敵軍")]),
-            Line::from(vec![
-                Span::raw("兵力: "),
-                Span::raw(defender.resource.hei.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("食料: "),
-                Span::raw(defender.resource.kome.to_display().to_string()),
-            ]),
-            Line::from(vec![
-                Span::raw("士気: "),
-                Span::raw(defender.stats.tyu.value().to_string()),
-            ]),
-        ];
-        let defender_p = Paragraph::new(defender_status).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Red)),
-        );
-        f.render_widget(defender_p, chunks[1]);
-    }
+    // Right: Defender (Enemy Territory)
+    let defender_status = vec![
+        Line::from(vec![Span::styled(
+            "敵軍（守備軍）",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::raw("兵力: "),
+            Span::raw(status.defender.hei.to_display().to_string()),
+        ]),
+        Line::from(vec![
+            Span::raw("食料: "),
+            Span::raw(status.defender.kome.to_display().to_string()),
+        ]),
+        Line::from(vec![
+            Span::raw("士気: "),
+            Span::raw(status.defender.morale.value().to_string()),
+        ]),
+    ];
+    let defender_p = Paragraph::new(defender_status).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red)),
+    );
+    f.render_widget(defender_p, chunks[1]);
 
     // Tactic Selection Overlay
     if let crate::screen::WarSubState::SelectTactic = sub_state {
-        let area = centered_rect(40, 30, area);
+        let area = centered_rect(40, 40, area);
         f.render_widget(Clear, area);
         let tactics = vec![
             ListItem::new("1. 通常"),
             ListItem::new("2. 奇襲"),
             ListItem::new("3. 火計"),
             ListItem::new("4. 鼓舞"),
+            ListItem::new("5. 退却"),
         ];
         let list = List::new(tactics)
             .block(Block::default().title("戦術選択").borders(Borders::ALL))
@@ -349,31 +405,50 @@ fn render_game_over(
 }
 
 fn render_modals(app: &App, f: &mut Frame) {
-    if let ScreenState::Domestic {
-        selected_kuni,
-        cursor: _,
-        sub_state,
-    } = &app.screen
-    {
-        match sub_state {
+    match &app.screen {
+        ScreenState::Domestic { sub_state, .. } => match sub_state {
             DomesticSubState::InputAmount { command, input } => {
                 render_input_modal(f, *command, input);
             }
-            DomesticSubState::SelectTargetKuni { command, cursor } => {
-                render_select_target_modal(app, f, *selected_kuni, *command, *cursor);
+            DomesticSubState::SelectTargetKuni {
+                command,
+                targets,
+                cursor,
+            } => {
+                render_select_target_modal(app, f, *command, targets, *cursor);
+            }
+            DomesticSubState::InputWarHeihe { input, .. } => {
+                render_war_input_modal(f, "出陣兵数入力", input);
+            }
+            DomesticSubState::InputWarKome { input, .. } => {
+                render_war_input_modal(f, "出陣兵糧入力", input);
             }
             DomesticSubState::ShowMessage { message, .. } => {
                 render_message_modal(f, message);
             }
             _ => {}
+        },
+        ScreenState::War {
+            sub_state: crate::screen::WarSubState::ShowMessage { message, .. },
+            ..
+        } => {
+            render_message_modal(f, message);
         }
-    } else if let ScreenState::War {
-        sub_state: crate::screen::WarSubState::ShowMessage { message, .. },
-        ..
-    } = &app.screen
-    {
-        render_message_modal(f, message);
+        _ => {}
     }
+}
+
+fn render_war_input_modal(f: &mut Frame, title: &str, input: &str) {
+    let area = centered_rect(60, 20, f.area());
+    f.render_widget(Clear, area);
+
+    let p = Paragraph::new(format!("> {}", input)).block(
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(p, area);
 }
 
 fn render_message_modal(f: &mut Frame, message: &str) {
@@ -413,28 +488,27 @@ fn render_input_modal(f: &mut Frame, command: DomesticCommand, input: &str) {
 fn render_select_target_modal(
     app: &App,
     f: &mut Frame,
-    kuni_id: engine::domain::model::value_objects::KuniId,
     command: DomesticCommand,
+    targets: &[engine::domain::model::value_objects::KuniId],
     cursor: usize,
 ) {
     let area = centered_rect(60, 40, f.area());
     f.render_widget(Clear, area);
 
-    let neighbors = app.kuni_query_usecase.get_neighbor_ids(&kuni_id);
     let title = match command {
         DomesticCommand::War => "攻撃対象選択",
         DomesticCommand::Transport => "輸送先選択",
         _ => "対象選択",
     };
 
-    if neighbors.is_empty() {
-        let p = Paragraph::new("隣接する国がありません。")
+    if targets.is_empty() {
+        let p = Paragraph::new("対象となる隣接国がありません。")
             .block(Block::default().title(title).borders(Borders::ALL));
         f.render_widget(p, area);
         return;
     }
 
-    let items: Vec<ListItem> = neighbors
+    let items: Vec<ListItem> = targets
         .iter()
         .map(|target_id| {
             let name = app

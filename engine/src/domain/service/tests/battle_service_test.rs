@@ -1,102 +1,94 @@
 #[cfg(test)]
 mod tests {
-    use crate::domain::model::{
-        kuni::Kuni,
-        resource::{DevelopmentStats, Resource},
-        value_objects::{DaimyoId, IninFlag, KuniId},
+    use crate::domain::model::battle::{
+        ArmyStatus, BattleAdvantage, BattleSide, Tactic, WarStatus,
     };
-    use crate::domain::service::battle_service::{BattleService, BattleSide, Tactic};
-    use uuid::Uuid;
+    use crate::domain::model::value_objects::{Amount, KuniId, Rate};
+    use crate::domain::service::battle_service::BattleService;
 
-    fn create_test_kuni(hei: u32, kome: u32, tyu: u32) -> Kuni {
-        Kuni::new(
-            KuniId::new(),
-            "TestKuni".to_string(),
-            DaimyoId(Uuid::new_v4()),
-            Resource::new(1000, hei, kome, 10000),
-            DevelopmentStats::new(100, 100, tyu),
-            IninFlag(false),
-        )
+    fn create_test_status(a_hei: u32, a_kome: u32, d_hei: u32, d_kome: u32) -> WarStatus {
+        WarStatus {
+            attacker: ArmyStatus {
+                kuni_id: KuniId::new(1),
+                hei: Amount::new(a_hei),
+                kome: Amount::new(a_kome),
+                morale: Rate::new(50),
+            },
+            defender: ArmyStatus {
+                kuni_id: KuniId::new(2),
+                hei: Amount::new(d_hei),
+                kome: Amount::new(d_kome),
+                morale: Rate::new(50),
+            },
+            winner: None,
+            advantage: BattleAdvantage::Even,
+        }
     }
 
     #[test]
     fn test_normal_tactic_damage() {
-        let attacker = create_test_kuni(1000, 1000, 50);
-        let defender = create_test_kuni(1000, 1000, 50);
+        // 攻撃側 2000, 防御側 1000
+        let status = create_test_status(2000, 1000, 1000, 1000);
 
-        let result = BattleService::calculate_turn(
-            attacker,
-            defender,
-            Tactic::Normal,
-            Tactic::Normal,
-            500, // Attacker sends 500 troops
-        )
-        .unwrap();
+        let result = BattleService::calculate_turn(status, Tactic::Normal, Tactic::Normal).unwrap();
 
-        // 500 * 1.8 = 900 damage expected on defender
-        assert_eq!(result.defender_kuni.resource.hei.value(), 1000 - 900);
+        // 攻撃側からのダメージ: 2000 * 1.8 = 3600 -> 防御側は 0
+        assert_eq!(result.defender.hei.value(), 0);
 
-        // Attacker food cost: 500 * 0.3 = 150
-        assert_eq!(result.attacker_kuni.resource.kome.value(), 1000 - 150);
+        // 防御側からの反撃ダメージ (Normal vs Normal):
+        // 1000 * 1.8 = 1800 -> 攻撃側(2000)は 200
+        assert_eq!(result.attacker.hei.value(), 200);
 
-        assert_eq!(result.winner, None);
+        // 防御側が全滅したため攻撃側の勝利
+        assert_eq!(result.winner, Some(BattleSide::Attacker));
     }
 
     #[test]
-    fn test_surprise_tactic_advantage() {
-        let attacker = create_test_kuni(1000, 1000, 50);
-        let defender = create_test_kuni(1000, 1000, 50);
+    fn test_surprise_tactic_counter_damage() {
+        let status = create_test_status(1000, 1000, 500, 1000);
 
-        let result = BattleService::calculate_turn(
-            attacker,
-            defender,
-            Tactic::Surprise,
-            Tactic::Normal,
-            500,
-        )
-        .unwrap();
-
-        // 500 * 0.4 = 200 damage on defender
-        assert_eq!(result.defender_kuni.resource.hei.value(), 1000 - 200);
-
-        // Attacker food cost: 500 * 0.3 = 150
-        assert_eq!(result.attacker_kuni.resource.kome.value(), 1000 - 150);
-
-        // Morale changes: attacker +10, defender -10
-        assert_eq!(result.attacker_kuni.stats.tyu.value(), 60);
-        assert_eq!(result.defender_kuni.stats.tyu.value(), 40);
-    }
-
-    #[test]
-    fn test_fire_tactic_defender_food_loss() {
-        let attacker = create_test_kuni(1000, 1000, 50);
-        let defender = create_test_kuni(1000, 1000, 50);
-
+        // 攻撃側: Surprise, 防御側: Normal (不一致 -> Surprise Success 300%)
         let result =
-            BattleService::calculate_turn(attacker, defender, Tactic::Fire, Tactic::Normal, 500)
-                .unwrap();
+            BattleService::calculate_turn(status, Tactic::Surprise, Tactic::Normal).unwrap();
 
-        // Defender loses 50% food
-        assert_eq!(result.defender_kuni.resource.kome.value(), 500);
+        // 攻撃側からのダメージ: 1000 * 3.0 = 3000 -> 防御側(500)は 0
+        assert_eq!(result.defender.hei.value(), 0);
 
-        // Morale changes: attacker +10, defender -10
-        assert_eq!(result.attacker_kuni.stats.tyu.value(), 60);
-        assert_eq!(result.defender_kuni.stats.tyu.value(), 40);
+        // 防御側からの反撃ダメージ (Normal vs Surprise -> Surprise Fail 40%):
+        // 500 * 0.4 = 200 -> 攻撃側(1000)は 800
+        assert_eq!(result.attacker.hei.value(), 800);
 
-        assert_eq!(result.winner, None);
+        // Morale changes:
+        // Atk(Surprise) vs Def(Normal): Atk +10, Def -10
+        assert_eq!(result.attacker.morale.value(), 60);
+        assert_eq!(result.defender.morale.value(), 40);
+
+        // 防御側全滅
+        assert_eq!(result.winner, Some(BattleSide::Attacker));
+    }
+
+    #[test]
+    fn test_fire_tactic_counter_effect() {
+        let status = create_test_status(1000, 1000, 1000, 1000);
+
+        // 両軍 火計 (Fire vs Fire -> Atk: Fail 40%, Def: Default 60%)
+        let result = BattleService::calculate_turn(status, Tactic::Fire, Tactic::Fire).unwrap();
+
+        // 攻撃側の火計ダメージ: 1000 * 0.4 = 400 -> 防御側 600
+        // 防御側の火計反撃: 1000 * 0.6 = 600 -> 攻撃側 400
+        assert_eq!(result.defender.hei.value(), 600);
+        assert_eq!(result.attacker.hei.value(), 400);
     }
 
     #[test]
     fn test_battle_victory_condition() {
-        let attacker = create_test_kuni(1000, 1000, 50);
-        let defender = create_test_kuni(1000, 1000, 50);
-        // 攻撃側の兵1000人で攻撃。1.8倍ダメージで1800ダメージ。
-        // 防御側の兵は1000人なので、0になるはず。
-        let result =
-            BattleService::calculate_turn(attacker, defender, Tactic::Normal, Tactic::Normal, 1000)
-                .unwrap();
+        let status = create_test_status(1000, 1000, 100, 1000);
+        // 攻撃側 1000人, 防御側 100人
+        let result = BattleService::calculate_turn(status, Tactic::Normal, Tactic::Normal).unwrap();
 
-        assert_eq!(result.defender_kuni.resource.hei.value(), 0);
+        assert_eq!(result.defender.hei.value(), 0);
+        // 反撃: 100 * 1.8 = 180 -> 攻撃側 1000 - 180 = 820
+        assert_eq!(result.attacker.hei.value(), 820);
         assert_eq!(result.winner, Some(BattleSide::Attacker));
     }
 }

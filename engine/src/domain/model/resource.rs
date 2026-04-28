@@ -25,28 +25,36 @@ impl Resource {
     }
 
     /// 指定された資源を消費可能かチェックします
-    pub fn can_consume(&self, kin: Amount, hei: Amount, kome: Amount) -> bool {
-        self.kin.value() >= kin.value()
-            && self.hei.value() >= hei.value()
-            && self.kome.value() >= kome.value()
+    pub fn can_consume(&self, kin: Amount, hei: Amount, kome: Amount, jinko: Amount) -> bool {
+        self.kin >= kin && self.hei >= hei && self.kome >= kome && self.jinko >= jinko
     }
 
     /// 資源を消費します。不足している場合はエラーを返します。
-    pub fn consume(&mut self, kin: Amount, hei: Amount, kome: Amount) -> Result<(), &'static str> {
-        if !self.can_consume(kin, hei, kome) {
-            return Err("Insufficient resources");
+    pub fn consume(
+        &mut self,
+        kin: Amount,
+        hei: Amount,
+        kome: Amount,
+        jinko: Amount,
+    ) -> Result<(), crate::domain::error::DomainError> {
+        if !self.can_consume(kin, hei, kome, jinko) {
+            return Err(crate::domain::error::DomainError::InsufficientResource(
+                "資源が不足しています".to_string(),
+            ));
         }
-        self.kin = self.kin.sub(kin);
-        self.hei = self.hei.sub(hei);
-        self.kome = self.kome.sub(kome);
+        self.kin -= kin;
+        self.hei -= hei;
+        self.kome -= kome;
+        self.jinko -= jinko;
         Ok(())
     }
 
     /// 資源を追加します
-    pub fn add(&mut self, kin: Amount, hei: Amount, kome: Amount) {
-        self.kin = self.kin.add(kin);
-        self.hei = self.hei.add(hei);
-        self.kome = self.kome.add(kome);
+    pub fn add(&mut self, kin: Amount, hei: Amount, kome: Amount, jinko: Amount) {
+        self.kin += kin;
+        self.hei += hei;
+        self.kome += kome;
+        self.jinko += jinko;
     }
 }
 
