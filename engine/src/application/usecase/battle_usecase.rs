@@ -153,6 +153,6 @@ impl BattleUseCase {
         &self,
         attacker_id: KuniId,
     ) -> Result<Option<WarStatus>, anyhow::Error> {
-        self.battle_repo.find_by_attacker(&attacker_id).await
+        Ok(self.battle_repo.find_by_attacker(&attacker_id).await?)
     }
 }

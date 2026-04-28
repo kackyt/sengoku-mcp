@@ -101,11 +101,14 @@ impl MockBattleRepository {
 
 #[async_trait]
 impl BattleRepository for MockBattleRepository {
-    async fn find_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<Option<WarStatus>> {
+    async fn find_by_attacker(
+        &self,
+        attacker_id: &KuniId,
+    ) -> Result<Option<WarStatus>, DomainError> {
         Ok(self.wars.lock().unwrap().get(attacker_id).cloned())
     }
 
-    async fn save(&self, status: &WarStatus) -> anyhow::Result<()> {
+    async fn save(&self, status: &WarStatus) -> Result<(), DomainError> {
         self.wars
             .lock()
             .unwrap()
@@ -113,7 +116,7 @@ impl BattleRepository for MockBattleRepository {
         Ok(())
     }
 
-    async fn delete_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<()> {
+    async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError> {
         self.wars.lock().unwrap().remove(attacker_id);
         Ok(())
     }

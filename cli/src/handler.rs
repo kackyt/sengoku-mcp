@@ -391,30 +391,9 @@ impl EventHandler {
                                 },
                             };
                         } else if command == DomesticCommand::Transport {
-                            let Some(kuni) = app.current_kuni.as_ref() else {
-                                app.screen = ScreenState::Domestic {
-                                    selected_kuni: kuni_id,
-                                    cursor,
-                                    sub_state: DomesticSubState::ShowMessage {
-                                        message: "国の情報が取得できませんでした".to_string(),
-                                        next_state: Box::new(DomesticSubState::Normal),
-                                    },
-                                };
-                                return Ok(());
-                            };
-                            let target_kin = kuni.resource.kin.mul_percent(10);
-                            let target_hei = kuni.resource.hei.mul_percent(10);
-                            let target_kome = kuni.resource.kome.mul_percent(10);
-
                             let result = app
                                 .domestic_usecase
-                                .transport(
-                                    kuni_id,
-                                    *target_id,
-                                    target_kin.to_display(),
-                                    target_hei.to_display(),
-                                    target_kome.to_display(),
-                                )
+                                .transport_with_rate(kuni_id, *target_id, 10)
                                 .await;
 
                             match result {

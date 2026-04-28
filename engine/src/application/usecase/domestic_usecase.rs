@@ -186,6 +186,33 @@ impl DomesticUseCase {
         self.kuni_repo.save(&to_kuni).await.map_err(|e| e.into())
     }
 
+    /// 指定した割合で資源を輸送します（内政コマンド用）
+    pub async fn transport_with_rate(
+        &self,
+        from_kuni_id: KuniId,
+        to_kuni_id: KuniId,
+        rate_percent: u32,
+    ) -> Result<(), anyhow::Error> {
+        let from_kuni = self
+            .kuni_repo
+            .find_by_id(&from_kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("送り元の国が見つかりません: {:?}", from_kuni_id))?;
+
+        let kin = from_kuni.resource.kin.mul_percent(rate_percent);
+        let hei = from_kuni.resource.hei.mul_percent(rate_percent);
+        let kome = from_kuni.resource.kome.mul_percent(rate_percent);
+
+        self.transport(
+            from_kuni_id,
+            to_kuni_id,
+            kin.to_display(),
+            hei.to_display(),
+            kome.to_display(),
+        )
+        .await
+    }
+
     /// 委任状態を設定します
     pub async fn set_delegation(
         &self,

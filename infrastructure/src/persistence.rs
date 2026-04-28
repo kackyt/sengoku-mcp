@@ -257,18 +257,21 @@ impl Default for InMemoryBattleRepository {
 
 #[async_trait::async_trait]
 impl BattleRepository for InMemoryBattleRepository {
-    async fn save(&self, status: &WarStatus) -> anyhow::Result<()> {
+    async fn save(&self, status: &WarStatus) -> Result<(), DomainError> {
         let mut guard = self.battles.write().await;
         guard.insert(status.attacker.kuni_id, status.clone());
         Ok(())
     }
 
-    async fn find_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<Option<WarStatus>> {
+    async fn find_by_attacker(
+        &self,
+        attacker_id: &KuniId,
+    ) -> Result<Option<WarStatus>, DomainError> {
         let guard = self.battles.read().await;
         Ok(guard.get(attacker_id).cloned())
     }
 
-    async fn delete_by_attacker(&self, attacker_id: &KuniId) -> anyhow::Result<()> {
+    async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError> {
         let mut guard = self.battles.write().await;
         guard.remove(attacker_id);
         Ok(())
