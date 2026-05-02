@@ -15,7 +15,7 @@ impl TurnService {
         order
     }
 
-    /// ターン開始時の季節イベント（洪水・疫病・反乱）を処理し、発生したイベント効果を返す
+    /// ターン開始時のイベントを処理し、発生したイベント効果を返す
     pub fn process_start_turn_events(
         turn: TurnNumber,
         kunis: &mut [Kuni],
@@ -29,7 +29,7 @@ impl TurnService {
         all_effects
     }
 
-    /// ターン終了時の季節イベント（人口増加・資源生成）を処理し、発生したイベント効果を返す
+    /// ターン終了時のイベントを処理し、発生したイベント効果を返す
     pub fn process_end_turn_events(
         turn: TurnNumber,
         kunis: &mut [Kuni],

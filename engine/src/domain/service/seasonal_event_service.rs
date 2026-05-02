@@ -20,12 +20,6 @@ impl SeasonalEventService {
     ) -> Vec<SeasonalEventEffect> {
         let mut effects = Vec::new();
         let mut rng = rand::thread_rng();
-
-        // 1ターン目はイベント（災害・反乱・資源生成・人口増加）を一切発生させない
-        if turn.value() == 1 {
-            return effects;
-        }
-
         let season = (turn.value() - 1) % 4;
 
         // --- 1. 災害・反乱イベント ---

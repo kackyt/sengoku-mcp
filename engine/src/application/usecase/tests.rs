@@ -1,6 +1,5 @@
 use crate::application::usecase::battle_usecase::BattleUseCase;
 use crate::application::usecase::domestic_usecase::DomesticUseCase;
-use crate::application::usecase::turn_usecase::TurnUseCase;
 use crate::domain::error::DomainError;
 use crate::domain::model::battle::{Tactic, WarStatus};
 use crate::domain::model::kuni::Kuni;
@@ -338,17 +337,3 @@ async fn test_battle_execution_fails_when_not_adjacent() {
     assert!(err_str.contains("隣接していません"));
 }
 
-// --- TurnUseCase テスト ---
-
-#[tokio::test]
-async fn test_turn_progress() {
-    let repo = Arc::new(MockKuniRepository::new());
-    let kuni = create_test_kuni(1);
-    let _kuni_id = kuni.id;
-    repo.setup(kuni);
-
-    let _usecase = TurnUseCase::new(repo.clone());
-    // TurnUseCase::progress_turn は private なので、
-    // 将来的にパブリックな口ができたらテストする。
-    // 現状は BattleUseCase 等のテストで十分。
-}

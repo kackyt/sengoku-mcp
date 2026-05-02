@@ -56,11 +56,7 @@ mod tests {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
 
-        // 1ターン目開始時は何も発生しないはず
-        let effects = service.process_start_turn_events(TurnNumber::new(1), &mut kuni);
-        assert!(effects.is_empty());
-
-        // 1ターン目終了時も何も発生しないはず
+        // 1ターン目終了時は何も発生しないはず（ロジックが空）
         let effects = service.process_end_turn_events(TurnNumber::new(1), &mut kuni);
         assert!(effects.is_empty());
 
