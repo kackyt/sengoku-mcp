@@ -12,7 +12,7 @@ impl SeasonalEventService {
         Self
     }
 
-    /// ターン開始時に発生するイベント（洪水、疫病、反乱）を処理します
+    /// ターン開始時に発生するイベント（洪水、疫病、反乱、資源生成、人口増加）を処理します
     pub fn process_start_turn_events(
         &self,
         turn: TurnNumber,
@@ -21,22 +21,26 @@ impl SeasonalEventService {
         let mut effects = Vec::new();
         let mut rng = rand::thread_rng();
 
-        // 1ターン目はイベント（災害・反乱）を発生させない
+        // 1ターン目はイベント（災害・反乱・資源生成・人口増加）を一切発生させない
         if turn.value() == 1 {
             return effects;
         }
 
-        // 1. 疫病 (Plague): 通年 1/40
+        let season = (turn.value() - 1) % 4;
+
+        // --- 1. 災害・反乱イベント ---
+
+        // 疫病 (Plague): 通年 1/40
         if rng.gen_bool(1.0 / 40.0) {
             effects.push(self.trigger_plague(kuni));
         }
 
-        // 2. 洪水 (Flood): 夏 (turn % 4 == 2) 1/40
-        if turn.value() % 4 == 2 && rng.gen_bool(1.0 / 40.0) {
+        // 洪水 (Flood): 夏 (season == 1) 1/40
+        if season == 1 && rng.gen_bool(1.0 / 40.0) {
             effects.push(self.trigger_flood(kuni));
         }
 
-        // 3. 反乱 (Rebellion): 忠誠度 < 50, 確率 (50 - 忠誠度)%
+        // 反乱 (Rebellion): 忠誠度 < 50, 確率 (50 - 忠誠度)%
         let tyu = kuni.stats.tyu.value();
         if tyu < 50 {
             let prob = (50 - tyu) as f64 / 100.0;
@@ -45,38 +49,33 @@ impl SeasonalEventService {
             }
         }
 
-        effects
-    }
+        // --- 2. 定期イベント（資源生成・人口増加） ---
 
-    /// ターン終了時に発生するイベント（人口増加、資源生成）を処理します
-    pub fn process_end_turn_events(
-        &self,
-        turn: TurnNumber,
-        kuni: &mut Kuni,
-    ) -> Vec<SeasonalEventEffect> {
-        let mut effects = Vec::new();
-
-        // 1ターン目の終わりも資源生成イベントをスキップする（ユーザー要望）
-        if turn.value() == 1 {
-            return effects;
-        }
-        let season = turn.value() % 4;
-
-        // 1. 人口増加 (Population Growth): 春 (turn % 4 == 1)
-        if season == 1 {
+        // 人口増加 (Population Growth): 春 (season == 0)
+        if season == 0 {
             effects.push(self.process_population_growth(kuni));
         }
 
-        // 2. 資源生成 (Resource Income)
-        if season == 1 {
+        // 資源生成 (Resource Income)
+        if season == 0 {
             // 春: 金
             effects.push(self.process_gold_income(kuni));
-        } else if season == 3 {
+        } else if season == 2 {
             // 秋: 米
             effects.push(self.process_rice_income(kuni));
         }
 
         effects
+    }
+
+    /// ターン終了時に発生するイベントを処理します
+    pub fn process_end_turn_events(
+        &self,
+        _turn: TurnNumber,
+        _kuni: &mut Kuni,
+    ) -> Vec<SeasonalEventEffect> {
+        // 現在、ターン終了時のイベントはすべてターン開始時処理に移動しました
+        Vec::new()
     }
 
     // --- 各イベントの詳細ロジック ---

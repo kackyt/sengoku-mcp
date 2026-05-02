@@ -207,43 +207,18 @@ impl TurnProgressionUseCase {
         let current_turn = state.current_turn();
 
         // ターン終了時の季節イベント（人口増加・資源生成）を処理
+        // ※現在は空のVecが返りますが、将来的な拡張性のために呼び出しは残します
         let mut kunis = self.kuni_repo.find_all().await?;
-        let end_effects = TurnService::process_end_turn_events(current_turn, &mut kunis);
+        let _end_effects = TurnService::process_end_turn_events(current_turn, &mut kunis);
         for kuni in &kunis {
             self.kuni_repo.save(kuni).await?;
-        }
-
-        // 季節イベント結果をイベントとして通知
-        for effect in &end_effects {
-            self.event_dispatcher
-                .dispatch(GameEvent::DomesticAction {
-                    daimyo_id: kunis
-                        .iter()
-                        .find(|k| k.id == effect.kuni_id)
-                        .map(|k| k.daimyo_id)
-                        .unwrap_or_default(),
-                    action_name: EventMessage::new(format!(
-                        "季節イベント: {:?}",
-                        effect.event_type
-                    )),
-                    details: EventMessage::new(format!(
-                        "国ID={:?} 金:{:+} 米:{:+} 兵:{:+} 人口:{:+} 忠誠:{:+}",
-                        effect.kuni_id,
-                        effect.kin_diff.to_display().value(),
-                        effect.kome_diff.to_display().value(),
-                        effect.hei_diff.to_display().value(),
-                        effect.jinko_diff.to_display().value(),
-                        effect.tyu_diff
-                    )),
-                })
-                .await?;
         }
 
         self.event_dispatcher
             .dispatch(GameEvent::SeasonPassed { turn: current_turn })
             .await?;
 
-        // ターン開始時の季節イベント（洪水・疫病・反乱）を次のターン開始前に処理
+        // ターン開始時の季節イベント（洪水・疫病・反乱・人口増加・資源生成）を次のターン開始前に処理
         let mut kunis = self.kuni_repo.find_all().await?;
         let mut rng = rand::thread_rng();
         let new_order = TurnService::determine_action_order(&kunis, &mut rng);
@@ -256,14 +231,14 @@ impl TurnProgressionUseCase {
             })
             .await?;
 
-        // 新しいターン開始時のイベント（洪水・疫病・反乱）を処理
+        // 新しいターン開始時のイベントを処理
         let start_effects =
             TurnService::process_start_turn_events(state.current_turn(), &mut kunis);
         for kuni in &kunis {
             self.kuni_repo.save(kuni).await?;
         }
 
-        // 開始時イベント結果を通知
+        // 季節イベント結果を通知
         for effect in &start_effects {
             self.event_dispatcher
                 .dispatch(GameEvent::DomesticAction {
@@ -273,14 +248,16 @@ impl TurnProgressionUseCase {
                         .map(|k| k.daimyo_id)
                         .unwrap_or_default(),
                     action_name: EventMessage::new(format!(
-                        "季節イベント（災害）: {:?}",
+                        "季節イベント: {:?}",
                         effect.event_type
                     )),
                     details: EventMessage::new(format!(
-                        "国ID={:?} 人口:{:+} 兵:{:+} 忠誠:{:+} 石高:{:+} 町:{:+}",
+                        "国ID={:?} 金:{:+} 米:{:+} 兵:{:+} 人口:{:+} 忠誠:{:+} 石高:{:+} 町:{:+}",
                         effect.kuni_id,
-                        effect.jinko_diff.to_display().value(),
+                        effect.kin_diff.to_display().value(),
+                        effect.kome_diff.to_display().value(),
                         effect.hei_diff.to_display().value(),
+                        effect.jinko_diff.to_display().value(),
                         effect.tyu_diff,
                         effect.kokudaka_diff.to_display().value(),
                         effect.machi_diff.to_display().value()
