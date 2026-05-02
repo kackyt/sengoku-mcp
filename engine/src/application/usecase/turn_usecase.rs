@@ -1,5 +1,6 @@
 use crate::domain::{
-    repository::kuni_repository::KuniRepository, service::turn_service::TurnService,
+    model::value_objects::TurnNumber, repository::kuni_repository::KuniRepository,
+    service::turn_service::TurnService,
 };
 use std::sync::Arc;
 
@@ -15,16 +16,23 @@ impl<R: KuniRepository> TurnUseCase<R> {
 
     #[allow(dead_code)]
     async fn progress_turn(&self, current_turn: u32) -> Result<(), anyhow::Error> {
-        let kunis = self.kuni_repo.find_all().await?;
+        let mut kunis = self.kuni_repo.find_all().await?;
         if kunis.is_empty() {
             return Ok(());
         }
 
-        let mut rng = rand::thread_rng();
-        let updated_kunis = TurnService::process_season(current_turn, kunis, &mut rng);
+        let turn = TurnNumber::new(current_turn);
 
-        for kuni in updated_kunis {
-            self.kuni_repo.save(&kuni).await?;
+        // ターン終了時の季節イベント（人口増加・資源生成）を処理
+        TurnService::process_end_turn_events(turn, &mut kunis);
+        for kuni in &kunis {
+            self.kuni_repo.save(kuni).await?;
+        }
+
+        // ターン開始時の季節イベント（洪水・疫病・反乱）を処理
+        TurnService::process_start_turn_events(TurnNumber::new(current_turn + 1), &mut kunis);
+        for kuni in &kunis {
+            self.kuni_repo.save(kuni).await?;
         }
 
         Ok(())

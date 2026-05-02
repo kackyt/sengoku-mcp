@@ -1,5 +1,7 @@
+use crate::domain::model::event::SeasonalEventEffect;
 use crate::domain::model::kuni::Kuni;
-use crate::domain::model::value_objects::{Amount, KuniId, Rate};
+use crate::domain::model::value_objects::{KuniId, TurnNumber};
+use crate::domain::service::seasonal_event_service::SeasonalEventService;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -13,59 +15,31 @@ impl TurnService {
         order
     }
 
-    #[allow(clippy::manual_is_multiple_of)]
-    pub fn process_season(turn: u32, mut kunis: Vec<Kuni>, rng: &mut impl Rng) -> Vec<Kuni> {
-        for kuni in &mut kunis {
-            // Disaster check (1/40 chance)
-            if rng.gen_range(0..40) == 0 {
-                if turn % 4 == 1 {
-                    // Plague
-                    let drop: u32 = rng.gen_range(5..=9);
-                    let jinko_loss = kuni.resource.jinko.value() * drop / 100;
-                    kuni.resource.jinko -= Amount::new(jinko_loss);
-                    // Additional stat losses
-                    kuni.stats.tyu -= Rate::new(20);
-                } else {
-                    // Famine
-                    let drop: u32 = rng.gen_range(5..=19);
-                    let jinko_loss = kuni.resource.jinko.value() * drop / 100;
-                    kuni.resource.jinko -= Amount::new(jinko_loss);
-                    // Additional stat losses
-                    kuni.stats.tyu -= Rate::new(15);
-                }
-            }
-
-            // Population growth (turn % 4 == 0)
-            if turn % 4 == 0 {
-                let growth: u32 = rng.gen_range(10..=12);
-                let jinko_gain = kuni.resource.jinko.value() * growth / 100;
-                kuni.resource.jinko += Amount::new(jinko_gain);
-            }
-
-            // Resource generation (turn % 4 == 2)
-            if turn % 4 == 2 {
-                let tyu = kuni.stats.tyu.value();
-                let jinko = kuni.resource.jinko.value();
-                let machi = kuni.stats.machi.value();
-                let kokudaka = kuni.stats.kokudaka.value();
-
-                let kin_gain = tyu * rng.gen_range(3..=4) / 100
-                    + jinko * rng.gen_range(10..=14) / 100
-                    + machi * rng.gen_range(25..=39) / 100;
-
-                let kome_gain = tyu * rng.gen_range(3..=4) / 100
-                    + jinko * rng.gen_range(10..=14) / 100
-                    + kokudaka * rng.gen_range(25..=39) / 100;
-
-                kuni.resource.add(
-                    Amount::new(kin_gain),
-                    Amount::new(0),
-                    Amount::new(kome_gain),
-                    Amount::new(0),
-                );
-            }
+    /// ターン開始時の季節イベント（洪水・疫病・反乱）を処理し、発生したイベント効果を返す
+    pub fn process_start_turn_events(
+        turn: TurnNumber,
+        kunis: &mut [Kuni],
+    ) -> Vec<SeasonalEventEffect> {
+        let service = SeasonalEventService::new();
+        let mut all_effects = Vec::new();
+        for kuni in kunis.iter_mut() {
+            let effects = service.process_start_turn_events(turn, kuni);
+            all_effects.extend(effects);
         }
+        all_effects
+    }
 
-        kunis
+    /// ターン終了時の季節イベント（人口増加・資源生成）を処理し、発生したイベント効果を返す
+    pub fn process_end_turn_events(
+        turn: TurnNumber,
+        kunis: &mut [Kuni],
+    ) -> Vec<SeasonalEventEffect> {
+        let service = SeasonalEventService::new();
+        let mut all_effects = Vec::new();
+        for kuni in kunis.iter_mut() {
+            let effects = service.process_end_turn_events(turn, kuni);
+            all_effects.extend(effects);
+        }
+        all_effects
     }
 }

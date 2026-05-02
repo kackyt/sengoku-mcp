@@ -46,7 +46,7 @@ impl KuniQueryUseCase {
     /// UI表示に必要な情報を一括取得します
     pub async fn get_ui_snapshot(
         &self,
-        selected_kuni_id: Option<KuniId>,
+        _selected_kuni_id: Option<KuniId>,
         attacker_id: Option<KuniId>,
         defender_id: Option<KuniId>,
     ) -> anyhow::Result<UiSnapshot> {
@@ -55,27 +55,24 @@ impl KuniQueryUseCase {
         let all_kunis = self.kuni_repo.find_all().await?;
         let kuni_names = all_kunis.into_iter().map(|k| (k.id, k.name.0)).collect();
 
-        let current_turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|state| state.current_turn().value());
-
         let mut snapshot = UiSnapshot {
             all_daimyos,
             kuni_names,
-            current_turn,
             ..Default::default()
         };
 
-        // 特定の国の詳細情報を取得
-        if let Some(id) = selected_kuni_id {
-            if let Some(kuni) = self.kuni_repo.find_by_id(&id).await? {
-                snapshot.current_kuni = Some(kuni.clone());
-                snapshot.current_daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+        // 現在の手番情報を取得（これを優先する）
+        if let Some(state) = self.game_state_repo.get().await? {
+            snapshot.current_turn = Some(state.current_turn().value());
+            if let Some(kuni_id) = state.current_kuni_id() {
+                if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
+                    snapshot.current_kuni = Some(kuni.clone());
+                    snapshot.current_daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+                }
             }
         }
 
+        // 攻撃・守備国の取得
         if let Some(id) = attacker_id {
             if let Some(kuni) = self.kuni_repo.find_by_id(&id).await? {
                 snapshot.attacker_kuni = Some(kuni.clone());
@@ -88,20 +85,6 @@ impl KuniQueryUseCase {
 
         if let Some(id) = defender_id {
             snapshot.defender_kuni = self.kuni_repo.find_by_id(&id).await?;
-        }
-
-        // 現在の手番情報を取得
-        if let Some(state) = self.game_state_repo.get().await? {
-            snapshot.current_turn = Some(state.current_turn().value());
-            if let Some(kuni_id) = state.current_kuni_id() {
-                if snapshot.current_kuni.is_none() {
-                    if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
-                        snapshot.current_kuni = Some(kuni.clone());
-                        snapshot.current_daimyo =
-                            self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
-                    }
-                }
-            }
         }
 
         Ok(snapshot)
