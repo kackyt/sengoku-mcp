@@ -115,9 +115,8 @@ impl Kuni {
     // 各計算式は PRD.md の「資源計算式」章に基づいています。
 
     /// 米を売却します。
-    /// 獲得：金 += 投入量 * (random(10) + 10) / 100
     pub fn sell_rice(&mut self, amount: DisplayAmount) -> Result<DisplayAmount, DomainError> {
-        let rng = rand::thread_rng().gen_range(10..=20);
+        let rng = rand::thread_rng().gen_range(90..=150);
         let internal_amount = amount.to_internal();
         let gain = internal_amount.mul_percent(rng);
 
@@ -132,19 +131,22 @@ impl Kuni {
     }
 
     /// 米を購入します。
-    /// 消費：金 -= 投入量 * (random(10) + 10) / 100
     pub fn buy_rice(&mut self, amount: DisplayAmount) -> Result<DisplayAmount, DomainError> {
-        let rng = rand::thread_rng().gen_range(10..=20);
+        let rng = rand::thread_rng().gen_range(70..=100);
         let internal_amount = amount.to_internal();
-        let cost = internal_amount.mul_percent(rng);
+        let gain = internal_amount.mul_percent(rng);
 
-        self.consume_resource(cost, Amount::zero(), Amount::zero(), Amount::zero())?;
-        self.resource.kome += internal_amount;
-        Ok(cost.to_display())
+        self.consume_resource(
+            internal_amount,
+            Amount::zero(),
+            Amount::zero(),
+            Amount::zero(),
+        )?;
+        self.resource.kome += gain;
+        Ok(gain.to_display())
     }
 
     /// 開墾を行い、石高を上昇させます。
-    /// 獲得：石高 += 投入量 * (45 + random(10)) / 100
     pub fn develop_land(
         &mut self,
         investment: DisplayAmount,
@@ -164,7 +166,6 @@ impl Kuni {
     }
 
     /// 町造りを行い、町ランクを上昇させます。
-    /// 獲得：町 += 投入量 * (45 + random(10)) / 100
     pub fn build_town(&mut self, investment: DisplayAmount) -> Result<DisplayAmount, DomainError> {
         let multiplier: u32 = rand::thread_rng().gen_range(45..=55);
         let internal_investment = investment.to_internal();
@@ -181,8 +182,6 @@ impl Kuni {
     }
 
     /// 兵を徴募します。
-    /// 消費：金 -= 投入量 / 2, 人口 -= 投入量, 忠誠度 -= 投入量 / 2
-    /// 獲得：兵 += 投入量
     pub fn recruit_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
         let cost = internal_amount.mul_percent(50);
@@ -195,8 +194,6 @@ impl Kuni {
     }
 
     /// 兵を解雇します。
-    /// 消費：兵 -= 投入量
-    /// 獲得：忠誠度 += 投入量 / 2, 人口 += 投入量
     pub fn dismiss_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
         let tyu_gain = amount.value() / 2;
@@ -213,7 +210,6 @@ impl Kuni {
     }
 
     /// 施しを行い、忠誠度を上昇させます。
-    /// 獲得：忠誠度 += 投入量 * (50 + random(50)) / 100
     pub fn give_charity(&mut self, amount: DisplayAmount) -> Result<u32, DomainError> {
         let internal_amount = amount.to_internal();
         self.consume_resource(
