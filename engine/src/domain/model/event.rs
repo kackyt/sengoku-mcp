@@ -26,7 +26,7 @@ pub enum GameEvent {
 }
 
 /// 季節イベントの種別を表す列挙型
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SeasonalEventType {
     /// 疫病（通年、1/40確率）
     Plague,

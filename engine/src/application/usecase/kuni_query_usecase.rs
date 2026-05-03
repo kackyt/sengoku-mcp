@@ -5,6 +5,8 @@ use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
+use crate::domain::repository::action_log_repository::ActionLogRepository;
+use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -18,6 +20,8 @@ pub struct UiSnapshot {
     pub attacker_kuni: Option<Kuni>,
     pub defender_kuni: Option<Kuni>,
     pub kuni_names: HashMap<KuniId, String>,
+    pub domestic_logs: Vec<ActionLogEntry>,
+    pub war_logs: Vec<ActionLogEntry>,
 }
 
 /// 国の情報照会に関するユースケース
@@ -26,6 +30,7 @@ pub struct KuniQueryUseCase {
     daimyo_repo: Arc<dyn DaimyoRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
+    action_log_repo: Arc<dyn ActionLogRepository>,
 }
 
 impl KuniQueryUseCase {
@@ -34,12 +39,14 @@ impl KuniQueryUseCase {
         daimyo_repo: Arc<dyn DaimyoRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
+        action_log_repo: Arc<dyn ActionLogRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             daimyo_repo,
             game_state_repo,
             neighbor_repo,
+            action_log_repo,
         }
     }
 
@@ -58,6 +65,8 @@ impl KuniQueryUseCase {
         let mut snapshot = UiSnapshot {
             all_daimyos,
             kuni_names,
+            domestic_logs: self.action_log_repo.find_visible(ActionLogCategory::Domestic, 100)?,
+            war_logs: self.action_log_repo.find_visible(ActionLogCategory::War, 100)?,
             ..Default::default()
         };
 

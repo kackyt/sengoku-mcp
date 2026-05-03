@@ -9,6 +9,7 @@ use engine::application::usecase::{
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
+use engine::domain::model::action_log::ActionLogEntry;
 use ratatui::prelude::*;
 use std::time::Duration;
 
@@ -31,6 +32,8 @@ pub struct App {
     pub defender_kuni: Option<Kuni>,
     pub kuni_names: std::collections::HashMap<KuniId, String>,
     pub selected_daimyo_id: Option<DaimyoId>,
+    pub domestic_logs: Vec<ActionLogEntry>,
+    pub war_logs: Vec<ActionLogEntry>,
 }
 
 impl App {
@@ -56,6 +59,8 @@ impl App {
             defender_kuni: None,
             kuni_names: std::collections::HashMap::new(),
             selected_daimyo_id: None,
+            domestic_logs: Vec::new(),
+            war_logs: Vec::new(),
         }
     }
 
@@ -85,6 +90,8 @@ impl App {
         self.attacker_kuni = snapshot.attacker_kuni;
         self.defender_kuni = snapshot.defender_kuni;
         self.kuni_names = snapshot.kuni_names;
+        self.domestic_logs = snapshot.domestic_logs;
+        self.war_logs = snapshot.war_logs;
 
         // 手番の国と表示されている国がズレないように強制同期
         match (&self.current_kuni, &self.screen) {

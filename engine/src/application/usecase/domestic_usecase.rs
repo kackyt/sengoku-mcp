@@ -3,6 +3,9 @@ use crate::domain::{
     model::value_objects::{Amount, DisplayAmount, IninFlag, KuniId},
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
+    repository::action_log_repository::ActionLogRepository,
+    repository::game_state_repository::GameStateRepository,
+    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
 };
 use std::sync::Arc;
 
@@ -11,6 +14,8 @@ use std::sync::Arc;
 pub struct DomesticUseCase {
     kuni_repo: Arc<dyn KuniRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
+    action_log_repo: Arc<dyn ActionLogRepository>,
+    game_state_repo: Arc<dyn GameStateRepository>,
 }
 
 impl DomesticUseCase {
@@ -18,10 +23,14 @@ impl DomesticUseCase {
     pub fn new(
         kuni_repo: Arc<dyn KuniRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
+        action_log_repo: Arc<dyn ActionLogRepository>,
+        game_state_repo: Arc<dyn GameStateRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,
+            action_log_repo,
+            game_state_repo,
         }
     }
 
@@ -40,6 +49,18 @@ impl DomesticUseCase {
         let gain = kuni.sell_rice(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：米を売却し、金{}を得ました", kuni.name.0, gain.value());
+        let detail = format!("売却量: {}, 残金: {}, 残米: {}", amount.value(), kuni.resource.kin.value(), kuni.resource.kome.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
         Ok(gain)
     }
 
@@ -58,6 +79,18 @@ impl DomesticUseCase {
         let cost = kuni.buy_rice(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：米を{}購入しました（金{}を消費）", kuni.name.0, amount.value(), cost.value());
+        let detail = format!("購入量: {}, 残金: {}, 残米: {}", amount.value(), kuni.resource.kin.value(), kuni.resource.kome.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
         Ok(cost)
     }
 
@@ -76,6 +109,18 @@ impl DomesticUseCase {
         let gain = kuni.develop_land(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：開墾し、石高が{}上昇しました", kuni.name.0, gain.value());
+        let detail = format!("投資額: {}, 開墾後石高: {}", amount.value(), kuni.stats.kokudaka.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
         Ok(gain)
     }
 
@@ -94,6 +139,18 @@ impl DomesticUseCase {
         let gain = kuni.build_town(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：町を整備し、町が{}上昇しました", kuni.name.0, gain.value());
+        let detail = format!("投資額: {}, 整備後町: {}", amount.value(), kuni.stats.machi.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
         Ok(gain)
     }
 
@@ -111,7 +168,20 @@ impl DomesticUseCase {
 
         kuni.recruit_troops(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：兵を{}徴募しました", kuni.name.0, amount.value());
+        let detail = format!("徴募後 兵力: {}, 人口: {}, 忠誠度: {}", kuni.resource.hei.value(), kuni.resource.jinko.value(), kuni.stats.tyu.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
+        Ok(())
     }
 
     /// 兵を解雇します
@@ -128,7 +198,20 @@ impl DomesticUseCase {
 
         kuni.dismiss_troops(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：兵を{}解雇しました", kuni.name.0, amount.value());
+        let detail = format!("解雇後 兵力: {}, 人口: {}, 忠誠度: {}", kuni.resource.hei.value(), kuni.resource.jinko.value(), kuni.stats.tyu.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
+        Ok(())
     }
 
     /// 施しを行います
@@ -146,6 +229,18 @@ impl DomesticUseCase {
         let gain = kuni.give_charity(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}：施しを行い、忠誠度が{}上昇しました", kuni.name.0, gain);
+        let detail = format!("消費米: {}, 施し後忠誠度: {}", amount.value(), kuni.stats.tyu.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
         Ok(gain)
     }
 
@@ -183,7 +278,22 @@ impl DomesticUseCase {
             .add(kin_internal, hei_internal, kome_internal, Amount::zero());
 
         self.kuni_repo.save(&from_kuni).await?;
-        self.kuni_repo.save(&to_kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&to_kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let message = format!("{}→{}：資源を輸送しました（金:{} 兵:{} 米:{}）", from_kuni.name.0, to_kuni.name.0, kin.value(), hei.value(), kome.value());
+        let detail = format!("輸送後 {} 金:{} 兵:{} 米:{}, {} 金:{} 兵:{} 米:{}", 
+            from_kuni.name.0, from_kuni.resource.kin.value(), from_kuni.resource.hei.value(), from_kuni.resource.kome.value(),
+            to_kuni.name.0, to_kuni.resource.kin.value(), to_kuni.resource.hei.value(), to_kuni.resource.kome.value());
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
+        Ok(())
     }
 
     /// 指定した割合で資源を輸送します（内政コマンド用）
@@ -225,6 +335,20 @@ impl DomesticUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
         kuni.set_inin(IninFlag::new(delegate));
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let state_str = if delegate { "ON" } else { "OFF" };
+        let message = format!("{}：委任を{}にしました", kuni.name.0, state_str);
+        let detail = format!("切替後の状態: {}", state_str);
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Player,
+            turn,
+            message,
+            detail,
+        ));
+
+        Ok(())
     }
 }

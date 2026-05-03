@@ -1,3 +1,4 @@
+pub mod action_log_repository;
 pub mod battle_repository;
 pub mod daimyo_repository;
 pub mod event_dispatcher;

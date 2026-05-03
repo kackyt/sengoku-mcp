@@ -5,7 +5,10 @@ use crate::domain::{
     repository::battle_repository::BattleRepository,
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
+    repository::action_log_repository::ActionLogRepository,
+    repository::game_state_repository::GameStateRepository,
     service::battle_service::BattleService,
+    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
 };
 use std::sync::Arc;
 
@@ -15,6 +18,8 @@ pub struct BattleUseCase {
     kuni_repo: Arc<dyn KuniRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
     battle_repo: Arc<dyn BattleRepository>,
+    action_log_repo: Arc<dyn ActionLogRepository>,
+    game_state_repo: Arc<dyn GameStateRepository>,
 }
 
 impl BattleUseCase {
@@ -23,11 +28,15 @@ impl BattleUseCase {
         kuni_repo: Arc<dyn KuniRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
         battle_repo: Arc<dyn BattleRepository>,
+        action_log_repo: Arc<dyn ActionLogRepository>,
+        game_state_repo: Arc<dyn GameStateRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,
             battle_repo,
+            action_log_repo,
+            game_state_repo,
         }
     }
 
@@ -39,7 +48,31 @@ impl BattleUseCase {
     ) -> Result<WarStatus, anyhow::Error> {
         let defender_tactic = BattleService::decide_tactic();
 
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::War,
+            ActionLogVisibility::Internal,
+            turn,
+            "".to_string(),
+            format!("CPU Defender Tactic: {:?}", defender_tactic),
+        ));
+
+        let pre_attacker_hei = status.attacker.hei;
+        let pre_defender_hei = status.defender.hei;
+        
         let next_status = BattleService::calculate_turn(status, attacker_tactic, defender_tactic)?;
+
+        let attacker_damage = pre_attacker_hei.value().saturating_sub(next_status.attacker.hei.value());
+        let defender_damage = pre_defender_hei.value().saturating_sub(next_status.defender.hei.value());
+
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::War,
+            ActionLogVisibility::Player,
+            turn,
+            format!("自軍の被害: {}、敵軍の被害: {}", attacker_damage, defender_damage),
+            format!("attacker_dmg={}, defender_dmg={}, attacker_tactic={:?}, defender_tactic={:?}", attacker_damage, defender_damage, attacker_tactic, defender_tactic),
+        ));
 
         // 戦争決着時の処理
         if let Some(winner) = next_status.winner {
@@ -67,6 +100,14 @@ impl BattleUseCase {
                     self.battle_repo
                         .delete_by_attacker(&next_status.attacker_id())
                         .await?;
+
+                    let _ = self.action_log_repo.save(ActionLogEntry::new(
+                        ActionLogCategory::War,
+                        ActionLogVisibility::Public,
+                        turn,
+                        format!("合戦終了：攻撃軍（{}から出陣）の勝利！領地を占領しました", home.name.0),
+                        format!("Attacker {} conquered {}.", next_status.attacker_id().value(), next_status.defender_id().value()),
+                    ));
                 }
                 BattleSide::Defender => {
                     // 防御側勝利：領土防衛成功
@@ -83,6 +124,14 @@ impl BattleUseCase {
                     self.battle_repo
                         .delete_by_attacker(&next_status.attacker_id())
                         .await?;
+
+                    let _ = self.action_log_repo.save(ActionLogEntry::new(
+                        ActionLogCategory::War,
+                        ActionLogVisibility::Public,
+                        turn,
+                        format!("合戦終了：防衛軍（{}）の勝利", defender.name.0),
+                        format!("Defender {} successfully defended against attacker.", next_status.defender_id().value()),
+                    ));
                 }
             }
         } else {
@@ -101,6 +150,7 @@ impl BattleUseCase {
         hei: DisplayAmount,
         kome: DisplayAmount,
     ) -> Result<WarStatus, anyhow::Error> {
+        let _ = self.action_log_repo.clear(ActionLogCategory::War);
         let mut attacker = self
             .kuni_repo
             .find_by_id(&attacker_id)
@@ -144,6 +194,15 @@ impl BattleUseCase {
         };
 
         self.battle_repo.save(&status).await?;
+
+        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::War,
+            ActionLogVisibility::Public,
+            turn,
+            format!("{} が {} へ侵攻を開始しました", attacker.name.0, defender.name.0),
+            format!("Attacker: {:?}, Defender: {:?}", attacker_id, defender_id),
+        ));
 
         Ok(status)
     }
