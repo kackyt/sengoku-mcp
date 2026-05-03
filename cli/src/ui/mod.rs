@@ -162,6 +162,10 @@ fn render_domestic(
         (chunks[0], chunks[1])
     };
 
+    if log_area.height > 0 {
+        render_action_logs(app, f, log_area, false);
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -287,10 +291,6 @@ fn render_domestic(
             .alignment(Alignment::Center);
         f.render_widget(p, chunks[1]);
     }
-
-    if log_area.height > 0 {
-        render_action_logs(app, f, log_area, false);
-    }
 }
 
 fn render_war(
@@ -314,6 +314,10 @@ fn render_war(
             .split(area);
         (chunks[0], chunks[1])
     };
+
+    if log_area.height > 0 {
+        render_action_logs(_app, f, log_area, true);
+    }
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -405,10 +409,6 @@ fn render_war(
         let mut state = ratatui::widgets::ListState::default();
         state.select(Some(cursor));
         f.render_stateful_widget(list, area, &mut state);
-    }
-
-    if log_area.height > 0 {
-        render_action_logs(_app, f, log_area, true);
     }
 }
 

@@ -63,15 +63,21 @@ impl BattleUseCase {
         
         let next_status = BattleService::calculate_turn(status, attacker_tactic, defender_tactic)?;
 
-        let attacker_damage = pre_attacker_hei.value().saturating_sub(next_status.attacker.hei.value());
-        let defender_damage = pre_defender_hei.value().saturating_sub(next_status.defender.hei.value());
+        let attacker_damage = pre_attacker_hei.sub(next_status.attacker.hei).to_display();
+        let defender_damage = pre_defender_hei.sub(next_status.defender.hei).to_display();
 
         let _ = self.action_log_repo.save(ActionLogEntry::new(
             ActionLogCategory::War,
             ActionLogVisibility::Player,
             turn,
-            format!("自軍の被害: {}、敵軍の被害: {}", attacker_damage, defender_damage),
-            format!("attacker_dmg={}, defender_dmg={}, attacker_tactic={:?}, defender_tactic={:?}", attacker_damage, defender_damage, attacker_tactic, defender_tactic),
+            format!(
+                "自軍({})の被害: {}、敵軍({})の被害: {}",
+                attacker_tactic.name(),
+                attacker_damage,
+                defender_tactic.name(),
+                defender_damage
+            ),
+            format!("attacker_dmg={}, defender_dmg={}, attacker_tactic={:?}, defender_tactic={:?}", attacker_damage.value(), defender_damage.value(), attacker_tactic, defender_tactic),
         ));
 
         // 戦争決着時の処理
@@ -108,6 +114,13 @@ impl BattleUseCase {
                         format!("合戦終了：攻撃軍（{}から出陣）の勝利！領地を占領しました", home.name.0),
                         format!("Attacker {} conquered {}.", next_status.attacker_id().value(), next_status.defender_id().value()),
                     ));
+                    let _ = self.action_log_repo.save(ActionLogEntry::new(
+                        ActionLogCategory::Domestic,
+                        ActionLogVisibility::Public,
+                        turn,
+                        format!("【合戦】{} が {} を占領しました", home.name.0, occupied.name.0),
+                        "".to_string(),
+                    ));
                 }
                 BattleSide::Defender => {
                     // 防御側勝利：領土防衛成功
@@ -131,6 +144,13 @@ impl BattleUseCase {
                         turn,
                         format!("合戦終了：防衛軍（{}）の勝利", defender.name.0),
                         format!("Defender {} successfully defended against attacker.", next_status.defender_id().value()),
+                    ));
+                    let _ = self.action_log_repo.save(ActionLogEntry::new(
+                        ActionLogCategory::Domestic,
+                        ActionLogVisibility::Public,
+                        turn,
+                        format!("【合戦】{} が侵攻を退けました", defender.name.0),
+                        "".to_string(),
                     ));
                 }
             }
@@ -202,6 +222,13 @@ impl BattleUseCase {
             turn,
             format!("{} が {} へ侵攻を開始しました", attacker.name.0, defender.name.0),
             format!("Attacker: {:?}, Defender: {:?}", attacker_id, defender_id),
+        ));
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogCategory::Domestic,
+            ActionLogVisibility::Public,
+            turn,
+            format!("【合戦】{} が {} へ侵攻しました", attacker.name.0, defender.name.0),
+            "".to_string(),
         ));
 
         Ok(status)

@@ -16,6 +16,18 @@ pub enum Tactic {
     Retreat,
 }
 
+impl Tactic {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Normal => "通常",
+            Self::Surprise => "奇襲",
+            Self::Fire => "火計",
+            Self::Inspire => "鼓舞",
+            Self::Retreat => "退却",
+        }
+    }
+}
+
 /// 戦闘の陣営
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BattleSide {
