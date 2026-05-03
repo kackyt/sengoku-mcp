@@ -1,14 +1,14 @@
 use crate::domain::{
     error::DomainError,
+    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
     model::battle::{BattleAdvantage, BattleSide, Tactic, WarStatus},
     model::value_objects::{DisplayAmount, KuniId},
+    repository::action_log_repository::ActionLogRepository,
     repository::battle_repository::BattleRepository,
+    repository::game_state_repository::GameStateRepository,
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
-    repository::action_log_repository::ActionLogRepository,
-    repository::game_state_repository::GameStateRepository,
     service::battle_service::BattleService,
-    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
 };
 use std::sync::Arc;
 
@@ -48,8 +48,13 @@ impl BattleUseCase {
     ) -> Result<WarStatus, anyhow::Error> {
         let defender_tactic = BattleService::decide_tactic();
 
-        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        
+        let turn = self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
             ActionLogCategory::War,
             ActionLogVisibility::Internal,
@@ -60,7 +65,7 @@ impl BattleUseCase {
 
         let pre_attacker_hei = status.attacker.hei;
         let pre_defender_hei = status.defender.hei;
-        
+
         let next_status = BattleService::calculate_turn(status, attacker_tactic, defender_tactic)?;
 
         let attacker_damage = pre_attacker_hei.sub(next_status.attacker.hei).to_display();
@@ -77,7 +82,13 @@ impl BattleUseCase {
                 defender_tactic.name(),
                 defender_damage
             ),
-            format!("attacker_dmg={}, defender_dmg={}, attacker_tactic={:?}, defender_tactic={:?}", attacker_damage.value(), defender_damage.value(), attacker_tactic, defender_tactic),
+            format!(
+                "attacker_dmg={}, defender_dmg={}, attacker_tactic={:?}, defender_tactic={:?}",
+                attacker_damage.value(),
+                defender_damage.value(),
+                attacker_tactic,
+                defender_tactic
+            ),
         ));
 
         // 戦争決着時の処理
@@ -111,14 +122,24 @@ impl BattleUseCase {
                         ActionLogCategory::War,
                         ActionLogVisibility::Public,
                         turn,
-                        format!("合戦終了：攻撃軍（{}から出陣）の勝利！領地を占領しました", home.name.0),
-                        format!("Attacker {} conquered {}.", next_status.attacker_id().value(), next_status.defender_id().value()),
+                        format!(
+                            "合戦終了：攻撃軍（{}から出陣）の勝利！領地を占領しました",
+                            home.name.0
+                        ),
+                        format!(
+                            "Attacker {} conquered {}.",
+                            next_status.attacker_id().value(),
+                            next_status.defender_id().value()
+                        ),
                     ));
                     let _ = self.action_log_repo.save(ActionLogEntry::new(
                         ActionLogCategory::Domestic,
                         ActionLogVisibility::Public,
                         turn,
-                        format!("【合戦】{} が {} を占領しました", home.name.0, occupied.name.0),
+                        format!(
+                            "【合戦】{} が {} を占領しました",
+                            home.name.0, occupied.name.0
+                        ),
                         "".to_string(),
                     ));
                 }
@@ -143,7 +164,10 @@ impl BattleUseCase {
                         ActionLogVisibility::Public,
                         turn,
                         format!("合戦終了：防衛軍（{}）の勝利", defender.name.0),
-                        format!("Defender {} successfully defended against attacker.", next_status.defender_id().value()),
+                        format!(
+                            "Defender {} successfully defended against attacker.",
+                            next_status.defender_id().value()
+                        ),
                     ));
                     let _ = self.action_log_repo.save(ActionLogEntry::new(
                         ActionLogCategory::Domestic,
@@ -215,19 +239,30 @@ impl BattleUseCase {
 
         self.battle_repo.save(&status).await?;
 
-        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let turn = self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
         let _ = self.action_log_repo.save(ActionLogEntry::new(
             ActionLogCategory::War,
             ActionLogVisibility::Public,
             turn,
-            format!("{} が {} へ侵攻を開始しました", attacker.name.0, defender.name.0),
+            format!(
+                "{} が {} へ侵攻を開始しました",
+                attacker.name.0, defender.name.0
+            ),
             format!("Attacker: {:?}, Defender: {:?}", attacker_id, defender_id),
         ));
         let _ = self.action_log_repo.save(ActionLogEntry::new(
             ActionLogCategory::Domestic,
             ActionLogVisibility::Public,
             turn,
-            format!("【合戦】{} が {} へ侵攻しました", attacker.name.0, defender.name.0),
+            format!(
+                "【合戦】{} が {} へ侵攻しました",
+                attacker.name.0, defender.name.0
+            ),
             "".to_string(),
         ));
 

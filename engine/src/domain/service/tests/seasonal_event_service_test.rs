@@ -23,14 +23,18 @@ mod tests {
     fn test_gold_income_spring() {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
-        
+
         // 1ターン目はスキップされるため、2回目の春である5ターン目でテストする
         let effects = service.process_start_turn_events(TurnNumber::new(5), &mut kuni);
-        
+
         // 春(5)開始時は人口増加と金収入が発生するはず
-        assert!(effects.iter().any(|e| e.event_type == SeasonalEventType::PopulationGrowth));
-        assert!(effects.iter().any(|e| e.event_type == SeasonalEventType::GoldIncome));
-        
+        assert!(effects
+            .iter()
+            .any(|e| e.event_type == SeasonalEventType::PopulationGrowth));
+        assert!(effects
+            .iter()
+            .any(|e| e.event_type == SeasonalEventType::GoldIncome));
+
         // 金が増えているか確認
         assert!(kuni.resource.kin.value() > 1000);
     }

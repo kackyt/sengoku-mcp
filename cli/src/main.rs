@@ -138,7 +138,7 @@ async fn build_app() -> Result<App> {
 
     // ユースケースの構築
     let domestic_usecase = DomesticUseCase::new(
-        kuni_repo.clone(), 
+        kuni_repo.clone(),
         neighbor_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),

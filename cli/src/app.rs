@@ -6,10 +6,10 @@ use engine::application::usecase::{
     battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
     kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
+use engine::domain::model::action_log::ActionLogEntry;
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
-use engine::domain::model::action_log::ActionLogEntry;
 use ratatui::prelude::*;
 use std::time::Duration;
 

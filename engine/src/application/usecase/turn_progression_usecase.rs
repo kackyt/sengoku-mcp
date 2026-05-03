@@ -1,19 +1,18 @@
 use crate::domain::{
+    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
     model::{
         event::GameEvent,
         game_state::GameState,
         value_objects::{ActionOrderIndex, DaimyoId, EventMessage, TurnNumber},
     },
     repository::{
-        action_log_repository::ActionLogRepository,
-        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
-        kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, event_dispatcher::EventDispatcher,
+        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
     },
     service::{
         cpu_action_decision_service::{CpuActionDecision, CpuActionDecisionService},
         turn_service::TurnService,
     },
-    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
 };
 use std::sync::Arc;
 
@@ -205,7 +204,12 @@ impl TurnProgressionUseCase {
             })
             .await?;
 
-        let turn = self.game_state_repo.get().await?.map(|s| s.current_turn()).unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let turn = self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
         let _ = self.action_log_repo.save(ActionLogEntry::new(
             ActionLogCategory::Domestic,
             ActionLogVisibility::Internal,
@@ -257,7 +261,11 @@ impl TurnProgressionUseCase {
             ActionLogCategory::Domestic,
             ActionLogVisibility::Public,
             state.current_turn(),
-            format!("第{}ターン（{}）が始まりました", state.current_turn().value(), season_name),
+            format!(
+                "第{}ターン（{}）が始まりました",
+                state.current_turn().value(),
+                season_name
+            ),
             format!("turn={}", state.current_turn().value()),
         ));
 
@@ -271,9 +279,15 @@ impl TurnProgressionUseCase {
         // 季節イベント結果を集約してログに記録
         use crate::domain::model::event::SeasonalEventType;
         use std::collections::HashMap;
-        let mut effects_by_type: HashMap<SeasonalEventType, Vec<&crate::domain::model::event::SeasonalEventEffect>> = HashMap::new();
+        let mut effects_by_type: HashMap<
+            SeasonalEventType,
+            Vec<&crate::domain::model::event::SeasonalEventEffect>,
+        > = HashMap::new();
         for effect in &start_effects {
-            effects_by_type.entry(effect.event_type.clone()).or_default().push(effect);
+            effects_by_type
+                .entry(effect.event_type.clone())
+                .or_default()
+                .push(effect);
         }
 
         // 表示順序の定義
@@ -289,11 +303,20 @@ impl TurnProgressionUseCase {
         for etype in display_order {
             if let Some(effects) = effects_by_type.get(&etype) {
                 let msg = match etype {
-                    SeasonalEventType::GoldIncome => "春の収穫：各地で金が徴収されました".to_string(),
-                    SeasonalEventType::RiceIncome => "秋の収穫：各地で米が増産されました".to_string(),
-                    SeasonalEventType::PopulationGrowth => "春の恵み：各地の人口が増加しました".to_string(),
-                    SeasonalEventType::Plague | SeasonalEventType::Flood | SeasonalEventType::Rebellion => {
-                        let names: Vec<_> = effects.iter()
+                    SeasonalEventType::GoldIncome => {
+                        "春の収穫：各地で金が徴収されました".to_string()
+                    }
+                    SeasonalEventType::RiceIncome => {
+                        "秋の収穫：各地で米が増産されました".to_string()
+                    }
+                    SeasonalEventType::PopulationGrowth => {
+                        "春の恵み：各地の人口が増加しました".to_string()
+                    }
+                    SeasonalEventType::Plague
+                    | SeasonalEventType::Flood
+                    | SeasonalEventType::Rebellion => {
+                        let names: Vec<_> = effects
+                            .iter()
                             .filter_map(|e| kunis.iter().find(|k| k.id == e.kuni_id))
                             .map(|k| k.name.0.as_str())
                             .collect();

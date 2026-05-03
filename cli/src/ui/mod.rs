@@ -615,17 +615,21 @@ fn render_action_logs(app: &App, f: &mut Frame, area: Rect, is_war: bool) {
         })
         .collect();
 
-    let title = if is_war { "合戦ログ" } else { "行動ログ" };
-    
+    let title = if is_war {
+        "合戦ログ"
+    } else {
+        "行動ログ"
+    };
+
     let list = List::new(items)
         .block(Block::default().title(title).borders(Borders::ALL))
         .style(Style::default().fg(Color::Gray));
-    
+
     let mut state = ratatui::widgets::ListState::default();
     if !logs.is_empty() {
         // 末尾のログが表示されるように選択状態にする
         state.select(Some(logs.len() - 1));
     }
-    
+
     f.render_stateful_widget(list, area, &mut state);
 }

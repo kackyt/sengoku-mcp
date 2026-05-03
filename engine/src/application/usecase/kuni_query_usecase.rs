@@ -1,12 +1,12 @@
+use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::value_objects::{DaimyoId, KuniId};
+use crate::domain::repository::action_log_repository::ActionLogRepository;
 use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
-use crate::domain::repository::action_log_repository::ActionLogRepository;
-use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -65,8 +65,12 @@ impl KuniQueryUseCase {
         let mut snapshot = UiSnapshot {
             all_daimyos,
             kuni_names,
-            domestic_logs: self.action_log_repo.find_visible(ActionLogCategory::Domestic, 100)?,
-            war_logs: self.action_log_repo.find_visible(ActionLogCategory::War, 100)?,
+            domestic_logs: self
+                .action_log_repo
+                .find_visible(ActionLogCategory::Domestic, 100)?,
+            war_logs: self
+                .action_log_repo
+                .find_visible(ActionLogCategory::War, 100)?,
             ..Default::default()
         };
 
