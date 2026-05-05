@@ -17,7 +17,7 @@ TBD - created by archiving change implement-domain-logic. Update Purpose after a
 
 #### Scenario: 全大名の行動完了と季節イベント
 - **WHEN** ターン内のすべての大名が行動を完了した時
-- **THEN** ターンカウンターが増加し、新機能「seasonal-events」に基づく季節イベント処理（資源生成、災害、反乱など）が実行され、次のターンの処理が開始される
+- **THEN** ターンカウンターを1進めた後、`seasonal-events` 仕様に従って「次ターン開始時イベント（災害・反乱）」と「季節境界イベント（資源生成）」をこの順で評価・適用し、その後に次のターン処理へ遷移する
 
 #### Scenario: 資源生成の季節 (DEPRECATED)
 - **THEN** (このロジックは seasonal-events 側に統合・移行されました)
