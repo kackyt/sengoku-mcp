@@ -1,3 +1,4 @@
+pub mod action_log;
 pub mod battle;
 pub mod daimyo;
 pub mod event;

@@ -2,6 +2,7 @@
 mod tests {
     use crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
     use crate::domain::error::DomainError;
+    use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
     use crate::domain::model::{
         daimyo::Daimyo,
         event::GameEvent,
@@ -11,8 +12,9 @@ mod tests {
         value_objects::{ActionOrderIndex, DaimyoId, IninFlag, KuniId, TurnNumber},
     };
     use crate::domain::repository::{
-        daimyo_repository::DaimyoRepository, event_dispatcher::EventDispatcher,
-        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, daimyo_repository::DaimyoRepository,
+        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
+        kuni_repository::KuniRepository,
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -124,6 +126,29 @@ mod tests {
         }
     }
 
+    struct MockActionLogRepository;
+    impl ActionLogRepository for MockActionLogRepository {
+        fn save(&self, _entry: ActionLogEntry) -> Result<(), DomainError> {
+            Ok(())
+        }
+        fn find_visible(
+            &self,
+            _category: ActionLogCategory,
+            _limit: usize,
+        ) -> Result<Vec<ActionLogEntry>, DomainError> {
+            Ok(vec![])
+        }
+        fn find_all(
+            &self,
+            _category: ActionLogCategory,
+        ) -> Result<Vec<ActionLogEntry>, DomainError> {
+            Ok(vec![])
+        }
+        fn clear(&self, _category: ActionLogCategory) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
     // --- Helpers ---
 
     fn create_test_daimyo(name: &str) -> Daimyo {
@@ -170,6 +195,7 @@ mod tests {
             kuni_repo.clone(),
             state_repo.clone(),
             event_dispatcher.clone(),
+            Arc::new(MockActionLogRepository),
         );
 
         // 1. 初回進行: ターン1の開始をセットアップ（初期化のみ）
@@ -223,7 +249,12 @@ mod tests {
         kuni_repo.setup(kuni1.clone()).await;
         kuni_repo.setup(kuni2.clone()).await;
 
-        let usecase = TurnProgressionUseCase::new(kuni_repo, state_repo.clone(), event_dispatcher);
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            state_repo.clone(),
+            event_dispatcher,
+            Arc::new(MockActionLogRepository),
+        );
 
         // 初期状態セットアップ（ターン1, 行動順 [k1, k2], インデックス0）
         let initial_state = GameState::new(
@@ -252,12 +283,17 @@ mod tests {
         let kuni1 = create_test_kuni(1, daimyo1.id);
         kuni_repo.setup(kuni1.clone()).await;
 
-        let usecase =
-            TurnProgressionUseCase::new(kuni_repo, state_repo.clone(), event_dispatcher.clone());
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            state_repo.clone(),
+            event_dispatcher.clone(),
+            Arc::new(MockActionLogRepository),
+        );
 
         // 初期状態セットアップ（ターン1, 行動順 [k1], インデックス0）
         let initial_state =
-            GameState::new(TurnNumber::new(1), vec![kuni1.id], ActionOrderIndex::new(0)).unwrap();
+            GameState::new(TurnNumber::new(1), vec![kuni1.id], ActionOrderIndex::new(0))
+                .expect("valid state");
         state_repo.save(&initial_state).await.unwrap();
 
         // 最後の行動完了 -> ターン終了分岐 (index 0 -> 1 -> 次のターンへ)
@@ -294,7 +330,12 @@ mod tests {
         kuni_repo.setup(kuni1.clone()).await;
         kuni_repo.setup(kuni_cpu.clone()).await;
 
-        let usecase = TurnProgressionUseCase::new(kuni_repo, state_repo.clone(), event_dispatcher);
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            state_repo.clone(),
+            event_dispatcher,
+            Arc::new(MockActionLogRepository),
+        );
 
         // 初期状態で CPU -> プレイヤー の順とする
         let initial_state = GameState::new(

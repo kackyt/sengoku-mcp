@@ -6,6 +6,23 @@ use crate::domain::model::value_objects::{
 };
 use rand::Rng;
 
+/// 割合減少の対象リソースを指定するセレクタ
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceSelector {
+    /// 人口
+    Jinko,
+    /// 兵力
+    Hei,
+    /// 備蓄米
+    Kome,
+    /// 忠誠度（Rateとして管理）
+    Tyu,
+    /// 石高
+    Kokudaka,
+    /// 町
+    Machi,
+}
+
 /// 国を表すドメインモデル
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Kuni {
@@ -98,9 +115,8 @@ impl Kuni {
     // 各計算式は PRD.md の「資源計算式」章に基づいています。
 
     /// 米を売却します。
-    /// 獲得：金 += 投入量 * (random(10) + 10) / 100
     pub fn sell_rice(&mut self, amount: DisplayAmount) -> Result<DisplayAmount, DomainError> {
-        let rng = rand::thread_rng().gen_range(10..=20);
+        let rng = rand::thread_rng().gen_range(90..=150);
         let internal_amount = amount.to_internal();
         let gain = internal_amount.mul_percent(rng);
 
@@ -115,19 +131,22 @@ impl Kuni {
     }
 
     /// 米を購入します。
-    /// 消費：金 -= 投入量 * (random(10) + 10) / 100
     pub fn buy_rice(&mut self, amount: DisplayAmount) -> Result<DisplayAmount, DomainError> {
-        let rng = rand::thread_rng().gen_range(10..=20);
+        let rng = rand::thread_rng().gen_range(70..=100);
         let internal_amount = amount.to_internal();
-        let cost = internal_amount.mul_percent(rng);
+        let gain = internal_amount.mul_percent(rng);
 
-        self.consume_resource(cost, Amount::zero(), Amount::zero(), Amount::zero())?;
-        self.resource.kome += internal_amount;
-        Ok(cost.to_display())
+        self.consume_resource(
+            internal_amount,
+            Amount::zero(),
+            Amount::zero(),
+            Amount::zero(),
+        )?;
+        self.resource.kome += gain;
+        Ok(gain.to_display())
     }
 
     /// 開墾を行い、石高を上昇させます。
-    /// 獲得：石高 += 投入量 * (45 + random(10)) / 100
     pub fn develop_land(
         &mut self,
         investment: DisplayAmount,
@@ -147,7 +166,6 @@ impl Kuni {
     }
 
     /// 町造りを行い、町ランクを上昇させます。
-    /// 獲得：町 += 投入量 * (45 + random(10)) / 100
     pub fn build_town(&mut self, investment: DisplayAmount) -> Result<DisplayAmount, DomainError> {
         let multiplier: u32 = rand::thread_rng().gen_range(45..=55);
         let internal_investment = investment.to_internal();
@@ -164,8 +182,6 @@ impl Kuni {
     }
 
     /// 兵を徴募します。
-    /// 消費：金 -= 投入量 / 2, 人口 -= 投入量, 忠誠度 -= 投入量 / 2
-    /// 獲得：兵 += 投入量
     pub fn recruit_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
         let cost = internal_amount.mul_percent(50);
@@ -178,8 +194,6 @@ impl Kuni {
     }
 
     /// 兵を解雇します。
-    /// 消費：兵 -= 投入量
-    /// 獲得：忠誠度 += 投入量 / 2, 人口 += 投入量
     pub fn dismiss_troops(&mut self, amount: DisplayAmount) -> Result<(), DomainError> {
         let internal_amount = amount.to_internal();
         let tyu_gain = amount.value() / 2;
@@ -196,7 +210,6 @@ impl Kuni {
     }
 
     /// 施しを行い、忠誠度を上昇させます。
-    /// 獲得：忠誠度 += 投入量 * (50 + random(50)) / 100
     pub fn give_charity(&mut self, amount: DisplayAmount) -> Result<u32, DomainError> {
         let internal_amount = amount.to_internal();
         self.consume_resource(
@@ -212,5 +225,45 @@ impl Kuni {
 
         self.stats.tyu += Rate::new(tyu_gain);
         Ok(self.stats.tyu.value().saturating_sub(before))
+    }
+
+    /// 指定したリソースをパーセンテージ（整数）で減少させます。
+    /// 実際に減少した量を Amount 型で返します（忠誠度の場合は0を返します）。
+    /// saturating_sub を使用するため、値が負になる心配はありません。
+    pub fn apply_percentage_loss(&mut self, selector: ResourceSelector, percent: u32) -> Amount {
+        match selector {
+            ResourceSelector::Jinko => {
+                let loss = self.resource.jinko.mul_percent(percent);
+                self.resource.jinko -= loss;
+                loss
+            }
+            ResourceSelector::Hei => {
+                let loss = self.resource.hei.mul_percent(percent);
+                self.resource.hei -= loss;
+                loss
+            }
+            ResourceSelector::Kome => {
+                let loss = self.resource.kome.mul_percent(percent);
+                self.resource.kome -= loss;
+                loss
+            }
+            ResourceSelector::Tyu => {
+                // 忠誠度は Rate 型なのでパーセンテージ減少を個別に計算する
+                let loss = self.stats.tyu.value() * percent / 100;
+                self.stats.tyu -= Rate::new(loss);
+                // 忠誠度の損失はAmount型で表現できないため0を返す
+                Amount::zero()
+            }
+            ResourceSelector::Kokudaka => {
+                let loss = self.stats.kokudaka.mul_percent(percent);
+                self.stats.kokudaka -= loss;
+                loss
+            }
+            ResourceSelector::Machi => {
+                let loss = self.stats.machi.mul_percent(percent);
+                self.stats.machi -= loss;
+                loss
+            }
+        }
     }
 }

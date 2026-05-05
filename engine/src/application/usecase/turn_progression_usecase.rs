@@ -1,12 +1,13 @@
 use crate::domain::{
+    model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent},
     model::{
         event::GameEvent,
         game_state::GameState,
         value_objects::{ActionOrderIndex, DaimyoId, EventMessage, TurnNumber},
     },
     repository::{
-        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
-        kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, event_dispatcher::EventDispatcher,
+        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
     },
     service::{
         cpu_action_decision_service::{CpuActionDecision, CpuActionDecisionService},
@@ -19,6 +20,7 @@ pub struct TurnProgressionUseCase {
     kuni_repo: Arc<dyn KuniRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
     event_dispatcher: Arc<dyn EventDispatcher>,
+    action_log_repo: Arc<dyn ActionLogRepository>,
 }
 
 impl TurnProgressionUseCase {
@@ -26,11 +28,13 @@ impl TurnProgressionUseCase {
         kuni_repo: Arc<dyn KuniRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
         event_dispatcher: Arc<dyn EventDispatcher>,
+        action_log_repo: Arc<dyn ActionLogRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             game_state_repo,
             event_dispatcher,
+            action_log_repo,
         }
     }
 
@@ -70,7 +74,8 @@ impl TurnProgressionUseCase {
                 let mut rng = rand::thread_rng();
                 let order = TurnService::determine_action_order(&kunis, &mut rng);
                 let initial_state =
-                    GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))?;
+                    GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))
+                        .expect("valid state");
                 self.game_state_repo.save(&initial_state).await?;
                 self.event_dispatcher
                     .dispatch(GameEvent::TurnStarted {
@@ -196,29 +201,45 @@ impl TurnProgressionUseCase {
             .dispatch(GameEvent::DomesticAction {
                 daimyo_id,
                 action_name: EventMessage::new("自動内政"),
-                details: EventMessage::new(action_msg),
+                details: EventMessage::new(action_msg.clone()),
             })
             .await?;
+
+        let turn = self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogVisibility::Internal,
+            turn,
+            ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
+                daimyo_id,
+                action_msg: action_msg.to_string(),
+            }),
+        ));
 
         Ok(())
     }
 
     async fn finish_turn(&self, mut state: GameState) -> Result<(), anyhow::Error> {
-        let kunis = self.kuni_repo.find_all().await?;
-        let mut rng = rand::thread_rng();
-        let updated_kunis =
-            TurnService::process_season(state.current_turn().value(), kunis, &mut rng);
-        for kuni in updated_kunis {
-            self.kuni_repo.save(&kuni).await?;
+        let current_turn = state.current_turn();
+
+        // ターン終了時の季節イベント（人口増加・資源生成）を処理
+        let mut kunis = self.kuni_repo.find_all().await?;
+        let _end_effects = TurnService::process_end_turn_events(current_turn, &mut kunis);
+        for kuni in &kunis {
+            self.kuni_repo.save(kuni).await?;
         }
 
         self.event_dispatcher
-            .dispatch(GameEvent::SeasonPassed {
-                turn: state.current_turn(),
-            })
+            .dispatch(GameEvent::SeasonPassed { turn: current_turn })
             .await?;
 
-        let kunis = self.kuni_repo.find_all().await?;
+        // ターン開始時の季節イベント（洪水・疫病・反乱）を次のターン開始前に処理
+        let mut kunis = self.kuni_repo.find_all().await?;
+        let mut rng = rand::thread_rng();
         let new_order = TurnService::determine_action_order(&kunis, &mut rng);
         state.start_new_turn(new_order);
         self.game_state_repo.save(&state).await?;
@@ -228,6 +249,95 @@ impl TurnProgressionUseCase {
                 turn: state.current_turn(),
             })
             .await?;
+
+        // ターン開始のPublicログ
+        let _ = self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogVisibility::Public,
+            state.current_turn(),
+            ActionLogEvent::Domestic(DomesticLogEvent::TurnStart {
+                turn: state.current_turn(),
+                season: state.current_turn().season(),
+            }),
+        ));
+
+        // 新しいターン開始時のイベントを処理
+        let start_effects =
+            TurnService::process_start_turn_events(state.current_turn(), &mut kunis);
+        for kuni in &kunis {
+            self.kuni_repo.save(kuni).await?;
+        }
+
+        // 季節イベント結果を集約してログに記録
+        use crate::domain::model::event::SeasonalEventType;
+        use std::collections::HashMap;
+        let mut effects_by_type: HashMap<
+            SeasonalEventType,
+            Vec<&crate::domain::model::event::SeasonalEventEffect>,
+        > = HashMap::new();
+        for effect in &start_effects {
+            effects_by_type
+                .entry(effect.event_type.clone())
+                .or_default()
+                .push(effect);
+        }
+
+        // 表示順序の定義
+        let display_order = vec![
+            SeasonalEventType::GoldIncome,
+            SeasonalEventType::RiceIncome,
+            SeasonalEventType::PopulationGrowth,
+            SeasonalEventType::Plague,
+            SeasonalEventType::Flood,
+            SeasonalEventType::Rebellion,
+        ];
+
+        for etype in display_order {
+            if let Some(effects) = effects_by_type.get(&etype) {
+                let affected_kuni_names: Vec<_> = effects
+                    .iter()
+                    .filter_map(|e| kunis.iter().find(|k| k.id == e.kuni_id))
+                    .map(|k| k.name.clone())
+                    .collect();
+                let _ = self.action_log_repo.save(ActionLogEntry::new(
+                    ActionLogVisibility::Public,
+                    state.current_turn(),
+                    ActionLogEvent::Domestic(DomesticLogEvent::SeasonalEvent {
+                        event_type: etype.clone(),
+                        kuni_names: affected_kuni_names,
+                    }),
+                ));
+            }
+        }
+
+        // 季節イベント結果を個別に通知（イベントディスパッチのみ）
+        for effect in &start_effects {
+            let detail_str = format!(
+                "国ID={:?} 金:{:+} 米:{:+} 兵:{:+} 人口:{:+} 忠誠:{:+} 石高:{:+} 町:{:+}",
+                effect.kuni_id,
+                effect.kin_diff.to_display().value(),
+                effect.kome_diff.to_display().value(),
+                effect.hei_diff.to_display().value(),
+                effect.jinko_diff.to_display().value(),
+                effect.tyu_diff,
+                effect.kokudaka_diff.to_display().value(),
+                effect.machi_diff.to_display().value()
+            );
+
+            self.event_dispatcher
+                .dispatch(GameEvent::DomesticAction {
+                    daimyo_id: kunis
+                        .iter()
+                        .find(|k| k.id == effect.kuni_id)
+                        .map(|k| k.daimyo_id)
+                        .unwrap_or_default(),
+                    action_name: EventMessage::new(format!(
+                        "季節イベント: {:?}",
+                        effect.event_type
+                    )),
+                    details: EventMessage::new(detail_str),
+                })
+                .await?;
+        }
 
         Ok(())
     }

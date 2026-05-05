@@ -288,7 +288,7 @@ impl EventHandler {
                             .domestic_usecase
                             .buy_rice(kuni_id, amount)
                             .await
-                            .map(|cost| format!("米を購入し、金を {} 支払いました", cost)),
+                            .map(|gain| format!("米を {} 購入しました", gain)),
                         DomesticCommand::Develop => app
                             .domestic_usecase
                             .develop_land(kuni_id, amount)

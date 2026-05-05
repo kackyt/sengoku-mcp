@@ -205,6 +205,12 @@ impl DaimyoId {
     }
 }
 
+impl fmt::Display for DaimyoId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// 経過ターン数を表す型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TurnNumber(pub u32);
@@ -216,6 +222,11 @@ impl TurnNumber {
 
     pub fn value(&self) -> u32 {
         self.0
+    }
+
+    /// 季節を取得します (0: 春, 1: 夏, 2: 秋, 3: 冬)
+    pub fn season(&self) -> u32 {
+        (self.0.saturating_sub(1)) % 4
     }
 }
 

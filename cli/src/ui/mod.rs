@@ -1,3 +1,4 @@
+pub mod action_log_renderer;
 use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use ratatui::{
@@ -148,10 +149,28 @@ fn render_domestic(
     cursor: usize,
     _sub_state: &DomesticSubState,
 ) {
+    let (main_area, log_area) = if area.height > 20 {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(12)])
+            .split(area);
+        (chunks[0], chunks[1])
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(0)])
+            .split(area);
+        (chunks[0], chunks[1])
+    };
+
+    if log_area.height > 0 {
+        render_action_logs(app, f, log_area, false);
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
+        .split(main_area);
 
     // Left: Status
     let is_player_turn = app.is_player_turn();
@@ -283,10 +302,28 @@ fn render_war(
     cursor: usize,
     sub_state: &crate::screen::WarSubState,
 ) {
+    let (main_area, log_area) = if area.height > 20 {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(12)])
+            .split(area);
+        (chunks[0], chunks[1])
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(0)])
+            .split(area);
+        (chunks[0], chunks[1])
+    };
+
+    if log_area.height > 0 {
+        render_action_logs(_app, f, log_area, true);
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
+        .split(main_area);
 
     // Left: Attacker (Army)
     let attacker_status = vec![
@@ -557,4 +594,47 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn render_action_logs(app: &App, f: &mut Frame, area: Rect, is_war: bool) {
+    if area.height == 0 {
+        return;
+    }
+
+    let logs = if is_war {
+        &app.war_logs
+    } else {
+        &app.domestic_logs
+    };
+
+    let items: Vec<ListItem> = logs
+        .iter()
+        .map(|log| {
+            let turn_text = format!("[ターン{}] ", log.turn.value());
+            let content = format!(
+                "{} {}",
+                turn_text,
+                action_log_renderer::render_event(&log.event)
+            );
+            ListItem::new(content)
+        })
+        .collect();
+
+    let title = if is_war {
+        "合戦ログ"
+    } else {
+        "行動ログ"
+    };
+
+    let list = List::new(items)
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .style(Style::default().fg(Color::Gray));
+
+    let mut state = ratatui::widgets::ListState::default();
+    if !logs.is_empty() {
+        // 末尾のログが表示されるように選択状態にする
+        state.select(Some(logs.len() - 1));
+    }
+
+    f.render_stateful_widget(list, area, &mut state);
 }

@@ -1,6 +1,9 @@
 use crate::domain::{
     error::DomainError,
+    model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent},
     model::value_objects::{Amount, DisplayAmount, IninFlag, KuniId},
+    repository::action_log_repository::ActionLogRepository,
+    repository::game_state_repository::GameStateRepository,
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
 };
@@ -11,6 +14,8 @@ use std::sync::Arc;
 pub struct DomesticUseCase {
     kuni_repo: Arc<dyn KuniRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
+    action_log_repo: Arc<dyn ActionLogRepository>,
+    game_state_repo: Arc<dyn GameStateRepository>,
 }
 
 impl DomesticUseCase {
@@ -18,11 +23,36 @@ impl DomesticUseCase {
     pub fn new(
         kuni_repo: Arc<dyn KuniRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
+        action_log_repo: Arc<dyn ActionLogRepository>,
+        game_state_repo: Arc<dyn GameStateRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,
+            action_log_repo,
+            game_state_repo,
         }
+    }
+
+    async fn current_turn(
+        &self,
+    ) -> Result<crate::domain::model::value_objects::TurnNumber, anyhow::Error> {
+        Ok(self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1)))
+    }
+
+    async fn save_domestic_log(&self, event: DomesticLogEvent) -> Result<(), anyhow::Error> {
+        let turn = self.current_turn().await?;
+        self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogVisibility::Player,
+            turn,
+            ActionLogEvent::Domestic(event),
+        ))?;
+        Ok(())
     }
 
     /// 米を売却します
@@ -40,6 +70,16 @@ impl DomesticUseCase {
         let gain = kuni.sell_rice(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::RiceSold {
+            kuni_name: kuni.name.clone(),
+            gain: gain.to_internal(),
+            amount,
+            rem_kin: kuni.resource.kin,
+            rem_kome: kuni.resource.kome,
+        })
+        .await?;
+
         Ok(gain)
     }
 
@@ -55,10 +95,20 @@ impl DomesticUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        let cost = kuni.buy_rice(amount)?;
+        let gain = kuni.buy_rice(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
-        Ok(cost)
+
+        self.save_domestic_log(DomesticLogEvent::RiceBought {
+            kuni_name: kuni.name.clone(),
+            cost: amount.to_internal(),
+            amount: gain,
+            rem_kin: kuni.resource.kin,
+            rem_kome: kuni.resource.kome,
+        })
+        .await?;
+
+        Ok(gain)
     }
 
     /// 開墾を行います
@@ -76,6 +126,15 @@ impl DomesticUseCase {
         let gain = kuni.develop_land(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::LandReclaimed {
+            kuni_name: kuni.name.clone(),
+            gain: gain.to_internal(),
+            cost: amount.to_internal(),
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
+
         Ok(gain)
     }
 
@@ -94,6 +153,15 @@ impl DomesticUseCase {
         let gain = kuni.build_town(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::TownDeveloped {
+            kuni_name: kuni.name.clone(),
+            gain: gain.to_internal(),
+            cost: amount.to_internal(),
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
+
         Ok(gain)
     }
 
@@ -111,7 +179,18 @@ impl DomesticUseCase {
 
         kuni.recruit_troops(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::TroopsDrafted {
+            kuni_name: kuni.name.clone(),
+            amount,
+            rem_hei: kuni.resource.hei,
+            rem_jinko: kuni.resource.jinko,
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
+
+        Ok(())
     }
 
     /// 兵を解雇します
@@ -128,7 +207,18 @@ impl DomesticUseCase {
 
         kuni.dismiss_troops(amount)?;
 
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::TroopsDismissed {
+            kuni_name: kuni.name.clone(),
+            amount,
+            rem_hei: kuni.resource.hei,
+            rem_jinko: kuni.resource.jinko,
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
+
+        Ok(())
     }
 
     /// 施しを行います
@@ -146,6 +236,15 @@ impl DomesticUseCase {
         let gain = kuni.give_charity(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::CharityPerformed {
+            kuni_name: kuni.name.clone(),
+            gain_tyu: crate::domain::model::value_objects::Rate::new(gain),
+            cost: amount.to_internal(),
+            rem_tyu: kuni.stats.tyu,
+        })
+        .await?;
+
         Ok(gain)
     }
 
@@ -183,7 +282,18 @@ impl DomesticUseCase {
             .add(kin_internal, hei_internal, kome_internal, Amount::zero());
 
         self.kuni_repo.save(&from_kuni).await?;
-        self.kuni_repo.save(&to_kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&to_kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::ResourcesTransported {
+            from_kuni: from_kuni.name.clone(),
+            to_kuni: to_kuni.name.clone(),
+            kin: kin.to_internal(),
+            hei: hei.to_internal(),
+            kome: kome.to_internal(),
+        })
+        .await?;
+
+        Ok(())
     }
 
     /// 指定した割合で資源を輸送します（内政コマンド用）
@@ -225,6 +335,14 @@ impl DomesticUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
         kuni.set_inin(IninFlag::new(delegate));
-        self.kuni_repo.save(&kuni).await.map_err(|e| e.into())
+        self.kuni_repo.save(&kuni).await?;
+
+        self.save_domestic_log(DomesticLogEvent::DelegationChanged {
+            kuni_name: kuni.name.clone(),
+            enabled: delegate,
+        })
+        .await?;
+
+        Ok(())
     }
 }

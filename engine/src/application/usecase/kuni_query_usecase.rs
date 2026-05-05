@@ -1,6 +1,8 @@
+use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::value_objects::{DaimyoId, KuniId};
+use crate::domain::repository::action_log_repository::ActionLogRepository;
 use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
@@ -18,6 +20,8 @@ pub struct UiSnapshot {
     pub attacker_kuni: Option<Kuni>,
     pub defender_kuni: Option<Kuni>,
     pub kuni_names: HashMap<KuniId, String>,
+    pub domestic_logs: Vec<ActionLogEntry>,
+    pub war_logs: Vec<ActionLogEntry>,
 }
 
 /// 国の情報照会に関するユースケース
@@ -26,6 +30,7 @@ pub struct KuniQueryUseCase {
     daimyo_repo: Arc<dyn DaimyoRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
+    action_log_repo: Arc<dyn ActionLogRepository>,
 }
 
 impl KuniQueryUseCase {
@@ -34,19 +39,21 @@ impl KuniQueryUseCase {
         daimyo_repo: Arc<dyn DaimyoRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
+        action_log_repo: Arc<dyn ActionLogRepository>,
     ) -> Self {
         Self {
             kuni_repo,
             daimyo_repo,
             game_state_repo,
             neighbor_repo,
+            action_log_repo,
         }
     }
 
     /// UI表示に必要な情報を一括取得します
     pub async fn get_ui_snapshot(
         &self,
-        selected_kuni_id: Option<KuniId>,
+        _selected_kuni_id: Option<KuniId>,
         attacker_id: Option<KuniId>,
         defender_id: Option<KuniId>,
     ) -> anyhow::Result<UiSnapshot> {
@@ -55,27 +62,30 @@ impl KuniQueryUseCase {
         let all_kunis = self.kuni_repo.find_all().await?;
         let kuni_names = all_kunis.into_iter().map(|k| (k.id, k.name.0)).collect();
 
-        let current_turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|state| state.current_turn().value());
-
         let mut snapshot = UiSnapshot {
             all_daimyos,
             kuni_names,
-            current_turn,
+            domestic_logs: self
+                .action_log_repo
+                .find_visible(ActionLogCategory::Domestic, 100)?,
+            war_logs: self
+                .action_log_repo
+                .find_visible(ActionLogCategory::War, 100)?,
             ..Default::default()
         };
 
-        // 特定の国の詳細情報を取得
-        if let Some(id) = selected_kuni_id {
-            if let Some(kuni) = self.kuni_repo.find_by_id(&id).await? {
-                snapshot.current_kuni = Some(kuni.clone());
-                snapshot.current_daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+        // 現在の手番情報を取得（これを優先する）
+        if let Some(state) = self.game_state_repo.get().await? {
+            snapshot.current_turn = Some(state.current_turn().value());
+            if let Some(kuni_id) = state.current_kuni_id() {
+                if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
+                    snapshot.current_kuni = Some(kuni.clone());
+                    snapshot.current_daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
+                }
             }
         }
 
+        // 攻撃・守備国の取得
         if let Some(id) = attacker_id {
             if let Some(kuni) = self.kuni_repo.find_by_id(&id).await? {
                 snapshot.attacker_kuni = Some(kuni.clone());
@@ -88,20 +98,6 @@ impl KuniQueryUseCase {
 
         if let Some(id) = defender_id {
             snapshot.defender_kuni = self.kuni_repo.find_by_id(&id).await?;
-        }
-
-        // 現在の手番情報を取得
-        if let Some(state) = self.game_state_repo.get().await? {
-            snapshot.current_turn = Some(state.current_turn().value());
-            if let Some(kuni_id) = state.current_kuni_id() {
-                if snapshot.current_kuni.is_none() {
-                    if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
-                        snapshot.current_kuni = Some(kuni.clone());
-                        snapshot.current_daimyo =
-                            self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?;
-                    }
-                }
-            }
         }
 
         Ok(snapshot)
