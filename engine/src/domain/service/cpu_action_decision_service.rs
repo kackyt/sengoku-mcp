@@ -1,6 +1,6 @@
 use crate::domain::model::{
     kuni::Kuni,
-    value_objects::{DaimyoId, DisplayAmount, KuniId},
+    value_objects::{Amount, DaimyoId, DisplayAmount, KuniId, TurnNumber},
 };
 use rand::Rng;
 
@@ -46,5 +46,34 @@ impl CpuActionDecisionService {
             },
             _ => CpuActionDecision::Rest,
         }
+    }
+
+    fn turns_to_coef(turns: u32) -> u32 {
+        match turns {
+            1 => 120,
+            2 => 100,
+            3 => 50,
+            _ => 0,
+        }
+    }
+
+    const EVALUATE_HEI_COEF: u32 = 50;
+    const EVALUATE_KIN_COEF: u32 = 30;
+    const EVALUATE_KOME_COEF: u32 = 20;
+
+    pub fn evaluate_score(kuni: &Kuni, turn: TurnNumber) -> Amount {
+        kuni.resource.hei.mul_percent(Self::EVALUATE_HEI_COEF)
+            + kuni.resource.kin.mul_percent(Self::EVALUATE_KIN_COEF)
+            + kuni.resource.kome.mul_percent(Self::EVALUATE_KOME_COEF)
+            + (kuni.stats.machi.mul_percent(32)
+                + kuni.resource.jinko.mul_percent(12)
+                + kuni.stats.tyu.to_internal().mul_percent(4))
+            .mul_percent(Self::EVALUATE_KIN_COEF)
+            .mul_percent(Self::turns_to_coef(turn.turns_until_season(0)))
+            + (kuni.stats.kokudaka.mul_percent(100)
+                + kuni.resource.jinko.mul_percent(12)
+                + kuni.stats.tyu.to_internal().mul_percent(4))
+            .mul_percent(Self::EVALUATE_KOME_COEF)
+            .mul_percent(Self::turns_to_coef(turn.turns_until_season(2)))
     }
 }
