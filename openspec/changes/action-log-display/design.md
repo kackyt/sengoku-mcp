@@ -30,12 +30,36 @@ pub enum ActionLogVisibility {
     Internal, // 詳細に記録するがCLIには表示しない（CPU行動、詳細計算値等）
 }
 
+// ドメイン層で定義される構造化されたイベント
+pub enum ActionLogEvent {
+    Domestic(DomesticLogEvent),
+    War(WarLogEvent),
+}
+
+pub enum DomesticLogEvent {
+    RiceSold { kuni_name: KuniName, gain: Amount, amount: DisplayAmount, rem_kin: Amount, rem_kome: Amount },
+    RiceBought { kuni_name: KuniName, cost: Amount, amount: DisplayAmount, rem_kin: Amount, rem_kome: Amount },
+    LandReclaimed { kuni_name: KuniName, gain: Amount, cost: Amount, new_tyu: Rate },
+    TownDeveloped { kuni_name: KuniName, gain: Amount, cost: Amount, new_tyu: Rate },
+    TroopsDrafted { kuni_name: KuniName, amount: DisplayAmount, rem_hei: Amount, rem_jinko: Amount, new_tyu: Rate },
+    ResourcesTransported { from_kuni: KuniName, to_kuni: KuniName, kin: Amount, hei: Amount, kome: Amount },
+    CpuAction { daimyo_id: DaimyoId, action_msg: String },
+    TurnStart { turn: TurnNumber, season: u32 },
+    SeasonalEvent { event_type: SeasonalEventType, kuni_names: Vec<KuniName> },
+    // ...その他、合戦の開始・占領・防衛成功など
+}
+
+pub enum WarLogEvent {
+    Damage { attacker_tactic: Tactic, defender_tactic: Tactic, attacker_damage: u32, defender_damage: u32 },
+    AttackerVictory { home_name: KuniName, attacker_id: DaimyoId, occupied_name: KuniName, defender_id: DaimyoId },
+    WarStarted { attacker_name: KuniName, defender_name: KuniName, attacker_id: DaimyoId, defender_id: DaimyoId },
+    // ...その他
+}
+
 pub struct ActionLogEntry {
-    pub category:   ActionLogCategory,
     pub visibility: ActionLogVisibility,
     pub turn:       TurnNumber,
-    pub message:    String, // CLIに表示する短いメッセージ（Publicの場合のみ）
-    pub detail:     String, // 詳細ログ（デバッグ・記録用、常に記録）
+    pub event:      ActionLogEvent, // 文字列ではなく型安全なイベントを保持
 }
 ```
 

@@ -39,3 +39,10 @@
 - [x] 7.2 `DomesticUseCase` のテストを修正し、ログが記録されることを確認する。
 - [x] 7.3 `BattleUseCase::start_war` のテストで、合戦開始時に `War` ログがクリアされることを確認する。
 - [x] 7.4 `cargo clippy` および `cargo test` が正常終了することを確認する。
+
+## 8. Refactoring: 型安全なログ記録（ActionLogEventの導入）
+
+- [x] 8.1 `ActionLogEntry` から String 型の `message`, `detail` を削除し、`ActionLogEvent` (Discriminated Union) を保持するように変更。
+- [x] 8.2 `DomesticUseCase` および `BattleUseCase` のログ出力箇所を、各イベントバリアントを生成するように修正。
+- [x] 8.3 CLI 側の表示ロジックを `ActionLogRenderer` として抽出し、イベント型から表示用文字列を生成するように分離。
+- [x] 8.4 リファクタリング後の全テスト（23個）が正常にパスすることを確認。
