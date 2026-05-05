@@ -79,6 +79,7 @@ pub enum DomesticLogEvent {
     CpuAction {
         daimyo_id: DaimyoId,
         action_msg: String,
+        reasoning: Option<String>,
     },
     TurnStart {
         turn: TurnNumber,

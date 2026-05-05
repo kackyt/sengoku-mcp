@@ -160,23 +160,16 @@ impl TurnProgressionUseCase {
         let daimyo_id = target_kuni.daimyo_id;
 
         let mut rng = rand::thread_rng();
-        let decision = CpuActionDecisionService::decide(daimyo_id, &target_kuni, &mut rng);
+        let turn = self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let (decision, reasoning) =
+            CpuActionDecisionService::decide(daimyo_id, &target_kuni, turn, &mut rng);
 
         let action_msg = match decision {
-            CpuActionDecision::DevelopLand { .. } | CpuActionDecision::BuildTown { .. } => {
-                match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(
-                    &mut target_kuni,
-                    decision,
-                ) {
-                    Ok(msg) => {
-                        self.kuni_repo.save(&target_kuni).await?;
-                        msg
-                    }
-                    Err(e) => {
-                        format!("自動内政に失敗しました: {:?}", e)
-                    }
-                }
-            }
             CpuActionDecision::Battle {
                 attacker_id,
                 target_kuni_id: Some(target_id),
@@ -194,7 +187,20 @@ impl TurnProgressionUseCase {
                 target_kuni_id: None,
                 ..
             } => "攻撃対象が不明なため待機しました".to_string(),
-            CpuActionDecision::Rest => "休息しました".to_string(),
+            _ => {
+                match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(
+                    &mut target_kuni,
+                    decision,
+                ) {
+                    Ok(msg) => {
+                        self.kuni_repo.save(&target_kuni).await?;
+                        msg
+                    }
+                    Err(e) => {
+                        format!("自動アクションに失敗しました: {:?}", e)
+                    }
+                }
+            }
         };
 
         self.event_dispatcher
@@ -217,6 +223,7 @@ impl TurnProgressionUseCase {
             ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
                 daimyo_id,
                 action_msg: action_msg.to_string(),
+                reasoning: Some(reasoning),
             }),
         ));
 

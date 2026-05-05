@@ -36,8 +36,29 @@ impl KuniActionService {
                 kuni.build_town(amount)?;
                 Ok("町造りを行いました".to_string())
             }
+            CpuActionDecision::SellRice { amount, .. } => {
+                kuni.sell_rice(amount)?;
+                Ok("米売りを行いました".to_string())
+            }
+            CpuActionDecision::BuyRice { amount, .. } => {
+                kuni.buy_rice(amount)?;
+                Ok("米買いを行いました".to_string())
+            }
+            CpuActionDecision::Recruit { amount, .. } => {
+                kuni.recruit_troops(amount)?;
+                Ok("雇用を行いました".to_string())
+            }
+            CpuActionDecision::Dismiss { amount, .. } => {
+                kuni.dismiss_troops(amount)?;
+                Ok("解雇を行いました".to_string())
+            }
+            CpuActionDecision::GiveCharity { amount, .. } => {
+                kuni.give_charity(amount)?;
+                Ok("施しを行いました".to_string())
+            }
+            CpuActionDecision::Rest => Ok("休息しました".to_string()),
             _ => Err(DomainError::InvalidOperation(
-                "非対応の自動アクションです".to_string(),
+                "非対応または非内政のアクションです".to_string(),
             )),
         }
     }

@@ -76,7 +76,14 @@ pub fn render_event(event: &ActionLogEvent) -> String {
             DomesticLogEvent::CpuAction {
                 daimyo_id,
                 action_msg,
-            } => format!("CPU (大名ID={}): {}", daimyo_id, action_msg),
+                reasoning,
+            } => {
+                let mut msg = format!("CPU (大名ID={}): {}", daimyo_id, action_msg);
+                if let Some(r) = reasoning {
+                    msg.push_str(&format!(" ({})", r));
+                }
+                msg
+            }
             DomesticLogEvent::TurnStart { turn, season } => {
                 let season_name = match season {
                     0 => "春",
