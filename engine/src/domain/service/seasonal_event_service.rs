@@ -12,7 +12,7 @@ impl SeasonalEventService {
         Self
     }
 
-    /// ターン開始時に発生するイベント（洪水、疫病、反乱、資源生成、人口増加）を処理します
+    /// ターン開始時に発生する不定期イベント（洪水、疫病、反乱）を処理します
     pub fn process_start_turn_events(
         &self,
         turn: TurnNumber,
@@ -20,9 +20,9 @@ impl SeasonalEventService {
     ) -> Vec<SeasonalEventEffect> {
         let mut effects = Vec::new();
         let mut rng = rand::thread_rng();
-        let season = (turn.value() - 1) % 4;
+        let season = turn.season();
 
-        // --- 1. 災害・反乱イベント ---
+        // --- 災害・反乱イベント ---
 
         // 疫病 (Plague): 通年 1/40
         if rng.gen_bool(1.0 / 40.0) {
@@ -43,7 +43,17 @@ impl SeasonalEventService {
             }
         }
 
-        // --- 2. 定期イベント（資源生成・人口増加） ---
+        effects
+    }
+
+    /// ターン終了時に発生する定期イベント（資源生成・人口増加）を処理します
+    pub fn process_end_turn_events(
+        &self,
+        turn: TurnNumber,
+        kuni: &mut Kuni,
+    ) -> Vec<SeasonalEventEffect> {
+        let mut effects = Vec::new();
+        let season = turn.season();
 
         // 人口増加 (Population Growth): 春 (season == 0)
         if season == 0 {
@@ -60,16 +70,6 @@ impl SeasonalEventService {
         }
 
         effects
-    }
-
-    /// ターン終了時に発生するイベントを処理します
-    pub fn process_end_turn_events(
-        &self,
-        _turn: TurnNumber,
-        _kuni: &mut Kuni,
-    ) -> Vec<SeasonalEventEffect> {
-        // 現在、ターン終了時のイベントはすべてターン開始時処理に移動しました
-        Vec::new()
     }
 
     // --- 各イベントの詳細ロジック ---

@@ -227,7 +227,6 @@ impl TurnProgressionUseCase {
         let current_turn = state.current_turn();
 
         // ターン終了時の季節イベント（人口増加・資源生成）を処理
-        // ※現在は空のVecが返りますが、将来的な拡張性のために呼び出しは残します
         let mut kunis = self.kuni_repo.find_all().await?;
         let _end_effects = TurnService::process_end_turn_events(current_turn, &mut kunis);
         for kuni in &kunis {
@@ -238,7 +237,7 @@ impl TurnProgressionUseCase {
             .dispatch(GameEvent::SeasonPassed { turn: current_turn })
             .await?;
 
-        // ターン開始時の季節イベント（洪水・疫病・反乱・人口増加・資源生成）を次のターン開始前に処理
+        // ターン開始時の季節イベント（洪水・疫病・反乱）を次のターン開始前に処理
         let mut kunis = self.kuni_repo.find_all().await?;
         let mut rng = rand::thread_rng();
         let new_order = TurnService::determine_action_order(&kunis, &mut rng);
@@ -257,7 +256,7 @@ impl TurnProgressionUseCase {
             state.current_turn(),
             ActionLogEvent::Domestic(DomesticLogEvent::TurnStart {
                 turn: state.current_turn(),
-                season: (state.current_turn().value() - 1) % 4,
+                season: state.current_turn().season(),
             }),
         ));
 

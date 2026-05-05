@@ -25,9 +25,9 @@ mod tests {
         let service = SeasonalEventService::new();
 
         // 1ターン目はスキップされるため、2回目の春である5ターン目でテストする
-        let effects = service.process_start_turn_events(TurnNumber::new(5), &mut kuni);
+        let effects = service.process_end_turn_events(TurnNumber::new(5), &mut kuni);
 
-        // 春(5)開始時は人口増加と金収入が発生するはず
+        // 春(5)終了時は人口増加と金収入が発生するはず
         assert!(effects
             .iter()
             .any(|e| e.event_type == SeasonalEventType::PopulationGrowth));
@@ -44,8 +44,8 @@ mod tests {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
 
-        // 秋(3)開始時は米収入が発生するはず
-        let effects = service.process_start_turn_events(TurnNumber::new(3), &mut kuni);
+        // 秋(3)終了時は米収入が発生するはず
+        let effects = service.process_end_turn_events(TurnNumber::new(3), &mut kuni);
 
         assert!(effects
             .iter()
@@ -60,8 +60,8 @@ mod tests {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
 
-        // 1ターン目終了時は何も発生しないはず（ロジックが空）
-        let effects = service.process_end_turn_events(TurnNumber::new(1), &mut kuni);
+        // 夏(2)終了時は何も発生しないはず（人口増加・金・米は発生しない）
+        let effects = service.process_end_turn_events(TurnNumber::new(2), &mut kuni);
         assert!(effects.is_empty());
 
         // 資源も増えていないはず

@@ -1,8 +1,10 @@
 use crate::domain::{
     error::DomainError,
-    model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, WarLogEvent},
+    model::action_log::{
+        ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent, WarLogEvent,
+    },
     model::battle::{BattleAdvantage, BattleSide, Tactic, WarStatus},
-    model::value_objects::{DisplayAmount, KuniId},
+    model::value_objects::{Amount, DisplayAmount, KuniId},
     repository::action_log_repository::ActionLogRepository,
     repository::battle_repository::BattleRepository,
     repository::game_state_repository::GameStateRepository,
@@ -64,8 +66,12 @@ impl BattleUseCase {
             ActionLogEvent::War(WarLogEvent::Damage {
                 attacker_tactic,
                 defender_tactic,
-                attacker_damage: status.defender.hei.value() - next_status.defender.hei.value(),
-                defender_damage: status.attacker.hei.value() - next_status.attacker.hei.value(),
+                attacker_damage: Amount::new(
+                    status.defender.hei.value() - next_status.defender.hei.value(),
+                ),
+                defender_damage: Amount::new(
+                    status.attacker.hei.value() - next_status.attacker.hei.value(),
+                ),
             }),
         ))?;
 
@@ -95,6 +101,16 @@ impl BattleUseCase {
                             attacker_id: home.daimyo_id,
                             occupied_name: occupied.name.clone(),
                             defender_id: occupied.daimyo_id,
+                        }),
+                    ))?;
+
+                    // 内政ログにも記録
+                    self.action_log_repo.save(ActionLogEntry::new(
+                        ActionLogVisibility::Public,
+                        turn,
+                        ActionLogEvent::Domestic(DomesticLogEvent::WarAttackerOccupied {
+                            home_name: home.name.clone(),
+                            occupied_name: occupied.name.clone(),
                         }),
                     ))?;
 
@@ -128,6 +144,15 @@ impl BattleUseCase {
                             home_name: attacker_kuni.name.clone(),
                             attacker_id: attacker_kuni.daimyo_id,
                             defender_id: defender.daimyo_id,
+                        }),
+                    ))?;
+
+                    // 内政ログにも記録
+                    self.action_log_repo.save(ActionLogEntry::new(
+                        ActionLogVisibility::Public,
+                        turn,
+                        ActionLogEvent::Domestic(DomesticLogEvent::WarDefenderDefended {
+                            defender_name: defender.name.clone(),
                         }),
                     ))?;
 
@@ -184,6 +209,11 @@ impl BattleUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+
+        // 過去の合戦ログをクリア
+        self.action_log_repo
+            .clear(crate::domain::model::action_log::ActionLogCategory::War)?;
+
         self.action_log_repo.save(ActionLogEntry::new(
             ActionLogVisibility::Public,
             turn,
@@ -192,6 +222,16 @@ impl BattleUseCase {
                 defender_name: defender.name.clone(),
                 attacker_id: attacker.daimyo_id,
                 defender_id: defender.daimyo_id,
+            }),
+        ))?;
+
+        // 内政ログにも記録
+        self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogVisibility::Public,
+            turn,
+            ActionLogEvent::Domestic(DomesticLogEvent::WarStarted {
+                attacker_name: attacker.name.clone(),
+                defender_name: defender.name.clone(),
             }),
         ))?;
 

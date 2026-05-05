@@ -4,39 +4,47 @@ pub fn render_event(event: &ActionLogEvent) -> String {
     match event {
         ActionLogEvent::Domestic(e) => match e {
             DomesticLogEvent::RiceSold {
-                kuni_name, gain, ..
-            } => format!("{}：米を売却し、金{}を得ました", kuni_name.0, gain.value()),
+                kuni_name,
+                gain,
+                amount,
+                ..
+            } => format!(
+                "{}：米を{}売却し、金{}を得ました",
+                kuni_name.0,
+                amount,
+                gain.to_display()
+            ),
             DomesticLogEvent::RiceBought {
                 kuni_name,
                 cost,
                 amount,
                 ..
             } => format!(
-                "{}：米を{}購入しました（金{}を消費）",
+                "{}：金{}で米を{}購入しました",
                 kuni_name.0,
-                amount.value(),
-                cost.value()
+                cost.to_display(),
+                amount
             ),
             DomesticLogEvent::LandReclaimed {
                 kuni_name, gain, ..
             } => format!(
                 "{}：開墾し、石高が{}上昇しました",
                 kuni_name.0,
-                gain.value()
+                gain.to_display()
             ),
             DomesticLogEvent::TownDeveloped {
                 kuni_name, gain, ..
             } => format!(
                 "{}：町を整備し、町が{}上昇しました",
                 kuni_name.0,
-                gain.value()
+                gain.to_display()
             ),
             DomesticLogEvent::TroopsDrafted {
                 kuni_name, amount, ..
-            } => format!("{}：兵を{}徴募しました", kuni_name.0, amount.value()),
+            } => format!("{}：兵を{}徴募しました", kuni_name.0, amount),
             DomesticLogEvent::TroopsDismissed {
                 kuni_name, amount, ..
-            } => format!("{}：兵を{}解雇しました", kuni_name.0, amount.value()),
+            } => format!("{}：兵を{}解雇しました", kuni_name.0, amount),
             DomesticLogEvent::CharityPerformed {
                 kuni_name,
                 gain_tyu,
@@ -56,9 +64,9 @@ pub fn render_event(event: &ActionLogEvent) -> String {
                 "{}→{}：資源を輸送しました（金:{} 兵:{} 米:{}）",
                 from_kuni.0,
                 to_kuni.0,
-                kin.value(),
-                hei.value(),
-                kome.value()
+                kin.to_display(),
+                hei.to_display(),
+                kome.to_display()
             ),
             DomesticLogEvent::DelegationChanged { kuni_name, enabled } => format!(
                 "{}：委任を{}にしました",
@@ -68,7 +76,7 @@ pub fn render_event(event: &ActionLogEvent) -> String {
             DomesticLogEvent::CpuAction {
                 daimyo_id,
                 action_msg,
-            } => format!("CPU (Daimyo={:?}): {}", daimyo_id, action_msg),
+            } => format!("CPU (大名ID={}): {}", daimyo_id, action_msg),
             DomesticLogEvent::TurnStart { turn, season } => {
                 let season_name = match season {
                     0 => "春",
@@ -125,7 +133,7 @@ pub fn render_event(event: &ActionLogEvent) -> String {
         },
         ActionLogEvent::War(e) => match e {
             WarLogEvent::CpuDefenderTactic { tactic } => {
-                format!("CPU Defender Tactic: {:?}", tactic)
+                format!("守備側の戦術: {}", tactic.name())
             }
             WarLogEvent::Damage {
                 attacker_tactic,
@@ -134,11 +142,11 @@ pub fn render_event(event: &ActionLogEvent) -> String {
                 defender_damage,
             } => {
                 format!(
-                    "自軍({})の被害: {}、敵軍({})の被害: {}",
+                    "攻撃側({})の被害: {}、守備側({})の被害: {}",
                     attacker_tactic.name(),
-                    attacker_damage,
+                    defender_damage.to_display(),
                     defender_tactic.name(),
-                    defender_damage
+                    attacker_damage.to_display()
                 )
             }
             WarLogEvent::AttackerVictory { home_name, .. } => format!(

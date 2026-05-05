@@ -34,6 +34,27 @@ impl DomesticUseCase {
         }
     }
 
+    async fn current_turn(
+        &self,
+    ) -> Result<crate::domain::model::value_objects::TurnNumber, anyhow::Error> {
+        Ok(self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1)))
+    }
+
+    async fn save_domestic_log(&self, event: DomesticLogEvent) -> Result<(), anyhow::Error> {
+        let turn = self.current_turn().await?;
+        self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogVisibility::Player,
+            turn,
+            ActionLogEvent::Domestic(event),
+        ))?;
+        Ok(())
+    }
+
     /// 米を売却します
     pub async fn sell_rice(
         &self,
@@ -50,24 +71,14 @@ impl DomesticUseCase {
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::RiceSold {
-                kuni_name: kuni.name.clone(),
-                gain: gain.to_internal(),
-                amount,
-                rem_kin: kuni.resource.kin,
-                rem_kome: kuni.resource.kome,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::RiceSold {
+            kuni_name: kuni.name.clone(),
+            gain: gain.to_internal(),
+            amount,
+            rem_kin: kuni.resource.kin,
+            rem_kome: kuni.resource.kome,
+        })
+        .await?;
 
         Ok(gain)
     }
@@ -84,30 +95,20 @@ impl DomesticUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-        let cost = kuni.buy_rice(amount)?;
+        let gain = kuni.buy_rice(amount)?;
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        self.save_domestic_log(DomesticLogEvent::RiceBought {
+            kuni_name: kuni.name.clone(),
+            cost: amount.to_internal(),
+            amount: gain,
+            rem_kin: kuni.resource.kin,
+            rem_kome: kuni.resource.kome,
+        })
+        .await?;
 
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::RiceBought {
-                kuni_name: kuni.name.clone(),
-                cost: cost.to_internal(),
-                amount,
-                rem_kin: kuni.resource.kin,
-                rem_kome: kuni.resource.kome,
-            }),
-        ));
-
-        Ok(cost)
+        Ok(gain)
     }
 
     /// 開墾を行います
@@ -126,23 +127,13 @@ impl DomesticUseCase {
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::LandReclaimed {
-                kuni_name: kuni.name.clone(),
-                gain: gain.to_internal(),
-                cost: amount.to_internal(),
-                new_tyu: kuni.stats.tyu,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::LandReclaimed {
+            kuni_name: kuni.name.clone(),
+            gain: gain.to_internal(),
+            cost: amount.to_internal(),
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
 
         Ok(gain)
     }
@@ -163,23 +154,13 @@ impl DomesticUseCase {
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::TownDeveloped {
-                kuni_name: kuni.name.clone(),
-                gain: gain.to_internal(),
-                cost: amount.to_internal(),
-                new_tyu: kuni.stats.tyu,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::TownDeveloped {
+            kuni_name: kuni.name.clone(),
+            gain: gain.to_internal(),
+            cost: amount.to_internal(),
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
 
         Ok(gain)
     }
@@ -200,24 +181,14 @@ impl DomesticUseCase {
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::TroopsDrafted {
-                kuni_name: kuni.name.clone(),
-                amount,
-                rem_hei: kuni.resource.hei,
-                rem_jinko: kuni.resource.jinko,
-                new_tyu: kuni.stats.tyu,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::TroopsDrafted {
+            kuni_name: kuni.name.clone(),
+            amount,
+            rem_hei: kuni.resource.hei,
+            rem_jinko: kuni.resource.jinko,
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
 
         Ok(())
     }
@@ -238,24 +209,14 @@ impl DomesticUseCase {
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::TroopsDismissed {
-                kuni_name: kuni.name.clone(),
-                amount,
-                rem_hei: kuni.resource.hei,
-                rem_jinko: kuni.resource.jinko,
-                new_tyu: kuni.stats.tyu,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::TroopsDismissed {
+            kuni_name: kuni.name.clone(),
+            amount,
+            rem_hei: kuni.resource.hei,
+            rem_jinko: kuni.resource.jinko,
+            new_tyu: kuni.stats.tyu,
+        })
+        .await?;
 
         Ok(())
     }
@@ -276,23 +237,13 @@ impl DomesticUseCase {
 
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::CharityPerformed {
-                kuni_name: kuni.name.clone(),
-                gain_tyu: crate::domain::model::value_objects::Rate::new(gain),
-                cost: amount.to_internal(),
-                rem_tyu: kuni.stats.tyu,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::CharityPerformed {
+            kuni_name: kuni.name.clone(),
+            gain_tyu: crate::domain::model::value_objects::Rate::new(gain),
+            cost: amount.to_internal(),
+            rem_tyu: kuni.stats.tyu,
+        })
+        .await?;
 
         Ok(gain)
     }
@@ -333,24 +284,14 @@ impl DomesticUseCase {
         self.kuni_repo.save(&from_kuni).await?;
         self.kuni_repo.save(&to_kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::ResourcesTransported {
-                from_kuni: from_kuni.name.clone(),
-                to_kuni: to_kuni.name.clone(),
-                kin: kin.to_internal(),
-                hei: hei.to_internal(),
-                kome: kome.to_internal(),
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::ResourcesTransported {
+            from_kuni: from_kuni.name.clone(),
+            to_kuni: to_kuni.name.clone(),
+            kin: kin.to_internal(),
+            hei: hei.to_internal(),
+            kome: kome.to_internal(),
+        })
+        .await?;
 
         Ok(())
     }
@@ -396,21 +337,11 @@ impl DomesticUseCase {
         kuni.set_inin(IninFlag::new(delegate));
         self.kuni_repo.save(&kuni).await?;
 
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-
-        let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogVisibility::Player,
-            turn,
-            ActionLogEvent::Domestic(DomesticLogEvent::DelegationChanged {
-                kuni_name: kuni.name.clone(),
-                enabled: delegate,
-            }),
-        ));
+        self.save_domestic_log(DomesticLogEvent::DelegationChanged {
+            kuni_name: kuni.name.clone(),
+            enabled: delegate,
+        })
+        .await?;
 
         Ok(())
     }

@@ -109,8 +109,8 @@ pub enum WarLogEvent {
     Damage {
         attacker_tactic: Tactic,
         defender_tactic: Tactic,
-        attacker_damage: u32,
-        defender_damage: u32,
+        attacker_damage: Amount,
+        defender_damage: Amount,
     },
     AttackerVictory {
         home_name: KuniName,
