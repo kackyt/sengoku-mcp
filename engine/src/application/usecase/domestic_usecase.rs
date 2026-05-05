@@ -1,6 +1,6 @@
 use crate::domain::{
     error::DomainError,
-    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
+    model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent},
     model::value_objects::{Amount, DisplayAmount, IninFlag, KuniId},
     repository::action_log_repository::ActionLogRepository,
     repository::game_state_repository::GameStateRepository,
@@ -56,19 +56,17 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!("{}：米を売却し、金{}を得ました", kuni.name.0, gain.value());
-        let detail = format!(
-            "売却量: {}, 残金: {}, 残米: {}",
-            amount.value(),
-            kuni.resource.kin.value(),
-            kuni.resource.kome.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::RiceSold {
+                kuni_name: kuni.name.clone(),
+                gain: gain.to_internal(),
+                amount,
+                rem_kin: kuni.resource.kin,
+                rem_kome: kuni.resource.kome,
+            }),
         ));
 
         Ok(gain)
@@ -96,24 +94,17 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!(
-            "{}：米を{}購入しました（金{}を消費）",
-            kuni.name.0,
-            amount.value(),
-            cost.value()
-        );
-        let detail = format!(
-            "購入量: {}, 残金: {}, 残米: {}",
-            amount.value(),
-            kuni.resource.kin.value(),
-            kuni.resource.kome.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::RiceBought {
+                kuni_name: kuni.name.clone(),
+                cost: cost.to_internal(),
+                amount,
+                rem_kin: kuni.resource.kin,
+                rem_kome: kuni.resource.kome,
+            }),
         ));
 
         Ok(cost)
@@ -141,22 +132,16 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!(
-            "{}：開墾し、石高が{}上昇しました",
-            kuni.name.0,
-            gain.value()
-        );
-        let detail = format!(
-            "投資額: {}, 開墾後石高: {}",
-            amount.value(),
-            kuni.stats.kokudaka.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::LandReclaimed {
+                kuni_name: kuni.name.clone(),
+                gain: gain.to_internal(),
+                cost: amount.to_internal(),
+                new_tyu: kuni.stats.tyu,
+            }),
         ));
 
         Ok(gain)
@@ -184,22 +169,16 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!(
-            "{}：町を整備し、町が{}上昇しました",
-            kuni.name.0,
-            gain.value()
-        );
-        let detail = format!(
-            "投資額: {}, 整備後町: {}",
-            amount.value(),
-            kuni.stats.machi.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::TownDeveloped {
+                kuni_name: kuni.name.clone(),
+                gain: gain.to_internal(),
+                cost: amount.to_internal(),
+                new_tyu: kuni.stats.tyu,
+            }),
         ));
 
         Ok(gain)
@@ -227,19 +206,17 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!("{}：兵を{}徴募しました", kuni.name.0, amount.value());
-        let detail = format!(
-            "徴募後 兵力: {}, 人口: {}, 忠誠度: {}",
-            kuni.resource.hei.value(),
-            kuni.resource.jinko.value(),
-            kuni.stats.tyu.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::TroopsDrafted {
+                kuni_name: kuni.name.clone(),
+                amount,
+                rem_hei: kuni.resource.hei,
+                rem_jinko: kuni.resource.jinko,
+                new_tyu: kuni.stats.tyu,
+            }),
         ));
 
         Ok(())
@@ -267,19 +244,17 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!("{}：兵を{}解雇しました", kuni.name.0, amount.value());
-        let detail = format!(
-            "解雇後 兵力: {}, 人口: {}, 忠誠度: {}",
-            kuni.resource.hei.value(),
-            kuni.resource.jinko.value(),
-            kuni.stats.tyu.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::TroopsDismissed {
+                kuni_name: kuni.name.clone(),
+                amount,
+                rem_hei: kuni.resource.hei,
+                rem_jinko: kuni.resource.jinko,
+                new_tyu: kuni.stats.tyu,
+            }),
         ));
 
         Ok(())
@@ -307,18 +282,16 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!("{}：施しを行い、忠誠度が{}上昇しました", kuni.name.0, gain);
-        let detail = format!(
-            "消費米: {}, 施し後忠誠度: {}",
-            amount.value(),
-            kuni.stats.tyu.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::CharityPerformed {
+                kuni_name: kuni.name.clone(),
+                gain_tyu: crate::domain::model::value_objects::Rate::new(gain),
+                cost: amount.to_internal(),
+                rem_tyu: kuni.stats.tyu,
+            }),
         ));
 
         Ok(gain)
@@ -366,31 +339,17 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let message = format!(
-            "{}→{}：資源を輸送しました（金:{} 兵:{} 米:{}）",
-            from_kuni.name.0,
-            to_kuni.name.0,
-            kin.value(),
-            hei.value(),
-            kome.value()
-        );
-        let detail = format!(
-            "輸送後 {} 金:{} 兵:{} 米:{}, {} 金:{} 兵:{} 米:{}",
-            from_kuni.name.0,
-            from_kuni.resource.kin.value(),
-            from_kuni.resource.hei.value(),
-            from_kuni.resource.kome.value(),
-            to_kuni.name.0,
-            to_kuni.resource.kin.value(),
-            to_kuni.resource.hei.value(),
-            to_kuni.resource.kome.value()
-        );
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::ResourcesTransported {
+                from_kuni: from_kuni.name.clone(),
+                to_kuni: to_kuni.name.clone(),
+                kin: kin.to_internal(),
+                hei: hei.to_internal(),
+                kome: kome.to_internal(),
+            }),
         ));
 
         Ok(())
@@ -443,15 +402,14 @@ impl DomesticUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let state_str = if delegate { "ON" } else { "OFF" };
-        let message = format!("{}：委任を{}にしました", kuni.name.0, state_str);
-        let detail = format!("切替後の状態: {}", state_str);
+
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Player,
             turn,
-            message,
-            detail,
+            ActionLogEvent::Domestic(DomesticLogEvent::DelegationChanged {
+                kuni_name: kuni.name.clone(),
+                enabled: delegate,
+            }),
         ));
 
         Ok(())

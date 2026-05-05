@@ -1,5 +1,5 @@
 use crate::domain::{
-    model::action_log::{ActionLogCategory, ActionLogEntry, ActionLogVisibility},
+    model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent},
     model::{
         event::GameEvent,
         game_state::GameState,
@@ -74,7 +74,8 @@ impl TurnProgressionUseCase {
                 let mut rng = rand::thread_rng();
                 let order = TurnService::determine_action_order(&kunis, &mut rng);
                 let initial_state =
-                    GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))?;
+                    GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))
+                        .expect("valid state");
                 self.game_state_repo.save(&initial_state).await?;
                 self.event_dispatcher
                     .dispatch(GameEvent::TurnStarted {
@@ -211,11 +212,12 @@ impl TurnProgressionUseCase {
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Internal,
             turn,
-            "".to_string(),
-            format!("CPU (Daimyo={:?}): {}", daimyo_id, action_msg),
+            ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
+                daimyo_id,
+                action_msg: action_msg.to_string(),
+            }),
         ));
 
         Ok(())
@@ -250,23 +252,13 @@ impl TurnProgressionUseCase {
             .await?;
 
         // ターン開始のPublicログ
-        let season_name = match (state.current_turn().value() - 1) % 4 {
-            0 => "春",
-            1 => "夏",
-            2 => "秋",
-            3 => "冬",
-            _ => "春",
-        };
         let _ = self.action_log_repo.save(ActionLogEntry::new(
-            ActionLogCategory::Domestic,
             ActionLogVisibility::Public,
             state.current_turn(),
-            format!(
-                "第{}ターン（{}）が始まりました",
-                state.current_turn().value(),
-                season_name
-            ),
-            format!("turn={}", state.current_turn().value()),
+            ActionLogEvent::Domestic(DomesticLogEvent::TurnStart {
+                turn: state.current_turn(),
+                season: (state.current_turn().value() - 1) % 4,
+            }),
         ));
 
         // 新しいターン開始時のイベントを処理
@@ -302,40 +294,18 @@ impl TurnProgressionUseCase {
 
         for etype in display_order {
             if let Some(effects) = effects_by_type.get(&etype) {
-                let msg = match etype {
-                    SeasonalEventType::GoldIncome => {
-                        "春の収穫：各地で金が徴収されました".to_string()
-                    }
-                    SeasonalEventType::RiceIncome => {
-                        "秋の収穫：各地で米が増産されました".to_string()
-                    }
-                    SeasonalEventType::PopulationGrowth => {
-                        "春の恵み：各地の人口が増加しました".to_string()
-                    }
-                    SeasonalEventType::Plague
-                    | SeasonalEventType::Flood
-                    | SeasonalEventType::Rebellion => {
-                        let names: Vec<_> = effects
-                            .iter()
-                            .filter_map(|e| kunis.iter().find(|k| k.id == e.kuni_id))
-                            .map(|k| k.name.0.as_str())
-                            .collect();
-                        let prefix = match etype {
-                            SeasonalEventType::Plague => "【疫病】疫病が発生しました：",
-                            SeasonalEventType::Flood => "【洪水】洪水に見舞われました：",
-                            SeasonalEventType::Rebellion => "【反乱】反乱が発生しました：",
-                            _ => unreachable!(),
-                        };
-                        format!("{}{}", prefix, names.join("、"))
-                    }
-                };
-
+                let affected_kuni_names: Vec<_> = effects
+                    .iter()
+                    .filter_map(|e| kunis.iter().find(|k| k.id == e.kuni_id))
+                    .map(|k| k.name.clone())
+                    .collect();
                 let _ = self.action_log_repo.save(ActionLogEntry::new(
-                    ActionLogCategory::Domestic,
                     ActionLogVisibility::Public,
                     state.current_turn(),
-                    msg,
-                    "".to_string(),
+                    ActionLogEvent::Domestic(DomesticLogEvent::SeasonalEvent {
+                        event_type: etype.clone(),
+                        kuni_names: affected_kuni_names,
+                    }),
                 ));
             }
         }

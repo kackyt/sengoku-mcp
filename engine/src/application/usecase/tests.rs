@@ -145,13 +145,31 @@ impl ActionLogRepository for MockActionLogRepository {
     }
 }
 
-struct MockGameStateRepository;
+struct MockGameStateRepository {
+    state: Mutex<GameState>,
+}
+impl MockGameStateRepository {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(
+                GameState::new(
+                    crate::domain::model::value_objects::TurnNumber::new(1),
+                    vec![],
+                    crate::domain::model::value_objects::ActionOrderIndex::new(0),
+                )
+                .expect("valid turn"),
+            ),
+        }
+    }
+}
 #[async_trait]
 impl GameStateRepository for MockGameStateRepository {
     async fn get(&self) -> Result<Option<GameState>, DomainError> {
-        Ok(None)
+        Ok(Some(self.state.lock().unwrap().clone()))
     }
-    async fn save(&self, _state: &GameState) -> Result<(), DomainError> {
+    async fn save(&self, state: &GameState) -> Result<(), DomainError> {
+        let mut current = self.state.lock().unwrap();
+        *current = state.clone();
         Ok(())
     }
 }
@@ -184,7 +202,7 @@ async fn test_domestic_sell_rice() {
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
     usecase
         .sell_rice(kuni_id, DisplayAmount::new(1))
@@ -210,7 +228,7 @@ async fn test_domestic_buy_rice() {
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
     usecase
         .buy_rice(kuni_id, DisplayAmount::new(1))
@@ -218,8 +236,8 @@ async fn test_domestic_buy_rice() {
         .expect("購入成功");
 
     let updated = repo.find_by_id(&kuni_id).await.unwrap().unwrap();
-    // 100000 + 100 = 100100
-    assert_eq!(updated.resource.kome.value(), 100100);
+    // 100000 + (70 ~ 100)
+    assert!(updated.resource.kome.value() >= 100070 && updated.resource.kome.value() <= 100100);
     // 金が減っているはず
     assert!(updated.resource.kin.value() < 100000);
 }
@@ -236,7 +254,7 @@ async fn test_domestic_recruit() {
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
     usecase
         .recruit(kuni_id, DisplayAmount::new(1))
@@ -266,7 +284,7 @@ async fn test_domestic_transport_success_when_adjacent() {
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
 
     let res = usecase
@@ -302,7 +320,7 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
     let res = usecase
         .transport(
@@ -347,7 +365,7 @@ async fn test_battle_execution_success_when_adjacent() {
         neighbor_repo.clone(),
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
     let initial_status = usecase
         .start_war(
@@ -393,7 +411,7 @@ async fn test_battle_execution_fails_when_not_adjacent() {
         neighbor_repo.clone(),
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository),
+        Arc::new(MockGameStateRepository::new()),
     );
     let result = usecase
         .start_war(

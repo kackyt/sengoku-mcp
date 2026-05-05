@@ -1,54 +1,162 @@
-use crate::domain::model::value_objects::TurnNumber;
+use crate::domain::model::battle::Tactic;
+use crate::domain::model::event::SeasonalEventType;
+use crate::domain::model::value_objects::{
+    Amount, DaimyoId, DisplayAmount, KuniName, Rate, TurnNumber,
+};
 
-/// ログのカテゴリを表す列挙型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ActionLogCategory {
-    /// 内政フェーズのイベント
     Domestic,
-    /// 合戦フェーズのイベント
     War,
 }
 
-/// ログの公開範囲（Visibility）を表す列挙型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActionLogVisibility {
-    /// 全ての情報をCLIに表示する（季節イベント、合戦決着等）
     Public,
-    /// 操作プレイヤーに係るイベントのみCLIに表示する
     Player,
-    /// 詳細に記録するがCLIには表示しない（CPU行動、詳細計算値等チート防止用）
     Internal,
 }
 
-/// アクションログのエントリを表現するモデル
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DomesticLogEvent {
+    RiceSold {
+        kuni_name: KuniName,
+        gain: Amount,
+        amount: DisplayAmount,
+        rem_kin: Amount,
+        rem_kome: Amount,
+    },
+    RiceBought {
+        kuni_name: KuniName,
+        cost: Amount,
+        amount: DisplayAmount,
+        rem_kin: Amount,
+        rem_kome: Amount,
+    },
+    LandReclaimed {
+        kuni_name: KuniName,
+        gain: Amount,
+        cost: Amount,
+        new_tyu: Rate,
+    },
+    TownDeveloped {
+        kuni_name: KuniName,
+        gain: Amount,
+        cost: Amount,
+        new_tyu: Rate,
+    },
+    TroopsDrafted {
+        kuni_name: KuniName,
+        amount: DisplayAmount,
+        rem_hei: Amount,
+        rem_jinko: Amount,
+        new_tyu: Rate,
+    },
+    TroopsDismissed {
+        kuni_name: KuniName,
+        amount: DisplayAmount,
+        rem_hei: Amount,
+        rem_jinko: Amount,
+        new_tyu: Rate,
+    },
+    CharityPerformed {
+        kuni_name: KuniName,
+        gain_tyu: Rate,
+        cost: Amount,
+        rem_tyu: Rate,
+    },
+    ResourcesTransported {
+        from_kuni: KuniName,
+        to_kuni: KuniName,
+        kin: Amount,
+        hei: Amount,
+        kome: Amount,
+    },
+    DelegationChanged {
+        kuni_name: KuniName,
+        enabled: bool,
+    },
+    CpuAction {
+        daimyo_id: DaimyoId,
+        action_msg: String,
+    },
+    TurnStart {
+        turn: TurnNumber,
+        season: u32,
+    },
+    SeasonalEvent {
+        event_type: SeasonalEventType,
+        kuni_names: Vec<KuniName>,
+    },
+    WarStarted {
+        attacker_name: KuniName,
+        defender_name: KuniName,
+    },
+    WarAttackerOccupied {
+        home_name: KuniName,
+        occupied_name: KuniName,
+    },
+    WarDefenderDefended {
+        defender_name: KuniName,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WarLogEvent {
+    CpuDefenderTactic {
+        tactic: Tactic,
+    },
+    Damage {
+        attacker_tactic: Tactic,
+        defender_tactic: Tactic,
+        attacker_damage: u32,
+        defender_damage: u32,
+    },
+    AttackerVictory {
+        home_name: KuniName,
+        attacker_id: DaimyoId,
+        occupied_name: KuniName,
+        defender_id: DaimyoId,
+    },
+    DefenderVictory {
+        home_name: KuniName,
+        attacker_id: DaimyoId,
+        defender_id: DaimyoId,
+    },
+    WarStarted {
+        attacker_name: KuniName,
+        defender_name: KuniName,
+        attacker_id: DaimyoId,
+        defender_id: DaimyoId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionLogEvent {
+    Domestic(DomesticLogEvent),
+    War(WarLogEvent),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionLogEntry {
-    /// ログのカテゴリ（内政・合戦）
-    pub category: ActionLogCategory,
-    /// 公開範囲
     pub visibility: ActionLogVisibility,
-    /// 発生ターン
     pub turn: TurnNumber,
-    /// CLIに表示する短いメッセージ（Public/Playerの場合のみ表示対象）
-    pub message: String,
-    /// 詳細ログ（デバッグ・記録用、常に記録）
-    pub detail: String,
+    pub event: ActionLogEvent,
 }
 
 impl ActionLogEntry {
-    pub fn new(
-        category: ActionLogCategory,
-        visibility: ActionLogVisibility,
-        turn: TurnNumber,
-        message: String,
-        detail: String,
-    ) -> Self {
+    pub fn new(visibility: ActionLogVisibility, turn: TurnNumber, event: ActionLogEvent) -> Self {
         Self {
-            category,
             visibility,
             turn,
-            message,
-            detail,
+            event,
+        }
+    }
+
+    pub fn category(&self) -> ActionLogCategory {
+        match self.event {
+            ActionLogEvent::Domestic(_) => ActionLogCategory::Domestic,
+            ActionLogEvent::War(_) => ActionLogCategory::War,
         }
     }
 }

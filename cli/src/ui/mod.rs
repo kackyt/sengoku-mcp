@@ -1,3 +1,4 @@
+pub mod action_log_renderer;
 use crate::app::App;
 use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use ratatui::{
@@ -610,7 +611,11 @@ fn render_action_logs(app: &App, f: &mut Frame, area: Rect, is_war: bool) {
         .iter()
         .map(|log| {
             let turn_text = format!("[ターン{}] ", log.turn.value());
-            let content = format!("{} {}", turn_text, log.message);
+            let content = format!(
+                "{} {}",
+                turn_text,
+                action_log_renderer::render_event(&log.event)
+            );
             ListItem::new(content)
         })
         .collect();

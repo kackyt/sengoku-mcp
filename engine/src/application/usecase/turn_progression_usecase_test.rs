@@ -292,7 +292,8 @@ mod tests {
 
         // 初期状態セットアップ（ターン1, 行動順 [k1], インデックス0）
         let initial_state =
-            GameState::new(TurnNumber::new(1), vec![kuni1.id], ActionOrderIndex::new(0)).unwrap();
+            GameState::new(TurnNumber::new(1), vec![kuni1.id], ActionOrderIndex::new(0))
+                .expect("valid state");
         state_repo.save(&initial_state).await.unwrap();
 
         // 最後の行動完了 -> ターン終了分岐 (index 0 -> 1 -> 次のターンへ)

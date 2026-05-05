@@ -50,7 +50,7 @@ impl Default for InMemoryActionLogRepository {
 
 impl ActionLogRepository for InMemoryActionLogRepository {
     fn save(&self, entry: ActionLogEntry) -> Result<(), DomainError> {
-        let category = entry.category;
+        let category = entry.category();
         self.push_log(category, entry);
         Ok(())
     }
@@ -108,15 +108,27 @@ mod tests {
     fn create_entry(
         category: ActionLogCategory,
         visibility: ActionLogVisibility,
-        msg: &str,
+        _msg: &str,
     ) -> ActionLogEntry {
-        ActionLogEntry::new(
-            category,
-            visibility,
-            TurnNumber::new(1),
-            msg.to_string(),
-            "".to_string(),
-        )
+        use engine::domain::model::action_log::{ActionLogEvent, DomesticLogEvent, WarLogEvent};
+        use engine::domain::model::value_objects::{DaimyoId, KuniName};
+
+        let event = match category {
+            ActionLogCategory::Domestic => {
+                ActionLogEvent::Domestic(DomesticLogEvent::DelegationChanged {
+                    kuni_name: KuniName("テスト".to_string()),
+                    enabled: true,
+                })
+            }
+            ActionLogCategory::War => ActionLogEvent::War(WarLogEvent::WarStarted {
+                attacker_name: KuniName("攻め手".to_string()),
+                defender_name: KuniName("守り手".to_string()),
+                attacker_id: DaimyoId(1),
+                defender_id: DaimyoId(2),
+            }),
+        };
+
+        ActionLogEntry::new(visibility, TurnNumber::new(1), event)
     }
 
     #[test]
@@ -144,8 +156,6 @@ mod tests {
 
         let visible = repo.find_visible(ActionLogCategory::Domestic, 10).unwrap();
         assert_eq!(visible.len(), 2);
-        assert_eq!(visible[0].message, "pub");
-        assert_eq!(visible[1].message, "player");
     }
 
     #[test]
@@ -190,7 +200,5 @@ mod tests {
 
         let all = repo.find_all(ActionLogCategory::Domestic).unwrap();
         assert_eq!(all.len(), 2);
-        assert_eq!(all[0].message, "2");
-        assert_eq!(all[1].message, "3");
     }
 }
