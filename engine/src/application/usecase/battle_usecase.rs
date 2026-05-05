@@ -67,10 +67,10 @@ impl BattleUseCase {
                 attacker_tactic,
                 defender_tactic,
                 attacker_damage: Amount::new(
-                    status.defender.hei.value() - next_status.defender.hei.value(),
+                    status.attacker.hei.value() - next_status.attacker.hei.value(),
                 ),
                 defender_damage: Amount::new(
-                    status.attacker.hei.value() - next_status.attacker.hei.value(),
+                    status.defender.hei.value() - next_status.defender.hei.value(),
                 ),
             }),
         ))?;

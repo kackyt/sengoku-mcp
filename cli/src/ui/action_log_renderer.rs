@@ -144,9 +144,9 @@ pub fn render_event(event: &ActionLogEvent) -> String {
                 format!(
                     "攻撃側({})の被害: {}、守備側({})の被害: {}",
                     attacker_tactic.name(),
-                    defender_damage.to_display(),
+                    attacker_damage.to_display(),
                     defender_tactic.name(),
-                    attacker_damage.to_display()
+                    defender_damage.to_display()
                 )
             }
             WarLogEvent::AttackerVictory { home_name, .. } => format!(
