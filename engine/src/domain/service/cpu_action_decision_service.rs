@@ -156,12 +156,13 @@ impl CpuActionDecisionService {
         let expected_score = base_score.value() + expected_gain;
 
         let reasoning = format!(
-            "線形最適化により {} を選択しました (勾配: {:.2}, 投入量: {}, 基準: {}, 予想: {})",
+            "線形最適化により {} を選択しました (勾配: {:.2}, 投入量: {}, 基準: {}, 予想: {}). 解析結果: {}",
             best_atype,
             max_slope,
             optimal_val,
             base_score.value(),
-            expected_score
+            expected_score,
+            reasoning_lines.join(", ")
         );
 
         (decision, reasoning)
@@ -192,9 +193,44 @@ impl CpuActionDecisionService {
         let fall_coef = Self::turns_to_coef(turn.turns_until_season(2)) as f64;
 
         // 大名の性格バイアスを基本評価値に乗算
-        let kin_slope = (Self::EVALUATE_KIN_COEF as f64) * personality.commerce_bias;
-        let kome_slope = (Self::EVALUATE_KOME_COEF as f64) * personality.agriculture_bias;
-        let hei_slope = (Self::EVALUATE_HEI_COEF as f64) * personality.military_bias;
+        let mut kin_slope = (Self::EVALUATE_KIN_COEF as f64) * personality.commerce_bias;
+        let mut kome_slope = (Self::EVALUATE_KOME_COEF as f64) * personality.agriculture_bias;
+        // 軍事については、防衛の必要性は全大名共通であるため、最低値を 1.0 に設定する
+        let mut hei_slope = (Self::EVALUATE_HEI_COEF as f64) * personality.military_bias.max(1.0);
+
+        // --- 状態に応じた動的な重み調整 ---
+        let current_kin = kuni.resource.kin.to_display().value();
+        let current_hei = kuni.resource.hei.to_display().value();
+        let current_jinko = kuni.resource.jinko.to_display().value();
+        let current_kome = kuni.resource.kome.to_display().value();
+
+        // 1. 兵力不足時の安全保障ボーナス
+        // 兵力が極端に少ない(30未満)、あるいは人口の10%未満の場合は、
+        // 性格に関わらず兵力の評価を大幅に引き上げる（防衛力の最低限の確保）
+        if current_hei < 30 || current_hei < current_jinko / 10 {
+            hei_slope *= 4.0; 
+        } else if current_hei < 50 || current_hei < current_jinko / 5 {
+            hei_slope *= 2.0;
+        }
+        
+        // 3. 徴募過多（人口減少）へのブレーキ
+        // 兵数が人口の半分を超え始めると、経済基盤（人口）の維持を優先し、徴募を抑える
+        if current_hei > current_jinko / 2 {
+            hei_slope *= 0.5;
+            if current_hei > current_jinko {
+                hei_slope *= 0.1; // 人口より兵士が多い（限界状態）なら極めて低く
+            }
+        }
+
+        // 2. 米の備蓄過剰・金不足時の調整
+        // 米が兵士数より多い、あるいは金が少なすぎる場合は、米の価値を相対的に下げ、
+        // 金への換金（SellRice）や他への投資を促す
+        if current_kome > current_hei {
+            kome_slope *= 0.4;
+            if current_kin < 50 {
+                kome_slope *= 0.5; // さらに下げる
+            }
+        }
 
         // 開発要素の金・米評価への影響勾配
         // 将来の長期的な収入（10年分程度）を見込む
@@ -275,7 +311,7 @@ impl CpuActionDecisionService {
         }
     }
 
-    const EVALUATE_HEI_COEF: u32 = 45;
+    const EVALUATE_HEI_COEF: u32 = 60;
     const EVALUATE_KIN_COEF: u32 = 30;
     const EVALUATE_KOME_COEF: u32 = 20;
 
@@ -482,5 +518,19 @@ mod tests {
 
         // 軍事重視なら徴募(Recruit)を選ぶはず
         assert!(matches!(decision, CpuActionDecision::Recruit { .. }));
+    }
+    #[test]
+    fn test_reasoning_log_contains_all_scores() {
+        let kuni = create_test_kuni(1000, 1000, 100, 100);
+        let turn = TurnNumber::new(1);
+        let mut rng = thread_rng();
+        let personality = DaimyoPersonality::default();
+
+        let (_, reasoning) = CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+
+        println!("Reasoning: {}", reasoning);
+        assert!(reasoning.contains("DevelopLand:"));
+        assert!(reasoning.contains("BuildTown:"));
+        assert!(reasoning.contains("Recruit:"));
     }
 }
