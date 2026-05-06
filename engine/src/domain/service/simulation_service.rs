@@ -1,11 +1,6 @@
-use crate::domain::model::{
-    daimyo::Daimyo,
-    kuni::Kuni,
-    value_objects::{TurnNumber},
-};
+use crate::domain::model::{daimyo::Daimyo, kuni::Kuni, value_objects::TurnNumber};
 use crate::domain::service::{
-    cpu_action_decision_service::CpuActionDecisionService,
-    kuni_action_service::KuniActionService,
+    cpu_action_decision_service::CpuActionDecisionService, kuni_action_service::KuniActionService,
     seasonal_event_service::SeasonalEventService,
 };
 use rand::Rng;
@@ -45,8 +40,9 @@ impl SimulationService {
             // 2. 各大名の行動
             for kuni in kunis.iter_mut() {
                 let daimyo = daimyo_map.get(&kuni.daimyo_id).expect("Daimyo not found");
-                let (decision, _reasoning) = CpuActionDecisionService::decide(&daimyo.personality, kuni, turn, rng);
-                
+                let (decision, _reasoning) =
+                    CpuActionDecisionService::decide(&daimyo.personality, kuni, turn, rng);
+
                 let _ = KuniActionService::apply_cpu_decision(kuni, decision);
             }
 

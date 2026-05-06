@@ -62,7 +62,7 @@ impl CpuActionDecisionService {
         ];
 
         let mut best_atype = "Rest";
-        let mut max_slope = -f64::INFINITY;
+        let mut max_slope = 0.0; // 勾配が0以下の場合は Rest を選択する
 
         let mut reasoning_lines = Vec::new();
 
@@ -173,9 +173,13 @@ impl CpuActionDecisionService {
             "DevelopLand" | "BuildTown" | "BuyRice" => kuni.resource.kin.to_display().value(),
             "SellRice" | "GiveCharity" => kuni.resource.kome.to_display().value(),
             "Recruit" => {
-                let max_jinko = kuni.resource.jinko.to_display().value();
+                let current_jinko = kuni.resource.jinko.to_display().value();
+                let current_hei = kuni.resource.hei.to_display().value();
+                // resource.rs の制約: self.jinko >= jinko + self.hei
+                // つまり 徴募数(jinko) <= 現在の人口 - 現在の兵数
+                let max_by_jinko = current_jinko.saturating_sub(current_hei);
                 let max_kin = kuni.resource.kin.to_display().value() * 2; // コスト0.5金を考慮
-                max_jinko.min(max_kin)
+                max_by_jinko.min(max_kin)
             }
             "Dismiss" => kuni.resource.hei.to_display().value(),
             _ => 0,
@@ -192,34 +196,40 @@ impl CpuActionDecisionService {
         let spring_coef = Self::turns_to_coef(turn.turns_until_season(0)) as f64;
         let fall_coef = Self::turns_to_coef(turn.turns_until_season(2)) as f64;
 
-        // 大名の性格バイアスを基本評価値に乗算
-        let mut kin_slope = (Self::EVALUATE_KIN_COEF as f64) * personality.commerce_bias;
-        let mut kome_slope = (Self::EVALUATE_KOME_COEF as f64) * personality.agriculture_bias;
-        // 軍事については、防衛の必要性は全大名共通であるため、最低値を 1.0 に設定する
-        let mut hei_slope = (Self::EVALUATE_HEI_COEF as f64) * personality.military_bias.max(1.0);
-
-        // --- 状態に応じた動的な重み調整 ---
         let current_kin = kuni.resource.kin.to_display().value();
         let current_hei = kuni.resource.hei.to_display().value();
         let current_jinko = kuni.resource.jinko.to_display().value();
         let current_kome = kuni.resource.kome.to_display().value();
 
+        // 資源量に応じた勾配の減衰（持っているほど価値が下がる = 投資に回りやすくなる）
+        let mut kin_slope = (Self::EVALUATE_KIN_COEF as f64) * personality.commerce_bias;
+        kin_slope /= 1.0 + (current_kin as f64 / 100.0);
+
+        let mut kome_slope = (Self::EVALUATE_KOME_COEF as f64) * personality.agriculture_bias;
+        kome_slope /= 1.0 + (current_kome as f64 / 100.0);
+
+        // 軍事については、防衛の必要性は全大名共通であるため、最低値を 1.0 に設定する
+        let mut hei_slope = (Self::EVALUATE_HEI_COEF as f64) * personality.military_bias.max(1.0);
+
         // 1. 兵力不足時の安全保障ボーナス
         // 兵力が極端に少ない(30未満)、あるいは人口の10%未満の場合は、
-        // 性格に関わらず兵力の評価を大幅に引き上げる（防衛力の最低限の確保）
+        // 性格に関わらず兵力の評価を引き上げる。
+        // ただし、人口が少ない（150未満）時は、経済崩壊を防ぐためボーナスを抑制する。
         if current_hei < 30 || current_hei < current_jinko / 10 {
-            hei_slope *= 4.0; 
-        } else if current_hei < 50 || current_hei < current_jinko / 5 {
-            hei_slope *= 2.0;
-        }
-        
-        // 3. 徴募過多（人口減少）へのブレーキ
-        // 兵数が人口の半分を超え始めると、経済基盤（人口）の維持を優先し、徴募を抑える
-        if current_hei > current_jinko / 2 {
-            hei_slope *= 0.5;
-            if current_hei > current_jinko {
-                hei_slope *= 0.1; // 人口より兵士が多い（限界状態）なら極めて低く
+            if current_jinko > 150 {
+                hei_slope *= 3.0;
+            } else {
+                hei_slope *= 1.5;
             }
+        }
+
+        // 3. 徴募抑制（経済的合理性）
+        // 兵数が人口の半分を超え始めたら評価を下げる。
+        // すでに兵数が人口に近づいている（80%以上）場合は評価をマイナスにする。
+        if current_hei >= current_jinko * 8 / 10 {
+            hei_slope *= -1.0;
+        } else if current_hei >= current_jinko / 2 {
+            hei_slope *= 0.5;
         }
 
         // 2. 米の備蓄過剰・金不足時の調整
@@ -249,25 +259,38 @@ impl CpuActionDecisionService {
         let mut tyu_base_val = 4.0;
         let current_tyu = kuni.stats.tyu.value();
 
-        // 忠誠度が安全圏（反乱リスクなし的50以上）なら評価を大幅に下げる
-        if current_tyu >= 50 {
-            tyu_base_val *= 0.25; // 1/4に
-        }
-        // さらに100に近い場合は微増させるメリットが少ないため減衰
-        if current_tyu >= 80 {
-            tyu_base_val *= 0.5;
+        // 忠誠度が 40 未満（反乱リスク大）の場合は、評価を大幅に引き上げ、
+        // 他の投資よりも「施し」を優先させる。
+        if current_tyu < 40 {
+            tyu_base_val = 15.0;
+        } else if current_tyu >= 80 {
+            tyu_base_val *= 0.02; // 80以上ならほぼ投資しない
+        } else if current_tyu >= 60 {
+            tyu_base_val *= 0.05; // 60以上なら大幅に優先度を下げる
+        } else if current_tyu >= 50 {
+            tyu_base_val *= 0.25; // 50以上（安全圏）なら 1/4 に
         }
 
         let tyu_slope = (tyu_base_val * 0.3 * spring_coef) + (tyu_base_val * 0.2 * fall_coef);
 
         match atype {
             "DevelopLand" => {
-                // コスト: 1金, 利得: 0.5石高
-                (0.5 * kokudaka_unit_slope) - kin_slope
+                // コスト: 10金, 利得: 5石高
+                let mut slope = (5.0 * kokudaka_unit_slope) - (10.0 * kin_slope);
+                // 経済再建中（石高が低い）時は、評価の下限を保証する
+                if kuni.stats.kokudaka.to_display().value() < 100 {
+                    slope = slope.max(10.0);
+                }
+                slope * personality.agriculture_bias
             }
             "BuildTown" => {
-                // コスト: 1金, 利得: 0.5町
-                (0.5 * machi_unit_slope) - kin_slope
+                // コスト: 10金, 利得: 5町ランク
+                let mut slope = (5.0 * machi_unit_slope) - (10.0 * kin_slope);
+                // 経済再建中（町が少ない）時は、評価の下限を保証する
+                if kuni.stats.machi.to_display().value() < 100 {
+                    slope = slope.max(10.0);
+                }
+                slope * personality.commerce_bias
             }
             "SellRice" => {
                 // コスト: 1米, 利得: 0.8金(期待値)
@@ -289,14 +312,17 @@ impl CpuActionDecisionService {
                 } else {
                     0.0
                 };
-                -hei_slope + jinko_unit_slope + tyu_gain_slope
+                // 安易な解雇を防ぐため、非常に大きなマイナス評価を加える
+                -hei_slope + jinko_unit_slope + tyu_gain_slope - 100.0
             }
             "GiveCharity" => {
-                // コスト: 1米, 利得: 0.75忠誠(期待値)
-                if kuni.stats.tyu.value() >= 100 {
-                    return -f64::INFINITY;
-                }
-                (0.75 * tyu_slope) - kome_slope
+                let tyu_gain_slope = if kuni.stats.tyu.value() < 100 {
+                    0.75 * tyu_slope
+                } else {
+                    0.0
+                };
+                // コスト: 10米, 利得: 7.5忠誠
+                tyu_gain_slope * 10.0 - (10.0 * kome_slope)
             }
             _ => 0.0,
         }
@@ -304,14 +330,15 @@ impl CpuActionDecisionService {
 
     fn turns_to_coef(turns: u32) -> u32 {
         match turns {
-            1 => 120, // 収穫・収入まであと1期（最高価値）
+            0 => 60,  // 来年の同シーズン
+            1 => 120, // 次のシーズン
             2 => 100,
-            3 => 50,
+            3 => 80,
             _ => 0,
         }
     }
 
-    const EVALUATE_HEI_COEF: u32 = 60;
+    const EVALUATE_HEI_COEF: u32 = 50;
     const EVALUATE_KIN_COEF: u32 = 30;
     const EVALUATE_KOME_COEF: u32 = 20;
 
@@ -339,7 +366,14 @@ mod tests {
     use crate::domain::model::value_objects::*;
     use rand::thread_rng;
 
-    fn create_test_kuni(kin: u32, kome: u32, kokudaka: u32, machi: u32) -> Kuni {
+    fn create_test_kuni(
+        kin: u32,
+        kome: u32,
+        kokudaka: u32,
+        machi: u32,
+        hei: u32,
+        jinko: u32,
+    ) -> Kuni {
         Kuni::new(
             KuniId(1),
             "テスト国",
@@ -347,8 +381,8 @@ mod tests {
             Resource {
                 kin: DisplayAmount::new(kin).to_internal(),
                 kome: DisplayAmount::new(kome).to_internal(),
-                hei: Amount::zero(),
-                jinko: DisplayAmount::new(1000).to_internal(),
+                hei: DisplayAmount::new(hei).to_internal(),
+                jinko: DisplayAmount::new(jinko).to_internal(),
             },
             DevelopmentStats {
                 kokudaka: DisplayAmount::new(kokudaka).to_internal(),
@@ -361,13 +395,20 @@ mod tests {
 
     #[test]
     fn test_decide_develop_land_when_high_kin() {
-        let kuni = create_test_kuni(1000, 0, 100, 100);
+        // 兵力100, 人口1000, 金1000, 米100
+        let mut kuni = create_test_kuni(1000, 100, 100, 100, 100, 1000);
+        // 忠誠度を100にして施しを抑制
+        kuni.stats.tyu = Rate::new(100);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
 
         let (decision, reasoning) =
             CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+        println!(
+            "test_decide_develop_land_when_high_kin reasoning: {}",
+            reasoning
+        );
 
         match decision {
             CpuActionDecision::DevelopLand { amount, .. } => {
@@ -383,13 +424,14 @@ mod tests {
 
     #[test]
     fn test_decide_rest_when_no_resources() {
-        let kuni = create_test_kuni(0, 0, 100, 100);
+        let kuni = create_test_kuni(0, 0, 100, 100, 100, 1000);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
 
         let (decision, reason) =
             CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+        println!("test_decide_rest_when_no_resources reasoning: {}", reason);
         println!("Decision: {:?}, Reason: {}", decision, reason);
 
         assert!(matches!(decision, CpuActionDecision::Rest));
@@ -398,7 +440,7 @@ mod tests {
     #[test]
     fn test_decide_sell_rice_when_low_kin_high_kome() {
         // 金が0で、他のアクションが不可能な場合に、SellRice（利得正）が選択されるか
-        let kuni = create_test_kuni(0, 2000, 100, 100);
+        let kuni = create_test_kuni(0, 2000, 100, 100, 100, 1000);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
@@ -418,10 +460,9 @@ mod tests {
     #[test]
     fn test_decide_prioritize_recruit_or_build_town_over_charity_in_fall() {
         // 秋、忠誠度が高い(60)、金・米・人口が十分にある状態
-        let kuni = create_test_kuni(1000, 1000, 100, 100);
-        let mut kuni = kuni;
+        // 兵力200 持たせて安全保障ボーナスを回避
+        let mut kuni = create_test_kuni(1000, 1000, 100, 100, 200, 1000);
         kuni.stats.tyu = Rate::new(60);
-        kuni.resource.hei = Amount::new(500); // 兵も少し持たせる
 
         let turn = TurnNumber::new(3); // 秋
         let mut rng = thread_rng();
@@ -437,6 +478,7 @@ mod tests {
         // (Recruitは兵の評価係数200だと人口評価360に負けて負の勾配になるため、BuildTownが有力)
         match decision {
             CpuActionDecision::BuildTown { .. } => {}
+            CpuActionDecision::Recruit { .. } => {}
             CpuActionDecision::SellRice { .. } => {} // 金がもっと少なければこれもあり
             CpuActionDecision::GiveCharity { .. } => {
                 panic!("Should NOT choose GiveCharity when loyalty is 60 and BuildTown is possible")
@@ -448,7 +490,7 @@ mod tests {
     #[test]
     fn test_give_charity_overkill_prevention() {
         // 忠誠度が95で、米が大量にある状態
-        let mut kuni = create_test_kuni(0, 1000, 100, 100);
+        let mut kuni = create_test_kuni(0, 1000, 100, 100, 100, 1000);
         kuni.stats.tyu = Rate::new(95);
 
         let turn = TurnNumber::new(1);
@@ -473,7 +515,7 @@ mod tests {
 
     #[test]
     fn test_personality_bias_agriculture() {
-        let kuni = create_test_kuni(1000, 0, 100, 100);
+        let kuni = create_test_kuni(1000, 0, 100, 100, 200, 1000);
 
         let turn = TurnNumber::new(1); // 夏（秋の収穫に近い）
         let mut rng = thread_rng();
@@ -489,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_personality_bias_commerce() {
-        let kuni = create_test_kuni(1000, 0, 100, 100);
+        let kuni = create_test_kuni(1000, 0, 100, 100, 200, 1000);
 
         let turn = TurnNumber::new(4); // 冬（来春の収入に向けて）
         let mut rng = thread_rng();
@@ -499,6 +541,7 @@ mod tests {
 
         let (decision, reason) =
             CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+        println!("test_personality_bias_commerce reasoning: {}", reason);
         println!("Decision: {:?}, Reason: {}", decision, reason);
 
         // 商業重視なら町造り(BuildTown)を選ぶはず
@@ -507,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_personality_bias_military() {
-        let kuni = create_test_kuni(1000, 1000, 100, 100);
+        let kuni = create_test_kuni(1000, 1000, 100, 100, 100, 1000);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
 
@@ -521,7 +564,7 @@ mod tests {
     }
     #[test]
     fn test_reasoning_log_contains_all_scores() {
-        let kuni = create_test_kuni(1000, 1000, 100, 100);
+        let kuni = create_test_kuni(1000, 1000, 100, 100, 100, 1000);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();

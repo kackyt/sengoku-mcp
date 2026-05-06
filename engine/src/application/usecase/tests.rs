@@ -226,7 +226,7 @@ fn create_test_kuni(id: u32) -> Kuni {
         KuniId(id),
         format!("TestKuni-{}", id),
         daimyo_id,
-        Resource::new(1000 * 100, 1000 * 100, 1000 * 100, 1000 * 100),
+        Resource::new(1000 * 100, 100 * 100, 1000 * 100, 1000 * 100),
         DevelopmentStats::new(100 * 100, 100 * 100, 60),
         IninFlag(false),
     )
@@ -378,7 +378,7 @@ async fn test_domestic_recruit() {
         .expect("徴募成功");
 
     let updated = repo.find_by_id(&kuni_id).await.unwrap().unwrap();
-    assert_eq!(updated.resource.hei.value(), 100100);
+    assert_eq!(updated.resource.hei.value(), 10100);
     assert_eq!(updated.resource.jinko.value(), 99900); // 100000 - 100
 }
 
@@ -575,7 +575,7 @@ async fn test_battle_execution_success_when_adjacent() {
     let updated_attacker = repo.find_by_id(&attacker_id).await.unwrap().unwrap();
 
     // 出陣した分、本国の兵力が減っていることを確認 (1000 - 5 = 995)
-    assert_eq!(updated_attacker.resource.hei.to_display().value(), 995);
+    assert_eq!(updated_attacker.resource.hei.to_display().value(), 95);
     // 戦場の兵力は 500 以下（ダメージを受けている可能性があるため）
     assert!(result.attacker.hei.value() <= 500); // 500 = 5 * INTERNAL_SCALE
                                                  // 防御側の状態が変化していることを確認（兵力減少、または鼓舞による士気向上）
