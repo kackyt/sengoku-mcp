@@ -138,11 +138,20 @@ async fn build_app() -> Result<App> {
     neighbor_repo.init_with_data(bundle.adjacency_map);
 
     // ユースケースの構築
+    let turn_progression_usecase = TurnProgressionUseCase::new(
+        kuni_repo.clone(),
+        game_state_repo.clone(),
+        event_dispatcher.clone(),
+        action_log_repo.clone(),
+    );
+    let turn_progression_arc = Arc::new(turn_progression_usecase.clone());
+
     let domestic_usecase = DomesticUseCase::new(
         kuni_repo.clone(),
         neighbor_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
+        turn_progression_arc.clone(),
     );
     let battle_usecase = BattleUseCase::new(
         kuni_repo.clone(),
@@ -150,12 +159,7 @@ async fn build_app() -> Result<App> {
         battle_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
-    );
-    let turn_progression_usecase = TurnProgressionUseCase::new(
-        kuni_repo.clone(),
-        game_state_repo.clone(),
-        event_dispatcher.clone(),
-        action_log_repo.clone(),
+        turn_progression_arc.clone(),
     );
     let kuni_query_usecase = KuniQueryUseCase::new(
         kuni_repo.clone(),
@@ -168,7 +172,7 @@ async fn build_app() -> Result<App> {
         kuni_repo.clone(),
         daimyo_repo.clone(),
         game_state_repo.clone(),
-        Arc::new(turn_progression_usecase.clone()),
+        turn_progression_arc.clone(),
     );
 
     Ok(App::new(

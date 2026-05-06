@@ -20,12 +20,12 @@ mod tests {
     }
 
     #[test]
-    fn test_process_end_turn_autumn_rice_income() {
+    fn test_process_start_turn_autumn_rice_income() {
         let mut kunis = vec![create_test_kuni(10000, 50)];
         let initial_kome = kunis[0].resource.kome.value();
 
         // ターン3は秋（(3-1)%4 == 2）→ 米収入
-        let effects = TurnService::process_end_turn_events(TurnNumber::new(3), &mut kunis);
+        let effects = TurnService::process_start_turn_events(TurnNumber::new(3), &mut kunis);
 
         assert_eq!(kunis.len(), 1);
         // 米が増えているか確認
@@ -37,14 +37,13 @@ mod tests {
     }
 
     #[test]
-    fn test_process_end_turn_spring_population_and_gold() {
+    fn test_process_start_turn_spring_population_and_gold() {
         let mut kunis = vec![create_test_kuni(10000, 50)];
         let initial_kin = kunis[0].resource.kin.value();
         let initial_jinko = kunis[0].resource.jinko.value();
 
         // ターン5は春（(5-1)%4 == 0）→ 人口増加と金収入
-        // ただし1ターン目はスキップされるため5ターン目でテスト
-        let effects = TurnService::process_end_turn_events(TurnNumber::new(5), &mut kunis);
+        let effects = TurnService::process_start_turn_events(TurnNumber::new(5), &mut kunis);
 
         assert_eq!(kunis.len(), 1);
         // 金が増えているか確認

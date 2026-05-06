@@ -71,4 +71,13 @@ impl GameState {
         self.action_order = new_order;
         self.current_action_index = ActionOrderIndex::new(0);
     }
+
+    /// 指定された国IDが現在の手番であるかを確認します。
+    pub fn check_turn(&self, kuni_id: KuniId) -> Result<(), DomainError> {
+        match self.current_kuni_id() {
+            Some(current) if current == kuni_id => Ok(()),
+            Some(current) => Err(DomainError::NotYourTurn(current)),
+            None => Err(DomainError::ValidationError("Turn is already finished".to_string())),
+        }
+    }
 }

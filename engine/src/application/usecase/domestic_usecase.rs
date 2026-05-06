@@ -16,6 +16,7 @@ pub struct DomesticUseCase {
     neighbor_repo: Arc<dyn NeighborRepository>,
     action_log_repo: Arc<dyn ActionLogRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
+    turn_progression_usecase: Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
 }
 
 impl DomesticUseCase {
@@ -25,12 +26,14 @@ impl DomesticUseCase {
         neighbor_repo: Arc<dyn NeighborRepository>,
         action_log_repo: Arc<dyn ActionLogRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
+        turn_progression_usecase: Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
     ) -> Self {
         Self {
             kuni_repo,
             neighbor_repo,
             action_log_repo,
             game_state_repo,
+            turn_progression_usecase,
         }
     }
 
@@ -55,12 +58,24 @@ impl DomesticUseCase {
         Ok(())
     }
 
+    async fn validate_and_advance_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
+        let state = self.game_state_repo.get().await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+        
+        state.check_turn(kuni_id)?;
+        
+        self.turn_progression_usecase.complete_current_action().await?;
+        Ok(())
+    }
+
     /// 米を売却します
     pub async fn sell_rice(
         &self,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -89,6 +104,8 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -117,6 +134,8 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -144,6 +163,8 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -171,6 +192,8 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -199,6 +222,8 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -227,6 +252,8 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<u32, anyhow::Error> {
+        self.validate_and_advance_turn(kuni_id).await?;
+
         let mut kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -257,6 +284,8 @@ impl DomesticUseCase {
         hei: DisplayAmount,
         kome: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
+        self.validate_and_advance_turn(from_kuni_id).await?;
+
         let mut from_kuni = self
             .kuni_repo
             .find_by_id(&from_kuni_id)

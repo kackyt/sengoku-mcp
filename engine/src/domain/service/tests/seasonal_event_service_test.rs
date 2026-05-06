@@ -24,10 +24,10 @@ mod tests {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
 
-        // 1ターン目はスキップされるため、2回目の春である5ターン目でテストする
-        let effects = service.process_end_turn_events(TurnNumber::new(5), &mut kuni);
+        // 春(1)開始時はスキップされる仕様なので、5ターン目（2年目春）でテストする
+        let effects = service.process_start_turn_events(TurnNumber::new(5), &mut kuni);
 
-        // 春(5)終了時は人口増加と金収入が発生するはず
+        // 春(5)開始時は人口増加と金収入が発生するはず
         assert!(effects
             .iter()
             .any(|e| e.event_type == SeasonalEventType::PopulationGrowth));
@@ -44,8 +44,8 @@ mod tests {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
 
-        // 秋(3)終了時は米収入が発生するはず
-        let effects = service.process_end_turn_events(TurnNumber::new(3), &mut kuni);
+        // 秋(3)開始時は米収入が発生するはず
+        let effects = service.process_start_turn_events(TurnNumber::new(3), &mut kuni);
 
         assert!(effects
             .iter()
@@ -56,17 +56,39 @@ mod tests {
     }
 
     #[test]
-    fn test_first_turn_skip() {
+    fn test_summer_no_resource_event() {
         let mut kuni = create_test_kuni(10000, 80);
         let service = SeasonalEventService::new();
 
-        // 夏(2)終了時は何も発生しないはず（人口増加・金・米は発生しない）
-        let effects = service.process_end_turn_events(TurnNumber::new(2), &mut kuni);
-        assert!(effects.is_empty());
+        // 夏(2)開始時は定期イベント（人口増加・金・米）は発生しないはず
+        let effects = service.process_start_turn_events(TurnNumber::new(2), &mut kuni);
+        
+        // 定期イベントが含まれていないか確認
+        assert!(!effects
+            .iter()
+            .any(|e| e.event_type == SeasonalEventType::PopulationGrowth));
+        assert!(!effects
+            .iter()
+            .any(|e| e.event_type == SeasonalEventType::GoldIncome));
+        assert!(!effects
+            .iter()
+            .any(|e| e.event_type == SeasonalEventType::RiceIncome));
+    }
 
-        // 資源も増えていないはず
-        assert_eq!(kuni.resource.kin.value(), 1000);
-        assert_eq!(kuni.resource.kome.value(), 1000);
+    #[test]
+    fn test_turn_1_start_income_occurs() {
+        // 注: 実装上 process_start_turn_events(Turn 1) を呼べばロジック的には発生する。
+        // ただし、TurnProgressionUseCase 側で第1ターン開始時にはこれを呼ばないことで
+        // 「第1ターンは収入なし」という仕様を実現している。
+        // ここでは SeasonalEventService 単体として、Turn 1 (春) で正しく判定されるかを確認する。
+        let mut kuni = create_test_kuni(10000, 80);
+        let service = SeasonalEventService::new();
+
+        let effects = service.process_start_turn_events(TurnNumber::new(1), &mut kuni);
+        
+        assert!(effects
+            .iter()
+            .any(|e| e.event_type == SeasonalEventType::GoldIncome));
     }
 
     #[test]

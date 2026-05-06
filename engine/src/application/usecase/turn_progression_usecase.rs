@@ -150,7 +150,7 @@ impl TurnProgressionUseCase {
         self.progress_until_player_turn(None).await
     }
 
-    async fn execute_cpu_action(
+    pub async fn execute_cpu_action(
         &self,
         kuni_id: crate::domain::model::value_objects::KuniId,
     ) -> Result<(), anyhow::Error> {
@@ -237,18 +237,11 @@ impl TurnProgressionUseCase {
     async fn finish_turn(&self, mut state: GameState) -> Result<(), anyhow::Error> {
         let current_turn = state.current_turn();
 
-        // ターン終了時の季節イベント（人口増加・資源生成）を処理
-        let mut kunis = self.kuni_repo.find_all().await?;
-        let _end_effects = TurnService::process_end_turn_events(current_turn, &mut kunis);
-        for kuni in &kunis {
-            self.kuni_repo.save(kuni).await?;
-        }
-
         self.event_dispatcher
             .dispatch(GameEvent::SeasonPassed { turn: current_turn })
             .await?;
 
-        // ターン開始時の季節イベント（洪水・疫病・反乱）を次のターン開始前に処理
+        // ターン開始時の季節イベント（洪水・疫病・反乱・資源生成）を次のターン開始前に処理
         let mut kunis = self.kuni_repo.find_all().await?;
         let new_order = {
             let mut rng = rand::thread_rng();

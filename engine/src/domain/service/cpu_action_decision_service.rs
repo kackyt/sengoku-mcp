@@ -224,7 +224,7 @@ impl CpuActionDecisionService {
         }
     }
 
-    const EVALUATE_HEI_COEF: u32 = 50;
+    const EVALUATE_HEI_COEF: u32 = 200;
     const EVALUATE_KIN_COEF: u32 = 30;
     const EVALUATE_KOME_COEF: u32 = 20;
 

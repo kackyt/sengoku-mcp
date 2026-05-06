@@ -22,6 +22,7 @@ pub struct BattleUseCase {
     battle_repo: Arc<dyn BattleRepository>,
     action_log_repo: Arc<dyn ActionLogRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
+    turn_progression_usecase: Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
 }
 
 impl BattleUseCase {
@@ -32,6 +33,7 @@ impl BattleUseCase {
         battle_repo: Arc<dyn BattleRepository>,
         action_log_repo: Arc<dyn ActionLogRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
+        turn_progression_usecase: Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
     ) -> Self {
         Self {
             kuni_repo,
@@ -39,7 +41,18 @@ impl BattleUseCase {
             battle_repo,
             action_log_repo,
             game_state_repo,
+            turn_progression_usecase,
         }
+    }
+
+    async fn validate_and_advance_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
+        let state = self.game_state_repo.get().await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+        
+        state.check_turn(kuni_id)?;
+        
+        self.turn_progression_usecase.complete_current_action().await?;
+        Ok(())
     }
 
     /// 合戦の1ターンを実行します
@@ -179,6 +192,8 @@ impl BattleUseCase {
         hei: DisplayAmount,
         kome: DisplayAmount,
     ) -> Result<WarStatus, anyhow::Error> {
+        self.validate_and_advance_turn(attacker_id).await?;
+
         let mut attacker = self
             .kuni_repo
             .find_by_id(&attacker_id)
