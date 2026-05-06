@@ -74,17 +74,17 @@ struct KuniRecord {
 pub struct MasterDataLoader;
 
 impl MasterDataLoader {
-    pub fn load(base_dir: &Path) -> Result<MasterDataBundle, MasterDataError> {
-        let daimyos = Self::load_daimyo(base_dir)?;
+    pub fn load() -> Result<MasterDataBundle, MasterDataError> {
+        let daimyos = Self::load_daimyo()?;
         let mut daimyo_map = HashMap::new();
         for d in &daimyos {
             daimyo_map.insert(d.id, d.clone());
         }
 
-        let kuni_csv_path = base_dir.join("kuni.csv");
+        let kuni_csv = include_str!("../../static/master_data/kuni.csv");
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
-            .from_path(&kuni_csv_path)?;
+            .from_reader(kuni_csv.as_bytes());
 
         let mut kunis = Vec::new();
         let mut id_map = HashMap::<u32, KuniId>::new();
@@ -98,7 +98,9 @@ impl MasterDataLoader {
 
             let daimyo_id = DaimyoId::new(record.daimyo_id);
             if !daimyo_map.contains_key(&daimyo_id) {
-                return Err(MasterDataError::InvalidReference { id: record.daimyo_id });
+                return Err(MasterDataError::InvalidReference {
+                    id: record.daimyo_id,
+                });
             }
 
             let kuni_id = KuniId::new(record.id);
@@ -128,7 +130,7 @@ impl MasterDataLoader {
             kunis.push(kuni);
         }
 
-        let adjacency_map = Self::load_neighbor(base_dir, &id_map)?;
+        let adjacency_map = Self::load_neighbor(&id_map)?;
 
         Ok(MasterDataBundle {
             daimyos,
@@ -137,15 +139,11 @@ impl MasterDataLoader {
         })
     }
 
-    fn load_daimyo(base_dir: &Path) -> Result<Vec<Daimyo>, MasterDataError> {
-        let csv_path = base_dir.join("daimyo.csv");
-        if !csv_path.exists() {
-            return Err(MasterDataError::FileNotFound("daimyo.csv".to_string()));
-        }
-
+    fn load_daimyo() -> Result<Vec<Daimyo>, MasterDataError> {
+        let daimyo_csv = include_str!("../../static/master_data/daimyo.csv");
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
-            .from_path(&csv_path)?;
+            .from_reader(daimyo_csv.as_bytes());
 
         let mut daimyos = Vec::new();
         for (i, result) in rdr.deserialize().enumerate() {
@@ -172,17 +170,13 @@ impl MasterDataLoader {
     }
 
     fn load_neighbor(
-        base_dir: &Path,
         id_map: &HashMap<u32, KuniId>,
     ) -> Result<HashMap<KuniId, Vec<KuniId>>, MasterDataError> {
-        let neighbor_csv_path = base_dir.join("neighbor.csv");
-        if !neighbor_csv_path.exists() {
-            return Err(MasterDataError::FileNotFound("neighbor.csv".to_string()));
-        }
+        let neighbor_csv = include_str!("../../static/master_data/neighbor.csv");
 
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
-            .from_path(&neighbor_csv_path)?;
+            .from_reader(neighbor_csv.as_bytes());
 
         let mut adjacency_map: HashMap<KuniId, Vec<KuniId>> = HashMap::new();
 

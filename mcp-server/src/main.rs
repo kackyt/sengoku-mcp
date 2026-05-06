@@ -29,30 +29,11 @@ async fn main() -> anyhow::Result<()> {
     let battle_repo = Arc::new(InMemoryBattleRepository::new());
     let action_log_repo = Arc::new(InMemoryActionLogRepository::new());
 
-    // マスターデータのパス解決
-    let base_dir = if let Ok(env_path) = std::env::var("SENGOKU_MASTER_DATA") {
-        std::path::PathBuf::from(env_path)
-    } else {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let dev_path = manifest_dir.join("../static/master_data");
-
-        if dev_path.exists() {
-            dev_path
-        } else {
-            // カレントディレクトリからの相対パス（プロジェクトルートで実行される想定）
-            std::path::PathBuf::from("static/master_data")
-        }
-    };
-
-    if base_dir.exists() {
-        let bundle = MasterDataLoader::load(&base_dir)?;
-        kuni_repo.init_with_data(bundle.kunis).await;
-        daimyo_repo.init_with_data(bundle.daimyos).await;
-        neighbor_repo.init_with_data(bundle.adjacency_map);
-    } else {
-        // マスターデータが見つからなくても起動はさせる（警告のみ）
-        eprintln!("Warning: Master data not found at {:?}", base_dir);
-    }
+    // マスターデータのロード
+    let bundle = MasterDataLoader::load()?;
+    kuni_repo.init_with_data(bundle.kunis).await;
+    daimyo_repo.init_with_data(bundle.daimyos).await;
+    neighbor_repo.init_with_data(bundle.adjacency_map);
 
     // ユースケースの構築
     let turn_progression_usecase = Arc::new(TurnProgressionUseCase::new(
