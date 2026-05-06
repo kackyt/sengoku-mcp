@@ -26,7 +26,10 @@ impl Resource {
 
     /// 指定された資源を消費可能かチェックします
     pub fn can_consume(&self, kin: Amount, hei: Amount, kome: Amount, jinko: Amount) -> bool {
-        self.kin >= kin && self.hei >= hei && self.kome >= kome && self.jinko >= jinko
+        self.kin >= kin
+            && self.hei >= hei
+            && self.kome >= kome
+            && (jinko == Amount::zero() || self.jinko >= jinko + self.hei)
     }
 
     /// 資源を消費します。不足している場合はエラーを返します。
