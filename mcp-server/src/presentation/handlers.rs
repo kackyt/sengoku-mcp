@@ -6,6 +6,7 @@ use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCa
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
 use engine::domain::repository::daimyo_repository::DaimyoRepository;
+use engine::domain::model::action_log::*;
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters, ServerHandler},
     model::{Implementation, ServerCapabilities, ServerInfo},
@@ -381,6 +382,32 @@ impl McpHandlers {
             .map_err(|e| e.to_string())?;
 
         Ok(format!("国ID: {} の自動行動を実行しました。", kuni_id))
+    }
+
+    /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します
+    #[tool(description = "デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。")]
+    pub async fn get_internal_logs(&self) -> Result<String, String> {
+        let logs = self.kuni_query_usecase.get_all_logs(ActionLogCategory::Domestic)
+            .map_err(|e| e.to_string())?;
+        
+        let mut result = String::from("内部ログ（デバッグ用）:\n");
+        for log in logs {
+            let visibility_str = match log.visibility {
+                ActionLogVisibility::Public => "Public",
+                ActionLogVisibility::Player => "Player",
+                ActionLogVisibility::Internal => "Internal",
+            };
+            
+            let event_str = match &log.event {
+                ActionLogEvent::Domestic(DomesticLogEvent::CpuAction { daimyo_id, action_msg, reasoning }) => {
+                    format!("AI行動 [大名ID:{:?}] {}. 理由: {}", daimyo_id, action_msg, reasoning.as_deref().unwrap_or("なし"))
+                },
+                _ => format!("{:?}", log.event),
+            };
+
+            result.push_str(&format!("- [ターン{}] [{}] {}\n", log.turn.value(), visibility_str, event_str));
+        }
+        Ok(result)
     }
 }
 

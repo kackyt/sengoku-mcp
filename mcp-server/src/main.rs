@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
     // ユースケースの構築
     let turn_progression_usecase = Arc::new(TurnProgressionUseCase::new(
         kuni_repo.clone(),
+        daimyo_repo.clone(),
         game_state_repo.clone(),
         event_dispatcher.clone(),
         action_log_repo.clone(),

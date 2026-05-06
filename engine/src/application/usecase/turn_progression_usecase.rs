@@ -6,8 +6,9 @@ use crate::domain::{
         value_objects::{ActionOrderIndex, DaimyoId, EventMessage, TurnNumber},
     },
     repository::{
-        action_log_repository::ActionLogRepository, event_dispatcher::EventDispatcher,
-        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, daimyo_repository::DaimyoRepository,
+        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
+        kuni_repository::KuniRepository,
     },
     service::{
         cpu_action_decision_service::{CpuActionDecision, CpuActionDecisionService},
@@ -19,6 +20,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct TurnProgressionUseCase {
     kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
+    daimyo_repo: Arc<dyn DaimyoRepository + Send + Sync>,
     game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
     event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
     action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
@@ -27,12 +29,14 @@ pub struct TurnProgressionUseCase {
 impl TurnProgressionUseCase {
     pub fn new(
         kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
+        daimyo_repo: Arc<dyn DaimyoRepository + Send + Sync>,
         game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
         event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
         action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
     ) -> Self {
         Self {
             kuni_repo,
+            daimyo_repo,
             game_state_repo,
             event_dispatcher,
             action_log_repo,
@@ -168,19 +172,24 @@ impl TurnProgressionUseCase {
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
 
+        let daimyo = self
+            .daimyo_repo
+            .find_by_id(&daimyo_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("大名が見つかりません: {:?}", daimyo_id))?;
+
         let (decision, reasoning) = {
             let mut rng = rand::thread_rng();
-            CpuActionDecisionService::decide(daimyo_id, &target_kuni, turn, &mut rng)
+            CpuActionDecisionService::decide(&daimyo.personality, &target_kuni, turn, &mut rng)
         };
 
         let action_msg = match decision {
             CpuActionDecision::Battle {
-                attacker_id,
                 target_kuni_id: Some(target_id),
             } => {
                 self.event_dispatcher
                     .dispatch(GameEvent::BattleAction {
-                        attacker_id,
+                        attacker_id: daimyo_id,
                         target_kuni_id: target_id,
                         result_message: EventMessage::new("戦争を行いました（自動）"),
                     })

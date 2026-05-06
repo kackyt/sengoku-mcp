@@ -1,6 +1,7 @@
 pub mod action_log;
 pub mod battle;
 pub mod daimyo;
+pub mod daimyo_personality;
 pub mod event;
 pub mod game_state;
 pub mod kuni;

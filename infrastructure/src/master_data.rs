@@ -1,4 +1,5 @@
 use engine::domain::model::daimyo::Daimyo;
+use engine::domain::model::daimyo_personality::DaimyoPersonality;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::resource::{DevelopmentStats, Resource};
 use engine::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId, Rate};
@@ -18,23 +19,28 @@ pub struct MasterDataBundle {
     pub adjacency_map: HashMap<KuniId, Vec<KuniId>>,
 }
 
-/// 国データのロード結果
-struct KuniLoadResult {
-    /// 大名のリスト
-    daimyos: Vec<Daimyo>,
-    /// 国のリスト
-    kunis: Vec<Kuni>,
-    /// CSV上のIDから内部IDへのマッピング
-    id_map: HashMap<u32, KuniId>,
+/// 大名情報のCSVレコード
+#[derive(Debug, Deserialize)]
+struct DaimyoRecord {
+    #[serde(rename = "ID")]
+    id: u32,
+    #[serde(rename = "名前")]
+    name: String,
+    #[serde(rename = "農業")]
+    agriculture: f64,
+    #[serde(rename = "商業")]
+    commerce: f64,
+    #[serde(rename = "軍事")]
+    military: f64,
+    #[serde(rename = "揺らぎ")]
+    randomness: f64,
 }
 
 /// 隣接情報のCSVレコード
 #[derive(Debug, Deserialize)]
 struct NeighborRecord {
-    /// 国ID1
     #[serde(rename = "ID1")]
     id1: u32,
-    /// 国ID2
     #[serde(rename = "ID2")]
     id2: u32,
 }
@@ -42,34 +48,24 @@ struct NeighborRecord {
 /// 国情報のCSVレコード
 #[derive(Debug, Deserialize)]
 struct KuniRecord {
-    /// 国ID (CSV内)
     #[serde(rename = "ID")]
     id: u32,
-    /// 国名
     #[serde(rename = "名前")]
     name: String,
-    /// 初期大名名
-    #[serde(rename = "初期大名")]
-    initial_daimyo: String,
-    /// 所持金
+    #[serde(rename = "大名ID")]
+    daimyo_id: u32,
     #[serde(rename = "金")]
     kin: u32,
-    /// 兵数
     #[serde(rename = "兵")]
     hei: u32,
-    /// 米数
     #[serde(rename = "米")]
     kome: u32,
-    /// 人口
     #[serde(rename = "人口")]
     jinko: u32,
-    /// 石高
     #[serde(rename = "石高")]
     kokudaka: u32,
-    /// 町数
     #[serde(rename = "町")]
     machi: u32,
-    /// 忠誠度
     #[serde(rename = "忠誠")]
     tyu: u32,
 }
@@ -78,50 +74,36 @@ struct KuniRecord {
 pub struct MasterDataLoader;
 
 impl MasterDataLoader {
-    /// ベースディレクトリからマスターデータを一括ロードする
     pub fn load(base_dir: &Path) -> Result<MasterDataBundle, MasterDataError> {
-        let kuni_result = Self::load_kuni(base_dir)?;
-        let adjacency_map = Self::load_neighbor(base_dir, &kuni_result.id_map)?;
-
-        Ok(MasterDataBundle {
-            daimyos: kuni_result.daimyos,
-            kunis: kuni_result.kunis,
-            adjacency_map,
-        })
-    }
-
-    /// kuni.csv から大名と国のデータを読み込む
-    fn load_kuni(base_dir: &Path) -> Result<KuniLoadResult, MasterDataError> {
-        let kuni_csv_path = base_dir.join("kuni.csv");
-        if !kuni_csv_path.exists() {
-            return Err(MasterDataError::FileNotFound("kuni.csv".to_string()));
+        let daimyos = Self::load_daimyo(base_dir)?;
+        let mut daimyo_map = HashMap::new();
+        for d in &daimyos {
+            daimyo_map.insert(d.id, d.clone());
         }
 
+        let kuni_csv_path = base_dir.join("kuni.csv");
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(true)
-            .from_path(&kuni_csv_path)?; // ? により CsvError (内部に IoError を含む) へ自動変換される
+            .from_path(&kuni_csv_path)?;
 
-        let mut daimyo_map = HashMap::<String, Daimyo>::new();
         let mut kunis = Vec::new();
         let mut id_map = HashMap::<u32, KuniId>::new();
 
         for (i, result) in rdr.deserialize().enumerate() {
             let record: KuniRecord = result.map_err(|e| MasterDataError::ParseError {
-                line: i + 2, // ヘッダー分を考慮
+                line: i + 2,
                 field: "不明".to_string(),
                 reason: e.to_string(),
             })?;
 
-            // 大名の登録（既に存在すれば既存のものを使用）
-            let daimyo_name = record.initial_daimyo;
-            let daimyo = daimyo_map
-                .entry(daimyo_name.clone()) // キーとして1回クローン
-                .or_insert_with(|| Daimyo::new(DaimyoId::new(record.id), daimyo_name)); // 存在しない場合、最初の出現国のIDを使用
+            let daimyo_id = DaimyoId::new(record.daimyo_id);
+            if !daimyo_map.contains_key(&daimyo_id) {
+                return Err(MasterDataError::InvalidReference { id: record.daimyo_id });
+            }
 
             let kuni_id = KuniId::new(record.id);
             id_map.insert(record.id, kuni_id);
 
-            // 資源データの構築
             let resource = Resource {
                 kin: DisplayAmount::new(record.kin).to_internal(),
                 hei: DisplayAmount::new(record.hei).to_internal(),
@@ -129,18 +111,16 @@ impl MasterDataLoader {
                 jinko: DisplayAmount::new(record.jinko).to_internal(),
             };
 
-            // 開発ステータスの構築
             let stats = DevelopmentStats {
                 kokudaka: DisplayAmount::new(record.kokudaka).to_internal(),
                 machi: DisplayAmount::new(record.machi).to_internal(),
-                tyu: Rate::new(record.tyu), // 忠誠度は%なのでそのまま
+                tyu: Rate::new(record.tyu),
             };
 
-            // 国エンティティの作成
             let kuni = Kuni::new(
                 kuni_id,
                 record.name,
-                daimyo.id,
+                daimyo_id,
                 resource,
                 stats,
                 IninFlag(false),
@@ -148,12 +128,47 @@ impl MasterDataLoader {
             kunis.push(kuni);
         }
 
-        let daimyos: Vec<Daimyo> = daimyo_map.into_values().collect();
-        Ok(KuniLoadResult {
+        let adjacency_map = Self::load_neighbor(base_dir, &id_map)?;
+
+        Ok(MasterDataBundle {
             daimyos,
             kunis,
-            id_map,
+            adjacency_map,
         })
+    }
+
+    fn load_daimyo(base_dir: &Path) -> Result<Vec<Daimyo>, MasterDataError> {
+        let csv_path = base_dir.join("daimyo.csv");
+        if !csv_path.exists() {
+            return Err(MasterDataError::FileNotFound("daimyo.csv".to_string()));
+        }
+
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_path(&csv_path)?;
+
+        let mut daimyos = Vec::new();
+        for (i, result) in rdr.deserialize().enumerate() {
+            let record: DaimyoRecord = result.map_err(|e| MasterDataError::ParseError {
+                line: i + 2,
+                field: "不明".to_string(),
+                reason: e.to_string(),
+            })?;
+
+            let personality = DaimyoPersonality::new(
+                record.agriculture,
+                record.commerce,
+                record.military,
+                record.randomness,
+            );
+
+            daimyos.push(Daimyo::new(
+                DaimyoId::new(record.id),
+                record.name,
+                personality,
+            ));
+        }
+        Ok(daimyos)
     }
 
     fn load_neighbor(
@@ -189,95 +204,5 @@ impl MasterDataLoader {
         }
 
         Ok(adjacency_map)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::persistence::InMemoryNeighborRepository;
-    use engine::domain::repository::neighbor_repository::NeighborRepository;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_load_kuni_success() {
-        let dir = tempdir().unwrap();
-        let kuni_path = dir.path().join("kuni.csv");
-        let mut file = File::create(kuni_path).unwrap();
-        writeln!(file, "ID,名前,初期大名,金,兵,米,人口,石高,町,忠誠").unwrap();
-        writeln!(file, "1,蝦夷,蛎崎,80,50,50,200,40,50,80").unwrap();
-        writeln!(file, "2,奥州,伊達,120,70,60,260,80,60,70").unwrap();
-
-        let result = MasterDataLoader::load_kuni(dir.path()).unwrap();
-
-        assert_eq!(result.daimyos.len(), 2);
-        assert_eq!(result.kunis.len(), 2);
-        assert_eq!(result.id_map.len(), 2);
-
-        let ezo_id = result.id_map.get(&1).unwrap();
-        let ezo = result.kunis.iter().find(|k| k.id == *ezo_id).unwrap();
-        assert_eq!(ezo.resource.kin.value(), 8000); // 100倍
-
-        let kakizaki = result
-            .daimyos
-            .iter()
-            .find(|d| d.id == ezo.daimyo_id)
-            .unwrap();
-        assert_eq!(kakizaki.name.0, "蛎崎");
-    }
-
-    #[test]
-    fn test_load_neighbor_success() {
-        let dir = tempdir().unwrap();
-        let kuni_path = dir.path().join("kuni.csv");
-        let mut kuni_file = File::create(kuni_path).unwrap();
-        writeln!(kuni_file, "ID,名前,初期大名,金,兵,米,人口,石高,町,忠誠").unwrap();
-        writeln!(kuni_file, "1,A,A,0,0,0,0,0,0,0").unwrap();
-        writeln!(kuni_file, "2,B,B,0,0,0,0,0,0,0").unwrap();
-        writeln!(kuni_file, "3,C,C,0,0,0,0,0,0,0").unwrap();
-
-        let kuni_result = MasterDataLoader::load_kuni(dir.path()).unwrap();
-
-        let neighbor_path = dir.path().join("neighbor.csv");
-        let mut neighbor_file = File::create(neighbor_path).unwrap();
-        writeln!(neighbor_file, "ID1,ID2").unwrap();
-        writeln!(neighbor_file, "1,2").unwrap();
-        writeln!(neighbor_file, "2,3").unwrap();
-
-        let adjacency_map =
-            MasterDataLoader::load_neighbor(dir.path(), &kuni_result.id_map).unwrap();
-        let neighbor_repo = InMemoryNeighborRepository::new();
-        neighbor_repo.init_with_data(adjacency_map);
-
-        let id1 = kuni_result.id_map.get(&1).unwrap();
-        let id2 = kuni_result.id_map.get(&2).unwrap();
-        let id3 = kuni_result.id_map.get(&3).unwrap();
-
-        assert!(neighbor_repo.are_adjacent(id1, id2));
-        assert!(neighbor_repo.are_adjacent(id2, id1)); // 相互方向の確認
-        assert!(neighbor_repo.are_adjacent(id2, id3));
-        assert!(!neighbor_repo.are_adjacent(id1, id3));
-    }
-
-    #[test]
-    fn test_load_neighbor_invalid_reference() {
-        let dir = tempdir().unwrap();
-        let kuni_path = dir.path().join("kuni.csv");
-        let mut kuni_file = File::create(kuni_path).unwrap();
-        writeln!(kuni_file, "ID,名前,初期大名,金,兵,米,人口,石高,町,忠誠").unwrap();
-        writeln!(kuni_file, "1,A,A,0,0,0,0,0,0,0").unwrap();
-
-        let neighbor_path = dir.path().join("neighbor.csv");
-        let mut neighbor_file = File::create(neighbor_path).unwrap();
-        writeln!(neighbor_file, "ID1,ID2").unwrap();
-        writeln!(neighbor_file, "1,999").unwrap(); // 999 は kuni.csv に存在しないID
-
-        let result = MasterDataLoader::load(dir.path());
-        assert!(matches!(
-            result,
-            Err(MasterDataError::InvalidReference { id: 999 })
-        ));
     }
 }

@@ -3,6 +3,7 @@ mod tests {
     use crate::application::usecase::info_usecase::InfoUseCase;
     use crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
     use crate::domain::model::daimyo::Daimyo;
+    use crate::domain::model::daimyo_personality::DaimyoPersonality;
     use crate::domain::model::game_state::GameState;
     use crate::domain::model::kuni::Kuni;
     use crate::domain::model::resource::{DevelopmentStats, Resource};
@@ -107,8 +108,8 @@ mod tests {
         let player_id = DaimyoId(1);
         let enemy_id = DaimyoId(2);
 
-        daimyo_repo.save(&Daimyo::new(player_id, "プレイヤー")).await.unwrap();
-        daimyo_repo.save(&Daimyo::new(enemy_id, "敵大名")).await.unwrap();
+        daimyo_repo.save(&Daimyo::new(player_id, "プレイヤー", DaimyoPersonality::default())).await.unwrap();
+        daimyo_repo.save(&Daimyo::new(enemy_id, "敵大名", DaimyoPersonality::default())).await.unwrap();
 
         let player_kuni_id = KuniId(1);
         kuni_repo.save(&Kuni::new(
@@ -135,6 +136,7 @@ mod tests {
 
         let turn_progression_usecase = Arc::new(TurnProgressionUseCase::new(
             kuni_repo.clone(),
+            daimyo_repo.clone(),
             game_state_repo.clone(),
             event_dispatcher.clone(),
             action_log_repo.clone(),

@@ -7,8 +7,11 @@ use crate::domain::model::game_state::GameState;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::resource::{DevelopmentStats, Resource};
 use crate::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId};
+use crate::domain::model::daimyo::Daimyo;
+use crate::domain::model::daimyo_personality::DaimyoPersonality;
 use crate::domain::repository::action_log_repository::ActionLogRepository;
 use crate::domain::repository::battle_repository::BattleRepository;
+use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
@@ -145,6 +148,34 @@ impl ActionLogRepository for MockActionLogRepository {
     }
 }
 
+struct MockDaimyoRepository {
+    daimyos: Mutex<HashMap<DaimyoId, Daimyo>>,
+}
+
+impl MockDaimyoRepository {
+    fn new() -> Self {
+        Self {
+            daimyos: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl DaimyoRepository for MockDaimyoRepository {
+    async fn find_by_id(&self, id: &DaimyoId) -> Result<Option<Daimyo>, DomainError> {
+        Ok(self.daimyos.lock().unwrap().get(id).cloned())
+    }
+
+    async fn save(&self, daimyo: &Daimyo) -> Result<(), DomainError> {
+        self.daimyos.lock().unwrap().insert(daimyo.id, daimyo.clone());
+        Ok(())
+    }
+
+    async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
+        Ok(self.daimyos.lock().unwrap().values().cloned().collect())
+    }
+}
+
 struct MockGameStateRepository {
     state: Mutex<GameState>,
 }
@@ -215,6 +246,7 @@ async fn test_domestic_sell_rice() {
 
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -256,6 +288,7 @@ async fn test_domestic_buy_rice() {
 
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -297,6 +330,7 @@ async fn test_domestic_recruit() {
 
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -342,6 +376,7 @@ async fn test_domestic_transport_success_when_adjacent() {
 
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -392,6 +427,7 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
     ).unwrap()).await.unwrap();
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -450,6 +486,7 @@ async fn test_battle_execution_success_when_adjacent() {
     ).unwrap()).await.unwrap();
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -510,6 +547,7 @@ async fn test_battle_execution_fails_when_not_adjacent() {
     ).unwrap()).await.unwrap();
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
@@ -555,6 +593,7 @@ async fn test_turn_validation_fails_on_wrong_turn() {
 
     let turn_progression = Arc::new(crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
         repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         state_repo.clone(),
         Arc::new(MockEventDispatcher),
         Arc::new(MockActionLogRepository),
