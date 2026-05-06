@@ -3,9 +3,8 @@ use crate::screen::{DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{Event, KeyEventKind};
 use engine::application::usecase::{
-    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
-    info_usecase::InfoUseCase, kuni_query_usecase::KuniQueryUseCase,
-    turn_progression_usecase::TurnProgressionUseCase,
+    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase, info_usecase::InfoUseCase,
+    kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
 use engine::domain::model::action_log::ActionLogEntry;
 use engine::domain::model::daimyo::Daimyo;

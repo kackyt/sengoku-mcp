@@ -77,7 +77,9 @@ impl GameState {
         match self.current_kuni_id() {
             Some(current) if current == kuni_id => Ok(()),
             Some(current) => Err(DomainError::NotYourTurn(current)),
-            None => Err(DomainError::ValidationError("Turn is already finished".to_string())),
+            None => Err(DomainError::ValidationError(
+                "Turn is already finished".to_string(),
+            )),
         }
     }
 }

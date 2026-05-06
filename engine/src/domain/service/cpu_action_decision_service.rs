@@ -73,7 +73,7 @@ impl CpuActionDecisionService {
             }
 
             let base_slope = Self::calculate_expected_slope(target_kuni, turn, atype, personality);
-            
+
             // ランダム性の適用
             // randomness=0.2 の場合、期待値に +/- 1.0 程度のノイズを加える
             let noise = if personality.randomness > 0.0 {
@@ -81,7 +81,7 @@ impl CpuActionDecisionService {
             } else {
                 0.0
             };
-            
+
             let slope = base_slope + noise;
 
             reasoning_lines.push(format!("{}: {:.2} (base: {:.2})", atype, slope, base_slope));
@@ -95,7 +95,10 @@ impl CpuActionDecisionService {
         if best_atype == "Rest" {
             return (
                 CpuActionDecision::Rest,
-                format!("現状維持が最適であると判断しました。解析結果: {}", reasoning_lines.join(", ")),
+                format!(
+                    "現状維持が最適であると判断しました。解析結果: {}",
+                    reasoning_lines.join(", ")
+                ),
             );
         }
 
@@ -202,7 +205,9 @@ impl CpuActionDecisionService {
         // 石高1単位(100)は平均32%の米を秋に生む
         let kokudaka_unit_slope = 0.32 * kome_slope * (fall_coef / 100.0) * INVESTMENT_HORIZON;
         // 人口1単位(100)は春に12%の金、秋に12%の米を生む
-        let jinko_unit_slope = (0.12 * kin_slope * (spring_coef / 100.0) + 0.12 * kome_slope * (fall_coef / 100.0)) * INVESTMENT_HORIZON;
+        let jinko_unit_slope = (0.12 * kin_slope * (spring_coef / 100.0)
+            + 0.12 * kome_slope * (fall_coef / 100.0))
+            * INVESTMENT_HORIZON;
 
         // 忠誠度の重み
         let mut tyu_base_val = 4.0;
@@ -320,19 +325,23 @@ mod tests {
 
     #[test]
     fn test_decide_develop_land_when_high_kin() {
-        let mut kuni = create_test_kuni(1000, 0, 100, 100);
+        let kuni = create_test_kuni(1000, 0, 100, 100);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
 
-        let (decision, reasoning) = CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+        let (decision, reasoning) =
+            CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
 
         match decision {
             CpuActionDecision::DevelopLand { amount, .. } => {
                 // 投入量がリソースの半分（500）付近であることを確認
                 assert!(amount.value() >= 300 && amount.value() <= 700);
             }
-            _ => panic!("Expected DevelopLand, but got {:?}. Reasoning: {}", decision, reasoning),
+            _ => panic!(
+                "Expected DevelopLand, but got {:?}. Reasoning: {}",
+                decision, reasoning
+            ),
         }
     }
 
@@ -343,7 +352,8 @@ mod tests {
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
 
-        let (decision, reason) = CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+        let (decision, reason) =
+            CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
         println!("Decision: {:?}, Reason: {}", decision, reason);
 
         assert!(matches!(decision, CpuActionDecision::Rest));
@@ -376,7 +386,7 @@ mod tests {
         let mut kuni = kuni;
         kuni.stats.tyu = Rate::new(60);
         kuni.resource.hei = Amount::new(500); // 兵も少し持たせる
-        
+
         let turn = TurnNumber::new(3); // 秋
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
@@ -385,14 +395,16 @@ mod tests {
             CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
 
         println!("Reasoning: {}", reasoning);
-        
+
         // 修正前は GiveCharity (勾配900超) が選ばれていたが、
         // 修正後は BuildTown (勾配480) などが選ばれるはず。
         // (Recruitは兵の評価係数200だと人口評価360に負けて負の勾配になるため、BuildTownが有力)
         match decision {
-            CpuActionDecision::BuildTown { .. } => {},
-            CpuActionDecision::SellRice { .. } => {}, // 金がもっと少なければこれもあり
-            CpuActionDecision::GiveCharity { .. } => panic!("Should NOT choose GiveCharity when loyalty is 60 and BuildTown is possible"),
+            CpuActionDecision::BuildTown { .. } => {}
+            CpuActionDecision::SellRice { .. } => {} // 金がもっと少なければこれもあり
+            CpuActionDecision::GiveCharity { .. } => {
+                panic!("Should NOT choose GiveCharity when loyalty is 60 and BuildTown is possible")
+            }
             _ => panic!("Expected productive action, but got {:?}", decision),
         }
     }
@@ -402,7 +414,7 @@ mod tests {
         // 忠誠度が95で、米が大量にある状態
         let mut kuni = create_test_kuni(0, 1000, 100, 100);
         kuni.stats.tyu = Rate::new(95);
-        
+
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
         let personality = DaimyoPersonality::default();
@@ -415,17 +427,21 @@ mod tests {
         if let CpuActionDecision::GiveCharity { amount, .. } = decision {
             // 忠誠度を5上げるのに必要な米は 5 / 0.75 = 6.66... -> 7〜8程度
             // 以前なら 1000/2 = 500 投じていたが、制限がかかっているはず
-            assert!(amount.value() < 20, "Amount {} is too large for gaining 5 loyalty", amount.value());
+            assert!(
+                amount.value() < 20,
+                "Amount {} is too large for gaining 5 loyalty",
+                amount.value()
+            );
         }
     }
 
     #[test]
     fn test_personality_bias_agriculture() {
         let kuni = create_test_kuni(1000, 0, 100, 100);
-        
+
         let turn = TurnNumber::new(1); // 夏（秋の収穫に近い）
         let mut rng = thread_rng();
-        
+
         // 農業バイアスを極端に高くする
         let personality = DaimyoPersonality::new(10.0, 0.1, 0.1, 0.0);
 
@@ -438,14 +454,15 @@ mod tests {
     #[test]
     fn test_personality_bias_commerce() {
         let kuni = create_test_kuni(1000, 0, 100, 100);
-        
+
         let turn = TurnNumber::new(4); // 冬（来春の収入に向けて）
         let mut rng = thread_rng();
-        
+
         // 商業バイアスを極端に高くする
         let personality = DaimyoPersonality::new(0.1, 10.0, 0.1, 0.0);
 
-        let (decision, reason) = CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
+        let (decision, reason) =
+            CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
         println!("Decision: {:?}, Reason: {}", decision, reason);
 
         // 商業重視なら町造り(BuildTown)を選ぶはず
@@ -457,7 +474,7 @@ mod tests {
         let kuni = create_test_kuni(1000, 1000, 100, 100);
         let turn = TurnNumber::new(1);
         let mut rng = thread_rng();
-        
+
         // 軍事バイアスを極端に高くする
         let personality = DaimyoPersonality::new(0.1, 0.1, 10.0, 0.0);
 

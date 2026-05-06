@@ -22,7 +22,8 @@ pub struct BattleUseCase {
     battle_repo: Arc<dyn BattleRepository>,
     action_log_repo: Arc<dyn ActionLogRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
-    turn_progression_usecase: Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
+    turn_progression_usecase:
+        Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
 }
 
 impl BattleUseCase {
@@ -33,7 +34,9 @@ impl BattleUseCase {
         battle_repo: Arc<dyn BattleRepository>,
         action_log_repo: Arc<dyn ActionLogRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
-        turn_progression_usecase: Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
+        turn_progression_usecase: Arc<
+            crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase,
+        >,
     ) -> Self {
         Self {
             kuni_repo,
@@ -46,12 +49,17 @@ impl BattleUseCase {
     }
 
     async fn validate_and_advance_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
-        let state = self.game_state_repo.get().await?
+        let state = self
+            .game_state_repo
+            .get()
+            .await?
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
-        
+
         state.check_turn(kuni_id)?;
-        
-        self.turn_progression_usecase.complete_current_action().await?;
+
+        self.turn_progression_usecase
+            .complete_current_action()
+            .await?;
         Ok(())
     }
 

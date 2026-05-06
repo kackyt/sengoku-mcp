@@ -62,7 +62,7 @@ mod tests {
 
         // 夏(2)開始時は定期イベント（人口増加・金・米）は発生しないはず
         let effects = service.process_start_turn_events(TurnNumber::new(2), &mut kuni);
-        
+
         // 定期イベントが含まれていないか確認
         assert!(!effects
             .iter()
@@ -85,7 +85,7 @@ mod tests {
         let service = SeasonalEventService::new();
 
         let effects = service.process_start_turn_events(TurnNumber::new(1), &mut kuni);
-        
+
         assert!(effects
             .iter()
             .any(|e| e.event_type == SeasonalEventType::GoldIncome));

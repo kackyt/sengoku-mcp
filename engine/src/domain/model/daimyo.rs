@@ -17,11 +17,7 @@ pub struct Daimyo {
 
 impl Daimyo {
     /// 新しい大名を作成します
-    pub fn new(
-        id: DaimyoId,
-        name: impl Into<String>,
-        personality: DaimyoPersonality,
-    ) -> Self {
+    pub fn new(id: DaimyoId, name: impl Into<String>, personality: DaimyoPersonality) -> Self {
         Self {
             id,
             name: DaimyoName(name.into()),
