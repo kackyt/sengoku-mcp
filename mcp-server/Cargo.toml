@@ -6,5 +6,9 @@ edition = "2021"
 [dependencies]
 engine = { path = "../engine" }
 infrastructure = { path = "../infrastructure" }
-tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "io-std"] }
 anyhow = "1.0"
+rmcp = { version = "1.6.0", features = ["server", "transport-io", "macros"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+schemars = "1.0"

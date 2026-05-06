@@ -17,18 +17,18 @@ use crate::domain::{
 use std::sync::Arc;
 
 pub struct TurnProgressionUseCase {
-    kuni_repo: Arc<dyn KuniRepository>,
-    game_state_repo: Arc<dyn GameStateRepository>,
-    event_dispatcher: Arc<dyn EventDispatcher>,
-    action_log_repo: Arc<dyn ActionLogRepository>,
+    kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
+    game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
+    event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
+    action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
 }
 
 impl TurnProgressionUseCase {
     pub fn new(
-        kuni_repo: Arc<dyn KuniRepository>,
-        game_state_repo: Arc<dyn GameStateRepository>,
-        event_dispatcher: Arc<dyn EventDispatcher>,
-        action_log_repo: Arc<dyn ActionLogRepository>,
+        kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
+        game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
+        event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
+        action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
     ) -> Self {
         Self {
             kuni_repo,
@@ -71,8 +71,10 @@ impl TurnProgressionUseCase {
             Some(s) => s,
             None => {
                 let kunis = self.kuni_repo.find_all().await?;
-                let mut rng = rand::thread_rng();
-                let order = TurnService::determine_action_order(&kunis, &mut rng);
+                let order = {
+                    let mut rng = rand::thread_rng();
+                    TurnService::determine_action_order(&kunis, &mut rng)
+                };
                 let initial_state =
                     GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))
                         .expect("valid state");
@@ -158,16 +160,17 @@ impl TurnProgressionUseCase {
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
         let daimyo_id = target_kuni.daimyo_id;
-
-        let mut rng = rand::thread_rng();
         let turn = self
             .game_state_repo
             .get()
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
-        let (decision, reasoning) =
-            CpuActionDecisionService::decide(daimyo_id, &target_kuni, turn, &mut rng);
+
+        let (decision, reasoning) = {
+            let mut rng = rand::thread_rng();
+            CpuActionDecisionService::decide(daimyo_id, &target_kuni, turn, &mut rng)
+        };
 
         let action_msg = match decision {
             CpuActionDecision::Battle {
@@ -246,8 +249,10 @@ impl TurnProgressionUseCase {
 
         // ターン開始時の季節イベント（洪水・疫病・反乱）を次のターン開始前に処理
         let mut kunis = self.kuni_repo.find_all().await?;
-        let mut rng = rand::thread_rng();
-        let new_order = TurnService::determine_action_order(&kunis, &mut rng);
+        let new_order = {
+            let mut rng = rand::thread_rng();
+            TurnService::determine_action_order(&kunis, &mut rng)
+        };
         state.start_new_turn(new_order);
         self.game_state_repo.save(&state).await?;
 
