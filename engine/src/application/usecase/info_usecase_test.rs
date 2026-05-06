@@ -150,13 +150,15 @@ mod tests {
         let result = info_usecase.get_other_countries_info(player_id).await.unwrap();
 
         assert_eq!(result.countries.len(), 1);
+        assert_eq!(result.countries[0].kuni_id, 10);
+        assert_eq!(result.countries[0].kuni_name, "敵国");
         assert_eq!(result.countries[0].daimyo_name, "敵大名");
         assert_eq!(result.countries[0].kin, DisplayAmount::new(1000));
         assert_eq!(result.countries[0].kome, DisplayAmount::new(1000));
         assert_eq!(result.countries[0].hei, DisplayAmount::new(500));
         assert_eq!(result.countries[0].kokudaka, DisplayAmount::new(200));
         assert_eq!(result.countries[0].towns, DisplayAmount::new(150));
-        assert_eq!(result.countries[0].tyu_avg, 80);
+        assert_eq!(result.countries[0].tyu, 80);
 
         let updated_state = game_state_repo.get().await.unwrap().unwrap();
         assert_eq!(updated_state.current_action_index().value(), 1);

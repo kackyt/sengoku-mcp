@@ -1,6 +1,6 @@
 use crate::application::dto::other_countries_info_dto::{CountryInfoDTO, OtherCountriesInfoDTO};
 use crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
-use crate::domain::model::value_objects::{DaimyoId, DisplayAmount};
+use crate::domain::model::value_objects::DaimyoId;
 use crate::domain::repository::{
     daimyo_repository::DaimyoRepository, game_state_repository::GameStateRepository,
     kuni_repository::KuniRepository,
@@ -48,46 +48,29 @@ impl InfoUseCase {
             return Err(anyhow::anyhow!("あなたの手番ではありません。現在の手番: {:?}", current_kuni.daimyo_id));
         }
 
-        // 2. 全ての大名と領地情報を取得して集計
-        let all_daimyos = self.daimyo_repo.find_all().await?;
+        // 2. 全ての国情報を取得して集計
+        let all_kunis = self.kuni_repo.find_all().await?;
         let mut country_infos = Vec::new();
-
-        for daimyo in all_daimyos {
-            // 自分の情報は含めない
-            if daimyo.id == daimyo_id {
+ 
+        for kuni in all_kunis {
+            // 自分（大名）の所有する国は含めない
+            if kuni.daimyo_id == daimyo_id {
                 continue;
             }
-
-            let kunis = self.kuni_repo.find_by_daimyo_id(&daimyo.id).await?;
-            if kunis.is_empty() {
-                continue;
-            }
-
-            let mut kome_total = 0;
-            let mut kin_total = 0;
-            let mut hei_total = 0;
-            let mut kokudaka_total = 0;
-            let mut machi_total = 0;
-            let mut tyu_sum = 0;
-
-            for kuni in &kunis {
-                kome_total += kuni.resource.kome.to_display().value();
-                kin_total += kuni.resource.kin.to_display().value();
-                hei_total += kuni.resource.hei.to_display().value();
-                kokudaka_total += kuni.stats.kokudaka.to_display().value();
-                machi_total += kuni.stats.machi.to_display().value();
-                tyu_sum += kuni.stats.tyu.value();
-            }
-
+ 
+            let daimyo = self.daimyo_repo.find_by_id(&kuni.daimyo_id).await?
+                .ok_or_else(|| anyhow::anyhow!("大名が見つかりません: {:?}", kuni.daimyo_id))?;
+ 
             country_infos.push(CountryInfoDTO {
-                daimyo_id: daimyo.id.value(),
+                kuni_id: kuni.id.0,
+                kuni_name: kuni.name.0.clone(),
                 daimyo_name: daimyo.name.0.clone(),
-                kome: DisplayAmount::new(kome_total),
-                kin: DisplayAmount::new(kin_total),
-                hei: DisplayAmount::new(hei_total),
-                kokudaka: DisplayAmount::new(kokudaka_total),
-                towns: DisplayAmount::new(machi_total),
-                tyu_avg: tyu_sum / kunis.len() as u32,
+                kome: kuni.resource.kome.to_display(),
+                kin: kuni.resource.kin.to_display(),
+                hei: kuni.resource.hei.to_display(),
+                kokudaka: kuni.stats.kokudaka.to_display(),
+                towns: kuni.stats.machi.to_display(),
+                tyu: kuni.stats.tyu.value(),
             });
         }
 

@@ -7,7 +7,8 @@ use crossterm::{
 };
 use engine::application::usecase::{
     battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
-    kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
+    info_usecase::InfoUseCase, kuni_query_usecase::KuniQueryUseCase,
+    turn_progression_usecase::TurnProgressionUseCase,
 };
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::{
@@ -163,12 +164,19 @@ async fn build_app() -> Result<App> {
         neighbor_repo.clone(),
         action_log_repo.clone(),
     );
+    let info_usecase = InfoUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        Arc::new(turn_progression_usecase.clone()),
+    );
 
     Ok(App::new(
         domestic_usecase,
         battle_usecase,
         turn_progression_usecase,
         kuni_query_usecase,
+        info_usecase,
     ))
 }
 

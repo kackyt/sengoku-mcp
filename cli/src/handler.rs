@@ -173,15 +173,44 @@ impl EventHandler {
                             };
                         }
                         DomesticCommand::Information => {
-                            app.screen = ScreenState::Domestic {
-                                selected_kuni: kuni_id,
-                                cursor,
-                                sub_state: DomesticSubState::ShowMessage {
-                                    message: "他国の情報を調査しました。時間を進めます。"
-                                        .to_string(),
-                                    next_state: Box::new(DomesticSubState::Normal),
-                                },
-                            };
+                            if let Some(daimyo_id) = app.selected_daimyo_id {
+                                match app.info_usecase.get_other_countries_info(daimyo_id).await {
+                                    Ok(info) => {
+                                        let mut msg = String::from("他国の情報を調査しました:\n");
+                                        for country in info.countries {
+                                            msg.push_str(&format!(
+                                                "- {} ({}): 米={}, 金={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
+                                                country.kuni_name,
+                                                country.daimyo_name,
+                                                country.kome,
+                                                country.kin,
+                                                country.hei,
+                                                country.kokudaka,
+                                                country.towns,
+                                                country.tyu
+                                            ));
+                                        }
+                                        app.screen = ScreenState::Domestic {
+                                            selected_kuni: kuni_id,
+                                            cursor,
+                                            sub_state: DomesticSubState::ShowMessage {
+                                                message: msg,
+                                                next_state: Box::new(DomesticSubState::Normal),
+                                            },
+                                        };
+                                    }
+                                    Err(e) => {
+                                        app.screen = ScreenState::Domestic {
+                                            selected_kuni: kuni_id,
+                                            cursor,
+                                            sub_state: DomesticSubState::ShowMessage {
+                                                message: format!("調査失敗: {}", e),
+                                                next_state: Box::new(DomesticSubState::Normal),
+                                            },
+                                        };
+                                    }
+                                }
+                            }
                         }
                         DomesticCommand::War => {
                             // 進行中の合戦があるか確認

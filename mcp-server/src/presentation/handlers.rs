@@ -76,14 +76,15 @@ impl McpHandlers {
         let mut result = String::from("他国の情報一覧:\n");
         for country in info.countries {
             result.push_str(&format!(
-                "- {}: 米={}, 金={}, 兵={}, 石高={}, 町={}, 忠誠度(平均)={}\n",
+                "- {} ({}): 米={}, 金={}, 兵={}, 石高={}, 町={}, 忠誠度={}\n",
+                country.kuni_name,
                 country.daimyo_name,
                 country.kome,
                 country.kin,
                 country.hei,
                 country.kokudaka,
                 country.towns,
-                country.tyu_avg
+                country.tyu
             ));
         }
         result.push_str("\n※このコマンドの実行により、手番を1つ消費しました。");

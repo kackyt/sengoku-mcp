@@ -16,6 +16,7 @@ use crate::domain::{
 };
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct TurnProgressionUseCase {
     kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
     game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
