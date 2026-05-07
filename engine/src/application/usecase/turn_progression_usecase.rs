@@ -3,11 +3,12 @@ use crate::domain::{
     model::{
         event::GameEvent,
         game_state::GameState,
-        value_objects::{ActionOrderIndex, DaimyoId, EventMessage, TurnNumber},
+        value_objects::{ActionOrderIndex, DaimyoId, EventMessage, KuniId, TurnNumber},
     },
     repository::{
-        action_log_repository::ActionLogRepository, event_dispatcher::EventDispatcher,
-        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, daimyo_repository::DaimyoRepository,
+        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
+        kuni_repository::KuniRepository,
     },
     service::{
         cpu_action_decision_service::{CpuActionDecision, CpuActionDecisionService},
@@ -16,22 +17,26 @@ use crate::domain::{
 };
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct TurnProgressionUseCase {
-    kuni_repo: Arc<dyn KuniRepository>,
-    game_state_repo: Arc<dyn GameStateRepository>,
-    event_dispatcher: Arc<dyn EventDispatcher>,
-    action_log_repo: Arc<dyn ActionLogRepository>,
+    kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
+    daimyo_repo: Arc<dyn DaimyoRepository + Send + Sync>,
+    game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
+    event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
+    action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
 }
 
 impl TurnProgressionUseCase {
     pub fn new(
-        kuni_repo: Arc<dyn KuniRepository>,
-        game_state_repo: Arc<dyn GameStateRepository>,
-        event_dispatcher: Arc<dyn EventDispatcher>,
-        action_log_repo: Arc<dyn ActionLogRepository>,
+        kuni_repo: Arc<dyn KuniRepository + Send + Sync>,
+        daimyo_repo: Arc<dyn DaimyoRepository + Send + Sync>,
+        game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
+        event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
+        action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
     ) -> Self {
         Self {
             kuni_repo,
+            daimyo_repo,
             game_state_repo,
             event_dispatcher,
             action_log_repo,
@@ -71,8 +76,10 @@ impl TurnProgressionUseCase {
             Some(s) => s,
             None => {
                 let kunis = self.kuni_repo.find_all().await?;
-                let mut rng = rand::thread_rng();
-                let order = TurnService::determine_action_order(&kunis, &mut rng);
+                let order = {
+                    let mut rng = rand::thread_rng();
+                    TurnService::determine_action_order(&kunis, &mut rng)
+                };
                 let initial_state =
                     GameState::new(TurnNumber::new(1), order, ActionOrderIndex::new(0))
                         .expect("valid state");
@@ -147,10 +154,31 @@ impl TurnProgressionUseCase {
         self.progress_until_player_turn(None).await
     }
 
-    async fn execute_cpu_action(
+    /// 指定した国のCPU行動を実行し、アクションを完了させます (原子的な実行)
+    pub async fn execute_cpu_action_and_advance(
+        &self,
+        kuni_id: KuniId,
+    ) -> Result<(), anyhow::Error> {
+        self.execute_cpu_action(kuni_id).await?;
+        self.complete_current_action().await?;
+        Ok(())
+    }
+
+    pub async fn execute_cpu_action(
         &self,
         kuni_id: crate::domain::model::value_objects::KuniId,
     ) -> Result<(), anyhow::Error> {
+        let mut state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+        // すでに行動済みの場合はスキップ (冪等性)
+        if state.is_action_performed() {
+            return Ok(());
+        }
+
         let mut target_kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -158,32 +186,26 @@ impl TurnProgressionUseCase {
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
         let daimyo_id = target_kuni.daimyo_id;
+        let turn = state.current_turn();
 
-        let mut rng = rand::thread_rng();
-        let decision = CpuActionDecisionService::decide(daimyo_id, &target_kuni, &mut rng);
+        let daimyo = self
+            .daimyo_repo
+            .find_by_id(&daimyo_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("大名が見つかりません: {:?}", daimyo_id))?;
+
+        let (decision, reasoning) = {
+            let mut rng = rand::thread_rng();
+            CpuActionDecisionService::decide(&daimyo.personality, &target_kuni, turn, &mut rng)
+        };
 
         let action_msg = match decision {
-            CpuActionDecision::DevelopLand { .. } | CpuActionDecision::BuildTown { .. } => {
-                match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(
-                    &mut target_kuni,
-                    decision,
-                ) {
-                    Ok(msg) => {
-                        self.kuni_repo.save(&target_kuni).await?;
-                        msg
-                    }
-                    Err(e) => {
-                        format!("自動内政に失敗しました: {:?}", e)
-                    }
-                }
-            }
             CpuActionDecision::Battle {
-                attacker_id,
                 target_kuni_id: Some(target_id),
             } => {
                 self.event_dispatcher
                     .dispatch(GameEvent::BattleAction {
-                        attacker_id,
+                        attacker_id: daimyo_id,
                         target_kuni_id: target_id,
                         result_message: EventMessage::new("戦争を行いました（自動）"),
                     })
@@ -194,7 +216,20 @@ impl TurnProgressionUseCase {
                 target_kuni_id: None,
                 ..
             } => "攻撃対象が不明なため待機しました".to_string(),
-            CpuActionDecision::Rest => "休息しました".to_string(),
+            _ => {
+                match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(
+                    &mut target_kuni,
+                    decision,
+                ) {
+                    Ok(msg) => {
+                        self.kuni_repo.save(&target_kuni).await?;
+                        msg
+                    }
+                    Err(e) => {
+                        format!("自動アクションに失敗しました: {:?}", e)
+                    }
+                }
+            }
         };
 
         self.event_dispatcher
@@ -217,8 +252,13 @@ impl TurnProgressionUseCase {
             ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
                 daimyo_id,
                 action_msg: action_msg.to_string(),
+                reasoning: Some(reasoning),
             }),
         ));
+
+        // 行動済みフラグを立てて保存
+        state.mark_action_performed();
+        self.game_state_repo.save(&state).await?;
 
         Ok(())
     }
@@ -226,21 +266,16 @@ impl TurnProgressionUseCase {
     async fn finish_turn(&self, mut state: GameState) -> Result<(), anyhow::Error> {
         let current_turn = state.current_turn();
 
-        // ターン終了時の季節イベント（人口増加・資源生成）を処理
-        let mut kunis = self.kuni_repo.find_all().await?;
-        let _end_effects = TurnService::process_end_turn_events(current_turn, &mut kunis);
-        for kuni in &kunis {
-            self.kuni_repo.save(kuni).await?;
-        }
-
         self.event_dispatcher
             .dispatch(GameEvent::SeasonPassed { turn: current_turn })
             .await?;
 
-        // ターン開始時の季節イベント（洪水・疫病・反乱）を次のターン開始前に処理
+        // ターン開始時の季節イベント（洪水・疫病・反乱・資源生成）を次のターン開始前に処理
         let mut kunis = self.kuni_repo.find_all().await?;
-        let mut rng = rand::thread_rng();
-        let new_order = TurnService::determine_action_order(&kunis, &mut rng);
+        let new_order = {
+            let mut rng = rand::thread_rng();
+            TurnService::determine_action_order(&kunis, &mut rng)
+        };
         state.start_new_turn(new_order);
         self.game_state_repo.save(&state).await?;
 

@@ -1,7 +1,101 @@
 mod presentation;
 
+extern crate rmcp;
+
+use crate::presentation::handlers::McpHandlers;
+use engine::application::usecase::battle_usecase::BattleUseCase;
+use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
+use engine::application::usecase::domestic_usecase::DomesticUseCase;
+use engine::application::usecase::info_usecase::InfoUseCase;
+use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
+use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
+use infrastructure::master_data::MasterDataLoader;
+use infrastructure::persistence::{
+    InMemoryActionLogRepository, InMemoryBattleRepository, InMemoryDaimyoRepository,
+    InMemoryEventDispatcher, InMemoryGameStateRepository, InMemoryKuniRepository,
+    InMemoryNeighborRepository,
+};
+use rmcp::ServiceExt;
+use std::sync::Arc;
+use tokio::io::{stdin, stdout};
+
 #[tokio::main]
-async fn main() {
-    println!("Sengoku MCP Server starting...");
-    // TODO: Initialize repository, usecase, and start MCP server
+async fn main() -> anyhow::Result<()> {
+    // リポジトリの構築
+    let kuni_repo = Arc::new(InMemoryKuniRepository::new());
+    let daimyo_repo = Arc::new(InMemoryDaimyoRepository::new());
+    let game_state_repo = Arc::new(InMemoryGameStateRepository::new());
+    let event_dispatcher = Arc::new(InMemoryEventDispatcher::new());
+    let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
+    let battle_repo = Arc::new(InMemoryBattleRepository::new());
+    let action_log_repo = Arc::new(InMemoryActionLogRepository::new());
+
+    // マスターデータのロード
+    let bundle = MasterDataLoader::load()?;
+    kuni_repo.init_with_data(bundle.kunis).await;
+    daimyo_repo.init_with_data(bundle.daimyos).await;
+    neighbor_repo.init_with_data(bundle.adjacency_map);
+
+    // ユースケースの構築
+    let turn_progression_usecase = Arc::new(TurnProgressionUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        event_dispatcher.clone(),
+        action_log_repo.clone(),
+    ));
+
+    let domestic_usecase = Arc::new(DomesticUseCase::new(
+        kuni_repo.clone(),
+        neighbor_repo.clone(),
+        action_log_repo.clone(),
+        game_state_repo.clone(),
+        turn_progression_usecase.clone(),
+    ));
+
+    let battle_usecase = Arc::new(BattleUseCase::new(
+        kuni_repo.clone(),
+        neighbor_repo.clone(),
+        battle_repo.clone(),
+        action_log_repo.clone(),
+        game_state_repo.clone(),
+        turn_progression_usecase.clone(),
+    ));
+
+    let kuni_query_usecase = Arc::new(KuniQueryUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        neighbor_repo.clone(),
+        action_log_repo.clone(),
+    ));
+
+    let info_usecase = Arc::new(InfoUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        turn_progression_usecase.clone(),
+    ));
+
+    let daimyo_query_usecase = Arc::new(DaimyoQueryUseCase::new(daimyo_repo.clone()));
+
+    let handlers = McpHandlers::new(
+        turn_progression_usecase,
+        domestic_usecase,
+        battle_usecase,
+        kuni_query_usecase,
+        info_usecase,
+        daimyo_query_usecase,
+    );
+
+    // Build the transport (stdio)
+    let transport = (stdin(), stdout());
+
+    // Initialize and start the server
+    let server = handlers.serve(transport).await?;
+
+    // Wait for the server to finish
+    server.waiting().await?;
+
+    Ok(())
 }

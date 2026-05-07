@@ -6,7 +6,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use engine::application::usecase::{
-    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
+    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase, info_usecase::InfoUseCase,
     kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
 use infrastructure::master_data::MasterDataLoader;
@@ -97,51 +97,28 @@ async fn build_app() -> Result<App> {
     let action_log_repo = Arc::new(InMemoryActionLogRepository::new());
 
     // マスターデータのロードと初期化
-    let base_dir = if let Ok(env_path) = std::env::var("SENGOKU_MASTER_DATA") {
-        std::path::PathBuf::from(env_path)
-    } else {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let dev_path = manifest_dir.join("../static/master_data");
-
-        let exe_path = std::env::current_exe().ok();
-        let exe_dir = exe_path.as_ref().and_then(|p| p.parent());
-        let rel_path = exe_dir.map(|d| d.join("static/master_data"));
-
-        if dev_path.exists() {
-            dev_path
-        } else if let Some(path) = rel_path.filter(|p| p.exists()) {
-            path
-        } else {
-            let cwd_path = std::path::PathBuf::from("static/master_data");
-            if cwd_path.exists() {
-                cwd_path
-            } else {
-                anyhow::bail!(
-                    "マスターデータが見つかりません。\n\
-                    探索したパス:\n\
-                    1. (env) SENGOKU_MASTER_DATA\n\
-                    2. (dev) {:?}\n\
-                    3. (rel) {:?}\n\
-                    4. (cwd) static/master_data",
-                    dev_path,
-                    exe_dir.map(|d| d.join("static/master_data"))
-                );
-            }
-        }
-    };
-
-    let bundle = MasterDataLoader::load(&base_dir)?;
+    let bundle = MasterDataLoader::load()?;
 
     kuni_repo.init_with_data(bundle.kunis).await;
     daimyo_repo.init_with_data(bundle.daimyos).await;
     neighbor_repo.init_with_data(bundle.adjacency_map);
 
     // ユースケースの構築
+    let turn_progression_usecase = TurnProgressionUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        event_dispatcher.clone(),
+        action_log_repo.clone(),
+    );
+    let turn_progression_arc = Arc::new(turn_progression_usecase.clone());
+
     let domestic_usecase = DomesticUseCase::new(
         kuni_repo.clone(),
         neighbor_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
+        turn_progression_arc.clone(),
     );
     let battle_usecase = BattleUseCase::new(
         kuni_repo.clone(),
@@ -149,12 +126,7 @@ async fn build_app() -> Result<App> {
         battle_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
-    );
-    let turn_progression_usecase = TurnProgressionUseCase::new(
-        kuni_repo.clone(),
-        game_state_repo.clone(),
-        event_dispatcher.clone(),
-        action_log_repo.clone(),
+        turn_progression_arc.clone(),
     );
     let kuni_query_usecase = KuniQueryUseCase::new(
         kuni_repo.clone(),
@@ -163,12 +135,19 @@ async fn build_app() -> Result<App> {
         neighbor_repo.clone(),
         action_log_repo.clone(),
     );
+    let info_usecase = InfoUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        turn_progression_arc.clone(),
+    );
 
     Ok(App::new(
         domestic_usecase,
         battle_usecase,
         turn_progression_usecase,
         kuni_query_usecase,
+        info_usecase,
     ))
 }
 

@@ -489,7 +489,7 @@ fn render_war_input_modal(f: &mut Frame, title: &str, input: &str) {
 }
 
 fn render_message_modal(f: &mut Frame, message: &str) {
-    let area = centered_rect(60, 20, f.area());
+    let area = centered_rect(80, 80, f.area());
     f.render_widget(Clear, area);
 
     let p = Paragraph::new(message)

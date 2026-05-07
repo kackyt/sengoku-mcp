@@ -3,12 +3,14 @@ use crate::application::usecase::domestic_usecase::DomesticUseCase;
 use crate::domain::error::DomainError;
 use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use crate::domain::model::battle::{Tactic, WarStatus};
+use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::game_state::GameState;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::resource::{DevelopmentStats, Resource};
 use crate::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId};
 use crate::domain::repository::action_log_repository::ActionLogRepository;
 use crate::domain::repository::battle_repository::BattleRepository;
+use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
@@ -145,6 +147,37 @@ impl ActionLogRepository for MockActionLogRepository {
     }
 }
 
+struct MockDaimyoRepository {
+    daimyos: Mutex<HashMap<DaimyoId, Daimyo>>,
+}
+
+impl MockDaimyoRepository {
+    fn new() -> Self {
+        Self {
+            daimyos: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl DaimyoRepository for MockDaimyoRepository {
+    async fn find_by_id(&self, id: &DaimyoId) -> Result<Option<Daimyo>, DomainError> {
+        Ok(self.daimyos.lock().unwrap().get(id).cloned())
+    }
+
+    async fn save(&self, daimyo: &Daimyo) -> Result<(), DomainError> {
+        self.daimyos
+            .lock()
+            .unwrap()
+            .insert(daimyo.id, daimyo.clone());
+        Ok(())
+    }
+
+    async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
+        Ok(self.daimyos.lock().unwrap().values().cloned().collect())
+    }
+}
+
 struct MockGameStateRepository {
     state: Mutex<GameState>,
 }
@@ -174,6 +207,17 @@ impl GameStateRepository for MockGameStateRepository {
     }
 }
 
+struct MockEventDispatcher;
+#[async_trait]
+impl crate::domain::repository::event_dispatcher::EventDispatcher for MockEventDispatcher {
+    async fn dispatch(
+        &self,
+        _event: crate::domain::model::event::GameEvent,
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
+}
+
 // --- テストデータ作成ヘルパー ---
 
 fn create_test_kuni(id: u32) -> Kuni {
@@ -182,7 +226,7 @@ fn create_test_kuni(id: u32) -> Kuni {
         KuniId(id),
         format!("TestKuni-{}", id),
         daimyo_id,
-        Resource::new(1000 * 100, 1000 * 100, 1000 * 100, 1000 * 100),
+        Resource::new(1000 * 100, 100 * 100, 1000 * 100, 1000 * 100),
         DevelopmentStats::new(100 * 100, 100 * 100, 60),
         IninFlag(false),
     )
@@ -198,11 +242,35 @@ async fn test_domestic_sell_rice() {
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![kuni_id, crate::domain::model::value_objects::KuniId(999)],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = DomesticUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
     usecase
         .sell_rice(kuni_id, DisplayAmount::new(1))
@@ -224,11 +292,35 @@ async fn test_domestic_buy_rice() {
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![kuni_id, crate::domain::model::value_objects::KuniId(999)],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = DomesticUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
     usecase
         .buy_rice(kuni_id, DisplayAmount::new(1))
@@ -250,11 +342,35 @@ async fn test_domestic_recruit() {
     let kuni_id = kuni.id;
     repo.setup(kuni);
 
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![kuni_id, crate::domain::model::value_objects::KuniId(999)],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = DomesticUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
     usecase
         .recruit(kuni_id, DisplayAmount::new(1))
@@ -262,7 +378,7 @@ async fn test_domestic_recruit() {
         .expect("徴募成功");
 
     let updated = repo.find_by_id(&kuni_id).await.unwrap().unwrap();
-    assert_eq!(updated.resource.hei.value(), 100100);
+    assert_eq!(updated.resource.hei.value(), 10100);
     assert_eq!(updated.resource.jinko.value(), 99900); // 100000 - 100
 }
 
@@ -280,11 +396,35 @@ async fn test_domestic_transport_success_when_adjacent() {
     mock_neighbor.add_neighbor(from_id, to_id);
 
     let neighbor_repo = Arc::new(mock_neighbor);
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![from_id, crate::domain::model::value_objects::KuniId(999)],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = DomesticUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
 
     let res = usecase
@@ -316,11 +456,34 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
     repo.setup(from_kuni);
     repo.setup(to_kuni);
 
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![from_id, crate::domain::model::value_objects::KuniId(999)],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = DomesticUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
     let res = usecase
         .transport(
@@ -360,14 +523,40 @@ async fn test_battle_execution_success_when_adjacent() {
     let neighbor_repo = Arc::new(mock_neighbor);
     let battle_repo = Arc::new(MockBattleRepository::new());
 
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![
+                    attacker_id,
+                    crate::domain::model::value_objects::KuniId(999),
+                ],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = BattleUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
-    let initial_status = usecase
+    let _initial_status = usecase
         .start_war(
             attacker_id,
             defender_id,
@@ -377,8 +566,18 @@ async fn test_battle_execution_success_when_adjacent() {
         .await
         .expect("合戦開始成功");
 
+    // start_war で手番が進むため、テスト用に手番を戻す
+    let mut state = state_repo.get().await.unwrap().unwrap();
+    state = GameState::new(
+        state.current_turn(),
+        state.action_order().to_vec(),
+        crate::domain::model::value_objects::ActionOrderIndex::new(0),
+    )
+    .unwrap();
+    state_repo.save(&state).await.unwrap();
+
     let result = usecase
-        .execute_battle_turn(initial_status, Tactic::Normal)
+        .execute_battle_turn(attacker_id, Tactic::Normal)
         .await
         .expect("合戦成功");
 
@@ -386,7 +585,7 @@ async fn test_battle_execution_success_when_adjacent() {
     let updated_attacker = repo.find_by_id(&attacker_id).await.unwrap().unwrap();
 
     // 出陣した分、本国の兵力が減っていることを確認 (1000 - 5 = 995)
-    assert_eq!(updated_attacker.resource.hei.to_display().value(), 995);
+    assert_eq!(updated_attacker.resource.hei.to_display().value(), 95);
     // 戦場の兵力は 500 以下（ダメージを受けている可能性があるため）
     assert!(result.attacker.hei.value() <= 500); // 500 = 5 * INTERNAL_SCALE
                                                  // 防御側の状態が変化していることを確認（兵力減少、または鼓舞による士気向上）
@@ -406,12 +605,38 @@ async fn test_battle_execution_fails_when_not_adjacent() {
     repo.setup(defender);
 
     let battle_repo = Arc::new(MockBattleRepository::new());
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![
+                    attacker_id,
+                    crate::domain::model::value_objects::KuniId(999),
+                ],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
     let usecase = BattleUseCase::new(
         repo.clone(),
         neighbor_repo.clone(),
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
-        Arc::new(MockGameStateRepository::new()),
+        state_repo.clone(),
+        turn_progression,
     );
     let result = usecase
         .start_war(
@@ -425,4 +650,53 @@ async fn test_battle_execution_fails_when_not_adjacent() {
     assert!(result.is_err());
     let err_str = result.unwrap_err().to_string();
     assert!(err_str.contains("隣接していません"));
+}
+
+#[tokio::test]
+async fn test_turn_validation_fails_on_wrong_turn() {
+    let repo = Arc::new(MockKuniRepository::new());
+    let kuni1 = create_test_kuni(1);
+    let kuni2 = create_test_kuni(2);
+    repo.setup(kuni1.clone());
+    repo.setup(kuni2.clone());
+
+    let state_repo = Arc::new(MockGameStateRepository::new());
+    // 手番を国2に設定
+    state_repo
+        .save(
+            &GameState::new(
+                crate::domain::model::value_objects::TurnNumber::new(1),
+                vec![kuni2.id, kuni1.id],
+                crate::domain::model::value_objects::ActionOrderIndex::new(0),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let turn_progression = Arc::new(
+        crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
+            repo.clone(),
+            Arc::new(MockDaimyoRepository::new()),
+            state_repo.clone(),
+            Arc::new(MockEventDispatcher),
+            Arc::new(MockActionLogRepository),
+        ),
+    );
+
+    let usecase = DomesticUseCase::new(
+        repo.clone(),
+        Arc::new(MockNeighborRepository::new()),
+        Arc::new(MockActionLogRepository),
+        state_repo.clone(),
+        turn_progression,
+    );
+
+    // 国1が行動しようとするとエラーになるはず
+    let res = usecase.sell_rice(kuni1.id, DisplayAmount::new(1)).await;
+    assert!(res.is_err());
+    assert!(res
+        .unwrap_err()
+        .to_string()
+        .contains("現在の手番ではありません"));
 }

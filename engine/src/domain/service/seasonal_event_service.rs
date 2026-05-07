@@ -43,17 +43,7 @@ impl SeasonalEventService {
             }
         }
 
-        effects
-    }
-
-    /// ターン終了時に発生する定期イベント（資源生成・人口増加）を処理します
-    pub fn process_end_turn_events(
-        &self,
-        turn: TurnNumber,
-        kuni: &mut Kuni,
-    ) -> Vec<SeasonalEventEffect> {
-        let mut effects = Vec::new();
-        let season = turn.season();
+        // --- 資源生成・人口増加 (定期イベント) ---
 
         // 人口増加 (Population Growth): 春 (season == 0)
         if season == 0 {
@@ -70,6 +60,16 @@ impl SeasonalEventService {
         }
 
         effects
+    }
+
+    /// ターン終了時に発生する定期イベント（資源生成・人口増加）を処理します
+    pub fn process_end_turn_events(
+        &self,
+        _turn: TurnNumber,
+        _kuni: &mut Kuni,
+    ) -> Vec<SeasonalEventEffect> {
+        // 現在、ターン終了時に発生するイベントはありません
+        Vec::new()
     }
 
     // --- 各イベントの詳細ロジック ---

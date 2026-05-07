@@ -3,7 +3,7 @@ use crate::screen::{DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{Event, KeyEventKind};
 use engine::application::usecase::{
-    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
+    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase, info_usecase::InfoUseCase,
     kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
 use engine::domain::model::action_log::ActionLogEntry;
@@ -21,6 +21,7 @@ pub struct App {
     pub battle_usecase: BattleUseCase,
     pub turn_progression_usecase: TurnProgressionUseCase,
     pub kuni_query_usecase: KuniQueryUseCase,
+    pub info_usecase: InfoUseCase,
 
     // UI Cache
     pub current_kuni: Option<Kuni>,
@@ -42,6 +43,7 @@ impl App {
         battle_usecase: BattleUseCase,
         turn_progression_usecase: TurnProgressionUseCase,
         kuni_query_usecase: KuniQueryUseCase,
+        info_usecase: InfoUseCase,
     ) -> Self {
         Self {
             screen: ScreenState::Title,
@@ -50,6 +52,7 @@ impl App {
             battle_usecase,
             turn_progression_usecase,
             kuni_query_usecase,
+            info_usecase,
             current_kuni: None,
             current_daimyo: None,
             all_daimyos: Vec::new(),

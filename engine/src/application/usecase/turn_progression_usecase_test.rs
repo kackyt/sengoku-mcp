@@ -5,6 +5,7 @@ mod tests {
     use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
     use crate::domain::model::{
         daimyo::Daimyo,
+        daimyo_personality::DaimyoPersonality,
         event::GameEvent,
         game_state::GameState,
         kuni::Kuni,
@@ -151,8 +152,8 @@ mod tests {
 
     // --- Helpers ---
 
-    fn create_test_daimyo(name: &str) -> Daimyo {
-        Daimyo::new(DaimyoId(1), name)
+    fn create_test_daimyo(id: u32, name: &str) -> Daimyo {
+        Daimyo::new(DaimyoId(id), name, DaimyoPersonality::default())
     }
 
     fn create_test_kuni(id: u32, daimyo_id: DaimyoId) -> Kuni {
@@ -171,12 +172,15 @@ mod tests {
     #[tokio::test]
     async fn test_full_turn_progression() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
-        let _daimyo_repo = Arc::new(MockDaimyoRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
-        let daimyo1 = create_test_daimyo("織田信長");
-        let daimyo2 = Daimyo::new(DaimyoId(2), "武田信玄");
+        let daimyo1 = create_test_daimyo(1, "織田信長");
+        let daimyo2 = Daimyo::new(DaimyoId(2), "武田信玄", DaimyoPersonality::default());
+
+        daimyo_repo.save(&daimyo1).await.unwrap();
+        daimyo_repo.save(&daimyo2).await.unwrap();
 
         let kuni1 = create_test_kuni(1, daimyo1.id);
         let kuni2 = Kuni::new(
@@ -193,6 +197,7 @@ mod tests {
 
         let usecase = TurnProgressionUseCase::new(
             kuni_repo.clone(),
+            daimyo_repo.clone(),
             state_repo.clone(),
             event_dispatcher.clone(),
             Arc::new(MockActionLogRepository),
@@ -239,11 +244,15 @@ mod tests {
     #[tokio::test]
     async fn test_complete_current_action_save() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
-        let daimyo1 = create_test_daimyo("大名1");
-        let daimyo2 = create_test_daimyo("大名2");
+        let daimyo1 = create_test_daimyo(1, "大名1");
+        let daimyo2 = create_test_daimyo(2, "大名2");
+
+        daimyo_repo.save(&daimyo1).await.unwrap();
+        daimyo_repo.save(&daimyo2).await.unwrap();
         let kuni1 = create_test_kuni(1, daimyo1.id);
         let kuni2 = create_test_kuni(2, daimyo2.id);
         kuni_repo.setup(kuni1.clone()).await;
@@ -251,6 +260,7 @@ mod tests {
 
         let usecase = TurnProgressionUseCase::new(
             kuni_repo,
+            daimyo_repo.clone(),
             state_repo.clone(),
             event_dispatcher,
             Arc::new(MockActionLogRepository),
@@ -276,15 +286,18 @@ mod tests {
     #[tokio::test]
     async fn test_complete_current_action_finish_turn() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
-        let daimyo1 = create_test_daimyo("大名1");
+        let daimyo1 = create_test_daimyo(1, "大名1");
+        daimyo_repo.save(&daimyo1).await.unwrap();
         let kuni1 = create_test_kuni(1, daimyo1.id);
         kuni_repo.setup(kuni1.clone()).await;
 
         let usecase = TurnProgressionUseCase::new(
             kuni_repo,
+            daimyo_repo,
             state_repo.clone(),
             event_dispatcher.clone(),
             Arc::new(MockActionLogRepository),
@@ -313,11 +326,15 @@ mod tests {
     #[tokio::test]
     async fn test_progress_until_player_turn_success() {
         let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
         let state_repo = Arc::new(MockGameStateRepository::new());
         let event_dispatcher = Arc::new(MockEventDispatcher::new());
 
-        let daimyo1 = create_test_daimyo("プレイヤー");
-        let daimyo_cpu = Daimyo::new(DaimyoId(2), "CPU");
+        let daimyo1 = create_test_daimyo(1, "プレイヤー");
+        let daimyo_cpu = Daimyo::new(DaimyoId(2), "CPU", DaimyoPersonality::default());
+
+        daimyo_repo.save(&daimyo1).await.unwrap();
+        daimyo_repo.save(&daimyo_cpu).await.unwrap();
         let kuni1 = create_test_kuni(1, daimyo1.id);
         let kuni_cpu = Kuni::new(
             KuniId(2),
@@ -332,6 +349,7 @@ mod tests {
 
         let usecase = TurnProgressionUseCase::new(
             kuni_repo,
+            daimyo_repo.clone(),
             state_repo.clone(),
             event_dispatcher,
             Arc::new(MockActionLogRepository),

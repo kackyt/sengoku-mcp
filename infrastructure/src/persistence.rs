@@ -12,6 +12,7 @@ use engine::domain::repository::event_dispatcher::EventDispatcher;
 use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::repository::kuni_repository::KuniRepository;
 use engine::domain::repository::neighbor_repository::NeighborRepository;
+pub use in_memory_action_log_repository::InMemoryActionLogRepository;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::ops::{AddAssign, SubAssign};
+use std::ops::{Add, AddAssign, Sub, SubAssign};
 
 /// 表示用の金額、人数、量などを表す単位（整数）。
 #[derive(
@@ -28,6 +28,40 @@ impl DisplayAmount {
 
     pub fn value(&self) -> u32 {
         self.0
+    }
+
+    pub fn add(&self, other: DisplayAmount) -> Self {
+        *self + other
+    }
+
+    pub fn sub(&self, other: DisplayAmount) -> Self {
+        *self - other
+    }
+}
+
+impl Add for DisplayAmount {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
+
+impl Sub for DisplayAmount {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
+impl AddAssign for DisplayAmount {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
+    }
+}
+
+impl SubAssign for DisplayAmount {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = *self - rhs;
     }
 }
 
@@ -73,11 +107,11 @@ impl Amount {
     }
 
     pub fn add(&self, other: Amount) -> Self {
-        Self(self.0.saturating_add(other.0))
+        *self + other
     }
 
     pub fn sub(&self, other: Amount) -> Self {
-        Self(self.0.saturating_sub(other.0))
+        *self - other
     }
 
     pub fn mul_percent(&self, percent: u32) -> Self {
@@ -85,15 +119,29 @@ impl Amount {
     }
 }
 
+impl Add for Amount {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
+
+impl Sub for Amount {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
 impl AddAssign for Amount {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.saturating_add(rhs.0);
+        *self = *self + rhs;
     }
 }
 
 impl SubAssign for Amount {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.saturating_sub(rhs.0);
+        *self = *self - rhs;
     }
 }
 
@@ -119,23 +167,42 @@ impl Rate {
     }
 
     pub fn add(&self, other: Rate) -> Self {
-        Self((self.0 + other.0).min(100))
+        *self + other
     }
 
     pub fn sub(&self, other: Rate) -> Self {
-        Self(self.0.saturating_sub(other.0))
+        *self - other
+    }
+
+    /// 内部単位の Amount に変換します
+    pub fn to_internal(&self) -> Amount {
+        Amount(self.0 * INTERNAL_SCALE)
+    }
+}
+
+impl Add for Rate {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self((self.0 + rhs.0).min(100))
+    }
+}
+
+impl Sub for Rate {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 
 impl AddAssign for Rate {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 = (self.0 + rhs.0).min(100);
+        *self = *self + rhs;
     }
 }
 
 impl SubAssign for Rate {
     fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.saturating_sub(rhs.0);
+        *self = *self - rhs;
     }
 }
 
@@ -227,6 +294,12 @@ impl TurnNumber {
     /// 季節を取得します (0: 春, 1: 夏, 2: 秋, 3: 冬)
     pub fn season(&self) -> u32 {
         (self.0.saturating_sub(1)) % 4
+    }
+
+    // とある季節が来るまでのターン数を返します（単位はターン）
+    pub fn turns_until_season(&self, target_season: u32) -> u32 {
+        let current_season = self.season();
+        (target_season + 4 - current_season) % 4
     }
 }
 

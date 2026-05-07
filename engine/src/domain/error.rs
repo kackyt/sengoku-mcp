@@ -26,4 +26,8 @@ pub enum DomainError {
     /// 隣接していない操作を行った場合のエラー
     #[error("対象は隣接していません")]
     NotAdjacent,
+
+    /// 現在の手番ではない場合のエラー
+    #[error("現在の手番ではありません（現在の手番の国: {0:?}）")]
+    NotYourTurn(crate::domain::model::value_objects::KuniId),
 }
