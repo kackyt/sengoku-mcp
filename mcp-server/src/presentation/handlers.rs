@@ -358,7 +358,9 @@ impl McpHandlers {
         }): Parameters<TransportParams>,
     ) -> Result<String, String> {
         let from_id = KuniId::new(from_kuni_id);
+        let to_id = KuniId::new(to_kuni_id);
         self.check_kuni_ownership(from_id).await?;
+        self.check_kuni_ownership(to_id).await?;
 
         self.domestic_usecase
             .transport(
@@ -516,6 +518,7 @@ impl McpHandlers {
     }
 
     /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します
+    #[cfg(debug_assertions)]
     #[tool(description = "デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。")]
     pub async fn get_internal_logs(&self) -> Result<String, String> {
         let logs = self

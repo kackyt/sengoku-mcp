@@ -10,6 +10,8 @@ pub struct GameState {
     action_order: Vec<KuniId>,
     /// 現在行動中の国のインデックス（`action_order`のインデックス）
     current_action_index: ActionOrderIndex,
+    /// 現在のインデックスにおいて、既に行動（内政や合戦）が実行されたか
+    action_performed: bool,
 }
 
 impl GameState {
@@ -28,7 +30,23 @@ impl GameState {
             current_turn,
             action_order,
             current_action_index,
+            action_performed: false,
         })
+    }
+
+    /// 明示的に action_performed を指定して生成（テストや永続化からの復元用）
+    pub fn with_action_performed(
+        current_turn: TurnNumber,
+        action_order: Vec<KuniId>,
+        current_action_index: ActionOrderIndex,
+        action_performed: bool,
+    ) -> Self {
+        Self {
+            current_turn,
+            action_order,
+            current_action_index,
+            action_performed,
+        }
     }
 
     pub fn current_turn(&self) -> TurnNumber {
@@ -52,12 +70,23 @@ impl GameState {
     }
 
     /// 次の行動国に進みます。
-    /// すでに最後の国だった場合、インデックスは要素数と同じになり、`current_kuni_id` は `None` を返します。
+    /// 行動済みフラグをリセットします。
     pub fn advance_action(&mut self) {
         if self.current_action_index.value() < self.action_order.len() {
             self.current_action_index =
                 ActionOrderIndex::new(self.current_action_index.value() + 1);
+            self.action_performed = false;
         }
+    }
+
+    /// 現在の行動が完了したことをマークします。
+    pub fn mark_action_performed(&mut self) {
+        self.action_performed = true;
+    }
+
+    /// 現在の行動が既に実行済みかを確認します。
+    pub fn is_action_performed(&self) -> bool {
+        self.action_performed
     }
 
     /// ターン内のすべての大名が行動を完了したかを判定します。
@@ -70,6 +99,7 @@ impl GameState {
         self.current_turn = TurnNumber::new(self.current_turn.value() + 1);
         self.action_order = new_order;
         self.current_action_index = ActionOrderIndex::new(0);
+        self.action_performed = false;
     }
 
     /// 指定された国IDが現在の手番であるかを確認します。

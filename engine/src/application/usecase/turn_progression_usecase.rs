@@ -168,6 +168,17 @@ impl TurnProgressionUseCase {
         &self,
         kuni_id: crate::domain::model::value_objects::KuniId,
     ) -> Result<(), anyhow::Error> {
+        let mut state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+        // すでに行動済みの場合はスキップ (冪等性)
+        if state.is_action_performed() {
+            return Ok(());
+        }
+
         let mut target_kuni = self
             .kuni_repo
             .find_by_id(&kuni_id)
@@ -175,12 +186,7 @@ impl TurnProgressionUseCase {
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
         let daimyo_id = target_kuni.daimyo_id;
-        let turn = self
-            .game_state_repo
-            .get()
-            .await?
-            .map(|s| s.current_turn())
-            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let turn = state.current_turn();
 
         let daimyo = self
             .daimyo_repo
@@ -249,6 +255,10 @@ impl TurnProgressionUseCase {
                 reasoning: Some(reasoning),
             }),
         ));
+
+        // 行動済みフラグを立てて保存
+        state.mark_action_performed();
+        self.game_state_repo.save(&state).await?;
 
         Ok(())
     }
