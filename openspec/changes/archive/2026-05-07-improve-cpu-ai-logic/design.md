@@ -17,15 +17,22 @@
 
 ## Decisions
 
-### 1. AI意思決定ロジック (Scoring System)
-`CpuActionDecisionService` に `KuniRepository` と `NeighborRepository` を注入（または `decide` メソッドに近隣データリストを渡す）するように変更します。
+### 1. AI意思決定ロジック (Scoring System: Linear Slope Optimization)
+`CpuActionDecisionService` において、各アクションの「1単位あたりの期待利益（勾配/Slope）」を計算し、最も勾配が高いアクションを選択する線形最適化モデルを採用します。
 
-各ターンのスコアリング計算：
-- **Defense Score**: `自軍兵力 / MAX(隣接敵国の兵力)`. 1.2未満で「雇用」の重みを最大化。
-- **Offense Score**: `自軍兵力 / MIN(隣接敵国の兵力)`. 1.5以上かつ資源十分で「戦争」の重みを増加。
-- **Economy Score**: 維持費に対する資源残量。不足分に応じて「開発」「米売り買い」を重み付け。
+スコアリングの構成要素：
+- **期待利得（Slope）の計算**:
+  - `DevelopLand` / `BuildTown`: 将来（15年分）の金・米収入を現在の資源価値に換算して勾配を算出。
+  - `Recruit`: 安全保障上の必要性（自軍兵力が人口の10%未満等）に応じたボーナス係数。
+  - `GiveCharity`: 忠誠度が低い（40未満）時の緊急回避ボーナス。
+- **資源価値の動的変動**:
+  - 資源（金・米）を保有するほど、その1単位あたりの価値（勾配）を減衰させ、投資効率の高いアクションへのシフトを促す。
+- **大名の性格（DaimyoPersonality）による補正**:
+  - `agriculture_bias`, `commerce_bias`, `military_bias` を勾配に乗算し、大名ごとの行動傾向（引きこもり農家、軍国主義、重商主義など）を表現。
+  - `randomness` パラメータによる勾配へのノイズ付与。
+- **オーバーキル防止**: 忠誠度100を超える施しや、人口を超える徴募など、資源を浪費する非合理な行動を抑制するガードレール。
 
-最終的な行動は、これらのスコアを重みとした乱数選択で行います。
+最終的な行動は、正の勾配を持つアクションの中で最大値を記録したものを選択します。
 
 ### 2. CPU vs CPU 戦争の解決
 `BattleService` に `resolve_cpu_vs_cpu` メソッドを追加。
