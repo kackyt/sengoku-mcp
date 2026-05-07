@@ -48,7 +48,7 @@ impl BattleUseCase {
         }
     }
 
-    async fn validate_and_advance_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
+    async fn validate_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
         let state = self
             .game_state_repo
             .get()
@@ -56,7 +56,10 @@ impl BattleUseCase {
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
 
         state.check_turn(kuni_id)?;
+        Ok(())
+    }
 
+    async fn advance_turn(&self) -> Result<(), anyhow::Error> {
         self.turn_progression_usecase
             .complete_current_action()
             .await?;
@@ -66,9 +69,17 @@ impl BattleUseCase {
     /// 合戦の1ターンを実行します
     pub async fn execute_battle_turn(
         &self,
-        status: WarStatus,
+        attacker_id: KuniId,
         attacker_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
+        self.validate_turn(attacker_id).await?;
+
+        let status = self
+            .battle_repo
+            .find_by_attacker(&attacker_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("進行中の合戦が見つかりません"))?;
+
         let defender_tactic = BattleService::decide_tactic();
 
         let next_status =
@@ -200,7 +211,7 @@ impl BattleUseCase {
         hei: DisplayAmount,
         kome: DisplayAmount,
     ) -> Result<WarStatus, anyhow::Error> {
-        self.validate_and_advance_turn(attacker_id).await?;
+        self.validate_turn(attacker_id).await?;
 
         let mut attacker = self
             .kuni_repo
@@ -278,6 +289,8 @@ impl BattleUseCase {
         };
 
         self.battle_repo.save(&status).await?;
+
+        self.advance_turn().await?;
 
         Ok(status)
     }

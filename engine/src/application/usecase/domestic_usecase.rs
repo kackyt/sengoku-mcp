@@ -61,7 +61,7 @@ impl DomesticUseCase {
         Ok(())
     }
 
-    async fn validate_and_advance_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
+    async fn validate_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
         let state = self
             .game_state_repo
             .get()
@@ -69,7 +69,10 @@ impl DomesticUseCase {
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
 
         state.check_turn(kuni_id)?;
+        Ok(())
+    }
 
+    async fn advance_turn(&self) -> Result<(), anyhow::Error> {
         self.turn_progression_usecase
             .complete_current_action()
             .await?;
@@ -82,7 +85,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -103,6 +106,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(gain)
     }
 
@@ -112,7 +117,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -133,6 +138,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(gain)
     }
 
@@ -142,7 +149,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -162,6 +169,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(gain)
     }
 
@@ -171,7 +180,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -191,6 +200,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(gain)
     }
 
@@ -200,7 +211,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -221,6 +232,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(())
     }
 
@@ -230,7 +243,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -251,6 +264,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(())
     }
 
@@ -260,7 +275,7 @@ impl DomesticUseCase {
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<u32, anyhow::Error> {
-        self.validate_and_advance_turn(kuni_id).await?;
+        self.validate_turn(kuni_id).await?;
 
         let mut kuni = self
             .kuni_repo
@@ -280,6 +295,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(gain)
     }
 
@@ -292,7 +309,7 @@ impl DomesticUseCase {
         hei: DisplayAmount,
         kome: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
-        self.validate_and_advance_turn(from_kuni_id).await?;
+        self.validate_turn(from_kuni_id).await?;
 
         let mut from_kuni = self
             .kuni_repo
@@ -330,6 +347,8 @@ impl DomesticUseCase {
         })
         .await?;
 
+        self.advance_turn().await?;
+
         Ok(())
     }
 
@@ -340,6 +359,7 @@ impl DomesticUseCase {
         to_kuni_id: KuniId,
         rate_percent: u32,
     ) -> Result<(), anyhow::Error> {
+        // validate_turn は self.transport 内で呼ばれる
         let from_kuni = self
             .kuni_repo
             .find_by_id(&from_kuni_id)

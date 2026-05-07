@@ -1,3 +1,4 @@
+use crate::domain::error::DomainError;
 use crate::domain::model::{daimyo::Daimyo, kuni::Kuni, value_objects::TurnNumber};
 use crate::domain::service::{
     cpu_action_decision_service::CpuActionDecisionService, kuni_action_service::KuniActionService,
@@ -22,7 +23,7 @@ impl SimulationService {
         initial_kunis: &[Kuni],
         num_turns: u32,
         rng: &mut impl Rng,
-    ) -> Vec<SimulationSnapshot> {
+    ) -> Result<Vec<SimulationSnapshot>, DomainError> {
         let mut kunis = initial_kunis.to_vec();
         let mut snapshots = Vec::new();
         let seasonal_service = SeasonalEventService::new();
@@ -39,11 +40,13 @@ impl SimulationService {
 
             // 2. 各大名の行動
             for kuni in kunis.iter_mut() {
-                let daimyo = daimyo_map.get(&kuni.daimyo_id).expect("Daimyo not found");
+                let daimyo = daimyo_map.get(&kuni.daimyo_id).ok_or_else(|| {
+                    DomainError::NotFound(format!("Daimyo not found: {:?}", kuni.daimyo_id))
+                })?;
                 let (decision, _reasoning) =
-                    CpuActionDecisionService::decide(&daimyo.personality, kuni, turn, rng);
+                    CpuActionDecisionService::decide(daimyo.personality(), kuni, turn, rng);
 
-                let _ = KuniActionService::apply_cpu_decision(kuni, decision);
+                KuniActionService::apply_cpu_decision(kuni, decision)?;
             }
 
             // 3. ターン終了時の季節イベント
@@ -57,6 +60,6 @@ impl SimulationService {
             });
         }
 
-        snapshots
+        Ok(snapshots)
     }
 }

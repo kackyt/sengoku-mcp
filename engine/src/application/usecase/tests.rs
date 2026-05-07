@@ -556,7 +556,7 @@ async fn test_battle_execution_success_when_adjacent() {
         state_repo.clone(),
         turn_progression,
     );
-    let initial_status = usecase
+    let _initial_status = usecase
         .start_war(
             attacker_id,
             defender_id,
@@ -566,8 +566,18 @@ async fn test_battle_execution_success_when_adjacent() {
         .await
         .expect("合戦開始成功");
 
+    // start_war で手番が進むため、テスト用に手番を戻す
+    let mut state = state_repo.get().await.unwrap().unwrap();
+    state = GameState::new(
+        state.current_turn(),
+        state.action_order().to_vec(),
+        crate::domain::model::value_objects::ActionOrderIndex::new(0),
+    )
+    .unwrap();
+    state_repo.save(&state).await.unwrap();
+
     let result = usecase
-        .execute_battle_turn(initial_status, Tactic::Normal)
+        .execute_battle_turn(attacker_id, Tactic::Normal)
         .await
         .expect("合戦成功");
 

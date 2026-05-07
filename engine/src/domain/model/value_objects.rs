@@ -299,11 +299,7 @@ impl TurnNumber {
     // とある季節が来るまでのターン数を返します（単位はターン）
     pub fn turns_until_season(&self, target_season: u32) -> u32 {
         let current_season = self.season();
-        if current_season < target_season {
-            target_season - current_season
-        } else {
-            target_season + 4 - current_season
-        }
+        (target_season + 4 - current_season) % 4
     }
 }
 

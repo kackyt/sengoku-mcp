@@ -1,4 +1,5 @@
 pub mod battle_usecase;
+pub mod daimyo_query_usecase;
 pub mod domestic_usecase;
 pub mod info_usecase;
 #[cfg(test)]

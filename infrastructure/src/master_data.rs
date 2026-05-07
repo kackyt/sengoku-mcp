@@ -157,7 +157,12 @@ impl MasterDataLoader {
                 record.commerce,
                 record.military,
                 record.randomness,
-            );
+            )
+            .map_err(|e| MasterDataError::ParseError {
+                line: i + 2,
+                field: "性格".to_string(),
+                reason: e.to_string(),
+            })?;
 
             daimyos.push(Daimyo::new(
                 DaimyoId::new(record.id),

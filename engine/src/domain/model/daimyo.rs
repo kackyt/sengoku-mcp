@@ -24,4 +24,8 @@ impl Daimyo {
             personality,
         }
     }
+
+    pub fn personality(&self) -> &DaimyoPersonality {
+        &self.personality
+    }
 }

@@ -162,8 +162,11 @@ impl KuniQueryUseCase {
         }
         Ok(filtered)
     }
-    /// 全ての行動ログ（内部ログを含む）を取得します
-    pub fn get_all_logs(&self, category: ActionLogCategory) -> anyhow::Result<Vec<ActionLogEntry>> {
+    /// 全ての行動ログ（内部ログを含む）を取得します (デバッグ用)
+    pub fn get_all_logs_internal(
+        &self,
+        category: ActionLogCategory,
+    ) -> anyhow::Result<Vec<ActionLogEntry>> {
         self.action_log_repo
             .find_all(category)
             .map_err(|e| e.into())

@@ -653,7 +653,7 @@ impl EventHandler {
 
                     let result_status = app
                         .battle_usecase
-                        .execute_battle_turn(status.clone(), tactic)
+                        .execute_battle_turn(status.attacker_id(), tactic)
                         .await?;
 
                     let msg = if let Some(winner) = result_status.winner {

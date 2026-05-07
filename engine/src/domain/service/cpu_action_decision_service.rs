@@ -76,8 +76,8 @@ impl CpuActionDecisionService {
 
             // ランダム性の適用
             // randomness=0.2 の場合、期待値に +/- 1.0 程度のノイズを加える
-            let noise = if personality.randomness > 0.0 {
-                (rng.gen::<f64>() - 0.5) * personality.randomness * 10.0
+            let noise = if personality.randomness() > 0.0 {
+                (rng.gen::<f64>() - 0.5) * personality.randomness() * 10.0
             } else {
                 0.0
             };
@@ -202,14 +202,14 @@ impl CpuActionDecisionService {
         let current_kome = kuni.resource.kome.to_display().value();
 
         // 資源量に応じた勾配の減衰（持っているほど価値が下がる = 投資に回りやすくなる）
-        let mut kin_slope = (Self::EVALUATE_KIN_COEF as f64) * personality.commerce_bias;
+        let mut kin_slope = (Self::EVALUATE_KIN_COEF as f64) * personality.commerce_bias();
         kin_slope /= 1.0 + (current_kin as f64 / 100.0);
 
-        let mut kome_slope = (Self::EVALUATE_KOME_COEF as f64) * personality.agriculture_bias;
+        let mut kome_slope = (Self::EVALUATE_KOME_COEF as f64) * personality.agriculture_bias();
         kome_slope /= 1.0 + (current_kome as f64 / 100.0);
 
         // 軍事については、防衛の必要性は全大名共通であるため、最低値を 1.0 に設定する
-        let mut hei_slope = (Self::EVALUATE_HEI_COEF as f64) * personality.military_bias.max(1.0);
+        let mut hei_slope = (Self::EVALUATE_HEI_COEF as f64) * personality.military_bias().max(1.0);
 
         // 1. 兵力不足時の安全保障ボーナス
         // 兵力が極端に少ない(30未満)、あるいは人口の10%未満の場合は、
@@ -243,8 +243,8 @@ impl CpuActionDecisionService {
         }
 
         // 開発要素の金・米評価への影響勾配
-        // 将来の長期的な収入（10年分程度）を見込む
-        const INVESTMENT_HORIZON: f64 = 10.0;
+        // 将来の長期的な収入（15年分程度）を見込む
+        const INVESTMENT_HORIZON: f64 = 15.0;
 
         // 町1単位(100)は平均32%の金を春に生む
         let machi_unit_slope = 0.32 * kin_slope * (spring_coef / 100.0) * INVESTMENT_HORIZON;
@@ -264,11 +264,11 @@ impl CpuActionDecisionService {
         if current_tyu < 40 {
             tyu_base_val = 15.0;
         } else if current_tyu >= 80 {
-            tyu_base_val *= 0.02; // 80以上ならほぼ投資しない
+            tyu_base_val *= 0.01; // 80以上ならほぼ投資しない
         } else if current_tyu >= 60 {
-            tyu_base_val *= 0.05; // 60以上なら大幅に優先度を下げる
+            tyu_base_val *= 0.03; // 60以上ならさらに優先度を下げる
         } else if current_tyu >= 50 {
-            tyu_base_val *= 0.25; // 50以上（安全圏）なら 1/4 に
+            tyu_base_val *= 0.1; // 50以上（安全圏）なら 1/10 に
         }
 
         let tyu_slope = (tyu_base_val * 0.3 * spring_coef) + (tyu_base_val * 0.2 * fall_coef);
@@ -281,7 +281,7 @@ impl CpuActionDecisionService {
                 if kuni.stats.kokudaka.to_display().value() < 100 {
                     slope = slope.max(10.0);
                 }
-                slope * personality.agriculture_bias
+                slope * personality.agriculture_bias()
             }
             "BuildTown" => {
                 // コスト: 10金, 利得: 5町ランク
@@ -290,7 +290,7 @@ impl CpuActionDecisionService {
                 if kuni.stats.machi.to_display().value() < 100 {
                     slope = slope.max(10.0);
                 }
-                slope * personality.commerce_bias
+                slope * personality.commerce_bias()
             }
             "SellRice" => {
                 // コスト: 1米, 利得: 0.8金(期待値)
@@ -521,7 +521,7 @@ mod tests {
         let mut rng = thread_rng();
 
         // 農業バイアスを極端に高くする
-        let personality = DaimyoPersonality::new(10.0, 0.1, 0.1, 0.0);
+        let personality = DaimyoPersonality::new(10.0, 0.1, 0.1, 0.0).unwrap();
 
         let (decision, _) = CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
 
@@ -537,7 +537,7 @@ mod tests {
         let mut rng = thread_rng();
 
         // 商業バイアスを極端に高くする
-        let personality = DaimyoPersonality::new(0.1, 10.0, 0.1, 0.0);
+        let personality = DaimyoPersonality::new(0.1, 10.0, 0.1, 0.0).unwrap();
 
         let (decision, reason) =
             CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
@@ -555,7 +555,7 @@ mod tests {
         let mut rng = thread_rng();
 
         // 軍事バイアスを極端に高くする
-        let personality = DaimyoPersonality::new(0.1, 0.1, 10.0, 0.0);
+        let personality = DaimyoPersonality::new(0.1, 0.1, 10.0, 0.0).unwrap();
 
         let (decision, _) = CpuActionDecisionService::decide(&personality, &kuni, turn, &mut rng);
 

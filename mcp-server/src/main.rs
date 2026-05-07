@@ -4,6 +4,7 @@ extern crate rmcp;
 
 use crate::presentation::handlers::McpHandlers;
 use engine::application::usecase::battle_usecase::BattleUseCase;
+use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
 use engine::application::usecase::domestic_usecase::DomesticUseCase;
 use engine::application::usecase::info_usecase::InfoUseCase;
 use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
@@ -76,13 +77,15 @@ async fn main() -> anyhow::Result<()> {
         turn_progression_usecase.clone(),
     ));
 
+    let daimyo_query_usecase = Arc::new(DaimyoQueryUseCase::new(daimyo_repo.clone()));
+
     let handlers = McpHandlers::new(
         turn_progression_usecase,
         domestic_usecase,
         battle_usecase,
         kuni_query_usecase,
         info_usecase,
-        daimyo_repo.clone(),
+        daimyo_query_usecase,
     );
 
     // Build the transport (stdio)

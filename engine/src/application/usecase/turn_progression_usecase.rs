@@ -3,7 +3,7 @@ use crate::domain::{
     model::{
         event::GameEvent,
         game_state::GameState,
-        value_objects::{ActionOrderIndex, DaimyoId, EventMessage, TurnNumber},
+        value_objects::{ActionOrderIndex, DaimyoId, EventMessage, KuniId, TurnNumber},
     },
     repository::{
         action_log_repository::ActionLogRepository, daimyo_repository::DaimyoRepository,
@@ -152,6 +152,16 @@ impl TurnProgressionUseCase {
 
     pub async fn progress(&self) -> Result<(), anyhow::Error> {
         self.progress_until_player_turn(None).await
+    }
+
+    /// 指定した国のCPU行動を実行し、アクションを完了させます (原子的な実行)
+    pub async fn execute_cpu_action_and_advance(
+        &self,
+        kuni_id: KuniId,
+    ) -> Result<(), anyhow::Error> {
+        self.execute_cpu_action(kuni_id).await?;
+        self.complete_current_action().await?;
+        Ok(())
     }
 
     pub async fn execute_cpu_action(

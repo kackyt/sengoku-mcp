@@ -1,4 +1,5 @@
 use engine::application::usecase::battle_usecase::BattleUseCase;
+use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
 use engine::application::usecase::domestic_usecase::DomesticUseCase;
 use engine::application::usecase::info_usecase::InfoUseCase;
 use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
@@ -6,7 +7,6 @@ use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCa
 use engine::domain::model::action_log::*;
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
-use engine::domain::repository::daimyo_repository::DaimyoRepository;
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters, ServerHandler},
     model::{Implementation, ServerCapabilities, ServerInfo},
@@ -24,7 +24,7 @@ pub struct McpHandlers {
     battle_usecase: Arc<BattleUseCase>,
     kuni_query_usecase: Arc<KuniQueryUseCase>,
     info_usecase: Arc<InfoUseCase>,
-    daimyo_repo: Arc<dyn DaimyoRepository>,
+    daimyo_query_usecase: Arc<DaimyoQueryUseCase>,
     selected_daimyo_id: Arc<Mutex<Option<DaimyoId>>>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
@@ -93,7 +93,7 @@ impl McpHandlers {
         battle_usecase: Arc<BattleUseCase>,
         kuni_query_usecase: Arc<KuniQueryUseCase>,
         info_usecase: Arc<InfoUseCase>,
-        daimyo_repo: Arc<dyn DaimyoRepository>,
+        daimyo_query_usecase: Arc<DaimyoQueryUseCase>,
     ) -> Self {
         Self {
             turn_progression_usecase,
@@ -101,7 +101,7 @@ impl McpHandlers {
             battle_usecase,
             kuni_query_usecase,
             info_usecase,
-            daimyo_repo,
+            daimyo_query_usecase,
             selected_daimyo_id: Arc::new(Mutex::new(None)),
             tool_router: Self::tool_router(),
         }
@@ -113,6 +113,25 @@ impl McpHandlers {
             "大名が選択されていません。先に select_daimyo を実行してください。".to_string()
         })
     }
+
+    async fn check_kuni_ownership(&self, kuni_id: KuniId) -> Result<(), String> {
+        let player_id = self.get_player_id().await?;
+
+        // 選択された国の情報を探す
+        let kunis = self
+            .kuni_query_usecase
+            .get_kunis_by_daimyo(&player_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !kunis.iter().any(|k| k.id == kuni_id) {
+            return Err(format!(
+                "国ID: {} はあなたの領地ではありません。",
+                kuni_id.0
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[tool_router(router = tool_router, vis = "pub")]
@@ -121,14 +140,14 @@ impl McpHandlers {
     #[tool(description = "選択可能な大名の一覧を取得します")]
     pub async fn list_daimyos(&self) -> Result<String, String> {
         let daimyos = self
-            .daimyo_repo
-            .find_all()
+            .daimyo_query_usecase
+            .list()
             .await
             .map_err(|e| e.to_string())?;
 
         let mut result = String::from("選択可能な大名一覧:\n");
         for d in daimyos {
-            result.push_str(&format!("- ID: {}, 名前: {}\n", d.id.0, d.name.0));
+            result.push_str(&format!("- ID: {}, 名前: {}\n", d.id, d.name));
         }
         Ok(result)
     }
@@ -141,15 +160,15 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let id = DaimyoId::new(daimyo_id);
         let daimyo = self
-            .daimyo_repo
-            .find_by_id(&id)
+            .daimyo_query_usecase
+            .find(id)
             .await
             .map_err(|e| e.to_string())?;
 
         if let Some(d) = daimyo {
             let mut lock = self.selected_daimyo_id.lock().await;
             *lock = Some(id);
-            Ok(format!("大名「{}」を選択しました。", d.name.0))
+            Ok(format!("大名「{}」を選択しました。", d.name))
         } else {
             Err(format!("ID: {} の大名が見つかりません。", daimyo_id))
         }
@@ -231,9 +250,12 @@ impl McpHandlers {
         &self,
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
+
         let gain = self
             .domestic_usecase
-            .sell_rice(KuniId::new(kuni_id), DisplayAmount::new(amount))
+            .sell_rice(id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("米を売却しました。得られた金: {}", gain.value()))
@@ -245,9 +267,12 @@ impl McpHandlers {
         &self,
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
+
         let gain = self
             .domestic_usecase
-            .buy_rice(KuniId::new(kuni_id), DisplayAmount::new(amount))
+            .buy_rice(id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("米を購入しました。得られた米: {}", gain.value()))
@@ -259,8 +284,11 @@ impl McpHandlers {
         &self,
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
+
         self.domestic_usecase
-            .recruit(KuniId::new(kuni_id), DisplayAmount::new(amount))
+            .recruit(id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("兵を {} 人徴募しました。", amount))
@@ -272,9 +300,12 @@ impl McpHandlers {
         &self,
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
+
         let gain = self
             .domestic_usecase
-            .develop_land(KuniId::new(kuni_id), DisplayAmount::new(amount))
+            .develop_land(id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("開墾を行いました。上昇した石高: {}", gain.value()))
@@ -286,9 +317,12 @@ impl McpHandlers {
         &self,
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
+
         let gain = self
             .domestic_usecase
-            .build_town(KuniId::new(kuni_id), DisplayAmount::new(amount))
+            .build_town(id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("町作りを行いました。発展度: {}", gain.value()))
@@ -300,9 +334,12 @@ impl McpHandlers {
         &self,
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
+
         let gain = self
             .domestic_usecase
-            .give_charity(KuniId::new(kuni_id), DisplayAmount::new(amount))
+            .give_charity(id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("施しを行いました。上昇した忠誠度: {}", gain))
@@ -320,9 +357,12 @@ impl McpHandlers {
             kome,
         }): Parameters<TransportParams>,
     ) -> Result<String, String> {
+        let from_id = KuniId::new(from_kuni_id);
+        self.check_kuni_ownership(from_id).await?;
+
         self.domestic_usecase
             .transport(
-                KuniId::new(from_kuni_id),
+                from_id,
                 KuniId::new(to_kuni_id),
                 DisplayAmount::new(kin),
                 DisplayAmount::new(hei),
@@ -344,10 +384,13 @@ impl McpHandlers {
             kome,
         }): Parameters<StartWarParams>,
     ) -> Result<String, String> {
+        let attacker_id = KuniId::new(attacker_kuni_id);
+        self.check_kuni_ownership(attacker_id).await?;
+
         let status = self
             .battle_usecase
             .start_war(
-                KuniId::new(attacker_kuni_id),
+                attacker_id,
                 KuniId::new(defender_kuni_id),
                 DisplayAmount::new(hei),
                 DisplayAmount::new(kome),
@@ -374,12 +417,7 @@ impl McpHandlers {
         }): Parameters<ExecuteBattleTurnParams>,
     ) -> Result<String, String> {
         let attacker_id = KuniId::new(attacker_kuni_id);
-        let status = self
-            .battle_usecase
-            .get_active_war(attacker_id)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "進行中の合戦が見つかりません。".to_string())?;
+        self.check_kuni_ownership(attacker_id).await?;
 
         let t = match tactic {
             1 => Tactic::Normal,
@@ -396,7 +434,7 @@ impl McpHandlers {
 
         let next_status = self
             .battle_usecase
-            .execute_battle_turn(status, t)
+            .execute_battle_turn(attacker_id, t)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -456,6 +494,7 @@ impl McpHandlers {
         Parameters(AutoActionParams { kuni_id }): Parameters<AutoActionParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
+        self.check_kuni_ownership(id).await?;
 
         // 手番チェック
         let state = self
@@ -467,15 +506,9 @@ impl McpHandlers {
 
         state.check_turn(id).map_err(|e| e.to_string())?;
 
-        // 自動行動の実行
+        // 自動行動の実行と手番進行 (原子的な実行)
         self.turn_progression_usecase
-            .execute_cpu_action(id)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        // 手番の進行
-        self.turn_progression_usecase
-            .complete_current_action()
+            .execute_cpu_action_and_advance(id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -487,7 +520,7 @@ impl McpHandlers {
     pub async fn get_internal_logs(&self) -> Result<String, String> {
         let logs = self
             .kuni_query_usecase
-            .get_all_logs(ActionLogCategory::Domestic)
+            .get_all_logs_internal(ActionLogCategory::Domestic)
             .map_err(|e| e.to_string())?;
 
         let mut result = String::from("内部ログ（デバッグ用）:\n");

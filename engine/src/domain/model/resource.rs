@@ -61,6 +61,73 @@ impl Resource {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_can_consume_jinko_zero() {
+        let resource = Resource::new(100, 10, 100, 1000);
+        // jinko == 0 の場合は、(jinko == Amount::zero() || self.jinko >= jinko + self.hei) がパスする
+        assert!(resource.can_consume(
+            Amount::new(100),
+            Amount::new(10),
+            Amount::new(100),
+            Amount::zero()
+        ));
+    }
+
+    #[test]
+    fn test_can_consume_jinko_boundary() {
+        // self.jinko >= jinko + self.hei
+        // 1000 >= 990 + 10  -> OK
+        let resource = Resource::new(100, 10, 100, 1000);
+        assert!(resource.can_consume(
+            Amount::zero(),
+            Amount::zero(),
+            Amount::zero(),
+            Amount::new(990)
+        ));
+
+        // 1000 >= 991 + 10 -> NG (1000 < 1001)
+        assert!(!resource.can_consume(
+            Amount::zero(),
+            Amount::zero(),
+            Amount::zero(),
+            Amount::new(991)
+        ));
+    }
+
+    #[test]
+    fn test_can_consume_other_resources() {
+        let resource = Resource::new(100, 10, 100, 1000);
+        assert!(resource.can_consume(
+            Amount::new(100),
+            Amount::new(10),
+            Amount::new(100),
+            Amount::zero()
+        ));
+        assert!(!resource.can_consume(
+            Amount::new(101),
+            Amount::new(10),
+            Amount::new(100),
+            Amount::zero()
+        ));
+        assert!(!resource.can_consume(
+            Amount::new(100),
+            Amount::new(11),
+            Amount::new(100),
+            Amount::zero()
+        ));
+        assert!(!resource.can_consume(
+            Amount::new(100),
+            Amount::new(10),
+            Amount::new(101),
+            Amount::zero()
+        ));
+    }
+}
+
 /// 国の開発状況（石高、町、忠誠度）を管理する構造体
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DevelopmentStats {

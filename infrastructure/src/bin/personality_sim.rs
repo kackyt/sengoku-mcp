@@ -49,9 +49,9 @@ fn create_initial_kuni(id: u32, name: &str) -> Kuni {
 }
 
 fn run_preset_simulation(turns: u32) {
-    let mil_p = DaimyoPersonality::new(0.5, 0.5, 2.0, 0.1);
-    let com_p = DaimyoPersonality::new(0.5, 2.0, 0.5, 0.1);
-    let agr_p = DaimyoPersonality::new(2.0, 0.5, 0.5, 0.1);
+    let mil_p = DaimyoPersonality::new(0.5, 0.5, 2.0, 0.1).unwrap();
+    let com_p = DaimyoPersonality::new(0.5, 2.0, 0.5, 0.1).unwrap();
+    let agr_p = DaimyoPersonality::new(2.0, 0.5, 0.5, 0.1).unwrap();
 
     let daimyos = vec![
         Daimyo::new(DaimyoId::new(1), "Military", mil_p),
@@ -71,7 +71,8 @@ fn run_preset_simulation(turns: u32) {
     println!("Turn | Mil(HEI/MCH/KKD) | Com(HEI/MCH/KKD) | Agr(HEI/MCH/KKD)");
     println!("{:-<70}", "");
 
-    let snapshots = SimulationService::run_simulation(&daimyos, &kunis, turns, &mut rng);
+    let snapshots = SimulationService::run_simulation(&daimyos, &kunis, turns, &mut rng)
+        .expect("Simulation failed");
 
     for snapshot in snapshots {
         let t = snapshot.turn.value();
@@ -109,7 +110,12 @@ fn run_master_data_simulation(turns: u32) {
 
     println!("\n=== Master Data Simulation ({} Turns) ===", turns);
 
-    let snapshots = SimulationService::run_simulation(&daimyos, &initial_kunis, turns, &mut rng);
+    let snapshots = SimulationService::run_simulation(&daimyos, &initial_kunis, turns, &mut rng)
+        .expect("Simulation failed");
+    if snapshots.is_empty() {
+        println!("No snapshots generated.");
+        return;
+    }
     let final_snapshot = snapshots.last().unwrap();
 
     println!("\n=== Final State After {} Turns ===", turns);

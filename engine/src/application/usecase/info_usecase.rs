@@ -48,18 +48,7 @@ impl InfoUseCase {
             .current_kuni_id()
             .ok_or_else(|| anyhow::anyhow!("現在の手番の国が見つかりません"))?;
 
-        let current_kuni = self
-            .kuni_repo
-            .find_by_id(&current_kuni_id)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", current_kuni_id))?;
-
-        if current_kuni.daimyo_id != daimyo_id {
-            return Err(anyhow::anyhow!(
-                "あなたの手番ではありません。現在の手番: {:?}",
-                current_kuni.daimyo_id
-            ));
-        }
+        state.check_turn(current_kuni_id)?;
 
         // 2. 全ての国情報を取得して集計
         let all_kunis = self.kuni_repo.find_all().await?;
