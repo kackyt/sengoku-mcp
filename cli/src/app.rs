@@ -133,6 +133,17 @@ impl App {
             }
         }
 
+        // ゲームオーバー判定
+        if matches!(
+            snapshot.phase,
+            engine::domain::model::game_state::GamePhase::GameOver
+                | engine::domain::model::game_state::GamePhase::GameClear
+        ) {
+            if let Some(winner) = snapshot.winner {
+                self.screen = ScreenState::GameOver { winner };
+            }
+        }
+
         // 手番の国と表示されている国がズレないように強制同期
         match (&self.current_kuni, &self.screen) {
             (
@@ -202,7 +213,7 @@ impl App {
 
                 if can_progress {
                     // 1ステップ進める
-                    self.turn_progression_usecase.progress().await?;
+                    self.turn_progression_usecase.progress(self.selected_daimyo_id).await?;
                     // CPUの行動を見せるために少し待機
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     continue;

@@ -2,7 +2,7 @@ use crate::domain::{
     model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent},
     model::{
         event::GameEvent,
-        game_state::GameState,
+        game_state::{GamePhase, GameState},
         value_objects::{ActionOrderIndex, DaimyoId, EventMessage, KuniId, TurnNumber},
     },
     repository::{
@@ -70,6 +70,7 @@ impl TurnProgressionUseCase {
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません。"))?;
 
         state.advance_action();
+        self.check_victory_and_defeat(&mut state).await?;
 
         if state.is_turn_completed() {
             self.finish_turn(state).await?;
@@ -81,7 +82,10 @@ impl TurnProgressionUseCase {
     }
 
     /// 指定した大名（プレイヤー）の手番になるまで、CPUの行動を自動的に進める
-    pub async fn progress_until_player_turn(
+
+    /// 次の1ステップ（1大名の行動、またはターンの終了）を進めます。
+    /// プレイヤーの手番の場合は何もしません。
+    pub async fn progress(
         &self,
         player_daimyo_id: Option<DaimyoId>,
     ) -> Result<(), anyhow::Error> {
@@ -106,65 +110,75 @@ impl TurnProgressionUseCase {
             }
         };
 
-        loop {
-            if state.is_turn_completed() {
-                self.finish_turn(state).await?;
-                state = self
-                    .game_state_repo
-                    .get()
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
-                continue;
-            }
+        if state.phase() != GamePhase::Domestic {
+            return Ok(());
+        }
 
-            let kuni_id = state
-                .current_kuni_id()
-                .ok_or_else(|| anyhow::anyhow!("行動中の国が見つかりません"))?;
-            let kuni = self
-                .kuni_repo
-                .find_by_id(&kuni_id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
+        if state.is_turn_completed() {
+            self.finish_turn(state).await?;
+            return Ok(());
+        }
 
-            let daimyo_id = kuni.daimyo_id;
+        let kuni_id = state
+            .current_kuni_id()
+            .ok_or_else(|| anyhow::anyhow!("行動中の国が見つかりません"))?;
+        let kuni = self
+            .kuni_repo
+            .find_by_id(&kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
 
-            if let Some(player_id) = player_daimyo_id {
-                if daimyo_id == player_id {
-                    // プレイヤーの番なので停止
-                    return Ok(());
-                }
-            }
+        let daimyo_id = kuni.daimyo_id;
 
-            // CPUの番なので行動を実行
-            self.event_dispatcher
-                .dispatch(GameEvent::DaimyoActionStarted { daimyo_id })
-                .await?;
-
-            self.execute_cpu_action(kuni_id, player_daimyo_id).await?;
-
-            state.advance_action();
-            if state.is_turn_completed() {
-                self.finish_turn(state).await?;
-                state = self
-                    .game_state_repo
-                    .get()
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
-            } else {
-                self.game_state_repo.save(&state).await?;
-            }
-
-            // プレイヤー指定がない場合は1回で抜ける
-            if player_daimyo_id.is_none() {
-                break;
+        // プレイヤーの手番なら停止
+        if let Some(player_id) = player_daimyo_id {
+            if daimyo_id == player_id {
+                return Ok(());
             }
         }
+
+        // CPUのアクションを実行
+        self.event_dispatcher
+            .dispatch(GameEvent::DaimyoActionStarted { daimyo_id })
+            .await?;
+
+        self.execute_cpu_action(kuni_id, player_daimyo_id).await?;
+
+        // 完了処理
+        self.complete_current_action().await?;
 
         Ok(())
     }
 
-    pub async fn progress(&self) -> Result<(), anyhow::Error> {
-        self.progress_until_player_turn(None).await
+    /// プレイヤーの手番が来るまで自動進行します。
+    pub async fn progress_until_player_turn(
+        &self,
+        player_daimyo_id: Option<DaimyoId>,
+    ) -> Result<(), anyhow::Error> {
+        loop {
+            let state = self
+                .game_state_repo
+                .get()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+            if state.phase() != GamePhase::Domestic {
+                return Ok(());
+            }
+
+            if state.is_turn_completed() {
+                self.finish_turn(state).await?;
+                continue;
+            }
+
+            let kuni_id = state.current_kuni_id().unwrap();
+            let kuni = self.kuni_repo.find_by_id(&kuni_id).await?.unwrap();
+            if player_daimyo_id.is_some_and(|id| id == kuni.daimyo_id) {
+                return Ok(());
+            }
+
+            self.progress(player_daimyo_id).await?;
+        }
     }
 
     /// 指定した国のCPU行動を実行し、アクションを完了させます (原子的な実行)
@@ -277,6 +291,12 @@ impl TurnProgressionUseCase {
                 let war_status =
                     crate::domain::model::battle::WarStatus::new(attacker_army, defender_army);
                 self.battle_repo.save(&war_status).await?;
+
+                // 合戦フェーズへ移行して停止
+                state.set_phase(GamePhase::Battle);
+                state.mark_action_performed();
+                self.game_state_repo.save(&state).await?;
+                return Ok(());
             } else {
                 // ターゲットがCPUの場合：自動決着
                 let defender_army = crate::domain::model::battle::ArmyStatus {
@@ -510,6 +530,40 @@ impl TurnProgressionUseCase {
                     details: EventMessage::new(detail_str),
                 })
                 .await?;
+        }
+
+        self.check_victory_and_defeat(&mut state).await?;
+        Ok(())
+    }
+
+    /// 勝利・敗北条件をチェックし、必要に応じてフェーズを更新します
+    async fn check_victory_and_defeat(&self, state: &mut GameState) -> anyhow::Result<()> {
+        let all_kunis = self.kuni_repo.find_all().await?;
+        if all_kunis.is_empty() {
+            return Ok(());
+        }
+
+        // 1. プレーヤーの敗北チェック (DaimyoId(1)をプレーヤーと仮定)
+        let player_id = DaimyoId(1);
+        let player_kunis = all_kunis
+            .iter()
+            .filter(|k| k.daimyo_id == player_id)
+            .count();
+
+        if player_kunis == 0 {
+            state.set_phase(GamePhase::GameOver);
+            return Ok(());
+        }
+
+        // 2. 勝利チェック (一人の大名が全土統一したか)
+        let first_daimyo = all_kunis[0].daimyo_id;
+        if all_kunis.iter().all(|k| k.daimyo_id == first_daimyo) {
+            if first_daimyo == player_id {
+                state.set_phase(GamePhase::GameClear);
+            } else {
+                // CPUが統一した場合もゲームオーバー
+                state.set_phase(GamePhase::GameOver);
+            }
         }
 
         Ok(())

@@ -76,7 +76,7 @@ impl EventHandler {
                 app.selected_daimyo_id = Some(selected_daimyo.id);
 
                 // ゲーム状態の初期化（未作成の場合のみ作成される）
-                app.turn_progression_usecase.progress().await?;
+                app.turn_progression_usecase.progress(app.selected_daimyo_id).await?;
 
                 let state = app
                     .turn_progression_usecase

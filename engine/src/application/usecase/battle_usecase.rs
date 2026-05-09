@@ -59,6 +59,10 @@ impl BattleUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
 
+        if state.phase() != crate::domain::model::game_state::GamePhase::Battle {
+            return Err(anyhow::anyhow!("現在は合戦フェーズではありません"));
+        }
+
         state.check_turn(kuni_id)?;
         Ok(())
     }
@@ -130,6 +134,16 @@ impl BattleUseCase {
         defender_id: KuniId,
         defender_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
+        let mut state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+        if state.phase() != crate::domain::model::game_state::GamePhase::Battle {
+            return Err(anyhow::anyhow!("現在は合戦フェーズではありません"));
+        }
+
         let status = self
             .battle_repo
             .find_by_defender(&defender_id)
@@ -268,6 +282,18 @@ impl BattleUseCase {
                     .await?;
             }
         }
+
+        // 合戦終了：内政フェーズに戻して次のアクションへ
+        let mut state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+        state.set_phase(crate::domain::model::game_state::GamePhase::Domestic);
+        self.game_state_repo.save(&state).await?;
+
+        self.advance_turn().await?;
+
         Ok(())
     }
 

@@ -68,6 +68,10 @@ impl DomesticUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
 
+        if state.phase() != crate::domain::model::game_state::GamePhase::Domestic {
+            return Err(anyhow::anyhow!("現在は内政フェーズではありません"));
+        }
+
         state.check_turn(kuni_id)?;
         Ok(())
     }

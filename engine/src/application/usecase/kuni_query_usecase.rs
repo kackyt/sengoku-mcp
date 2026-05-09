@@ -25,6 +25,8 @@ pub struct UiSnapshot {
     pub war_logs: Vec<ActionLogEntry>,
     pub active_battles: Vec<crate::domain::model::battle::WarStatus>,
     pub all_kunis: Vec<Kuni>,
+    pub phase: crate::domain::model::game_state::GamePhase,
+    pub winner: Option<DaimyoId>,
 }
 
 /// 国の情報照会に関するユースケース
@@ -85,6 +87,8 @@ impl KuniQueryUseCase {
         // 現在の手番情報を取得（これを優先する）
         if let Some(state) = self.game_state_repo.get().await? {
             snapshot.current_turn = Some(state.current_turn().value());
+            snapshot.phase = state.phase();
+            snapshot.winner = state.winner();
             if let Some(kuni_id) = state.current_kuni_id() {
                 if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
                     snapshot.current_kuni = Some(kuni.clone());

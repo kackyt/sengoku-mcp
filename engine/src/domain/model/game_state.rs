@@ -1,5 +1,19 @@
 use crate::domain::error::DomainError;
-use crate::domain::model::value_objects::{ActionOrderIndex, KuniId, TurnNumber};
+use crate::domain::model::value_objects::{ActionOrderIndex, DaimyoId, KuniId, TurnNumber};
+
+/// ゲームの進行フェーズ
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GamePhase {
+    /// 内政フェーズ
+    #[default]
+    Domestic,
+    /// 合戦フェーズ
+    Battle,
+    /// ゲームオーバー
+    GameOver,
+    /// 天下一統（クリア）
+    GameClear,
+}
 
 /// ゲームの進行状態全体を表すドメインモデル
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,8 +24,12 @@ pub struct GameState {
     action_order: Vec<KuniId>,
     /// 現在行動中の国のインデックス（`action_order`のインデックス）
     current_action_index: ActionOrderIndex,
-    /// 現在のインデックスにおいて、既に行動（内政や合戦）が実行されたか
+    /// 現在のフェーズにおいて、既に行動（内政や合戦）が実行されたか
     action_performed: bool,
+    /// 現在のフェーズ
+    phase: GamePhase,
+    /// 勝者（領土をすべて失った場合などの判定用）
+    winner_id: Option<DaimyoId>,
 }
 
 impl GameState {
@@ -31,21 +49,26 @@ impl GameState {
             action_order,
             current_action_index,
             action_performed: false,
+            phase: GamePhase::Domestic,
+            winner_id: None,
         })
     }
 
-    /// 明示的に action_performed を指定して生成（テストや永続化からの復元用）
-    pub fn with_action_performed(
+    /// 明示的に状態を指定して生成（テストや永続化からの復元用）
+    pub fn with_all_fields(
         current_turn: TurnNumber,
         action_order: Vec<KuniId>,
         current_action_index: ActionOrderIndex,
         action_performed: bool,
+        phase: GamePhase,
     ) -> Self {
         Self {
             current_turn,
             action_order,
             current_action_index,
             action_performed,
+            phase,
+            winner_id: None,
         }
     }
 
@@ -61,6 +84,23 @@ impl GameState {
         self.current_action_index
     }
 
+    pub fn phase(&self) -> GamePhase {
+        self.phase
+    }
+
+    pub fn winner(&self) -> Option<DaimyoId> {
+        self.winner_id
+    }
+
+    pub fn set_phase(&mut self, phase: GamePhase) {
+        self.phase = phase;
+    }
+
+    pub fn set_winner(&mut self, daimyo_id: DaimyoId) {
+        self.winner_id = Some(daimyo_id);
+        self.phase = GamePhase::GameOver;
+    }
+
     /// 現在行動中の国IDを取得します。
     /// 順番が終了している場合は `None` を返します。
     pub fn current_kuni_id(&self) -> Option<KuniId> {
@@ -70,12 +110,13 @@ impl GameState {
     }
 
     /// 次の行動国に進みます。
-    /// 行動済みフラグをリセットします。
+    /// 行動済みフラグをリセットし、フェーズを内政に戻します。
     pub fn advance_action(&mut self) {
         if self.current_action_index.value() < self.action_order.len() {
             self.current_action_index =
                 ActionOrderIndex::new(self.current_action_index.value() + 1);
             self.action_performed = false;
+            self.phase = GamePhase::Domestic;
         }
     }
 
@@ -100,6 +141,7 @@ impl GameState {
         self.action_order = new_order;
         self.current_action_index = ActionOrderIndex::new(0);
         self.action_performed = false;
+        self.phase = GamePhase::Domestic;
     }
 
     /// 指定された国IDが現在の手番であるかを確認します。
