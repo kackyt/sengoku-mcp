@@ -12,6 +12,7 @@ use crate::domain::{
     },
     service::{
         cpu_action_decision_service::{CpuActionDecision, CpuActionDecisionService},
+        kuni_service::KuniService,
         turn_service::TurnService,
     },
 };
@@ -209,13 +210,12 @@ impl TurnProgressionUseCase {
             .ok_or_else(|| anyhow::anyhow!("大名が見つかりません: {:?}", daimyo_id))?;
 
         // 1. 出兵判断 (内政より先に検討)
-        let neighbor_ids = self.neighbor_repo.get_neighbors(&kuni_id);
-        let mut neighbor_kunis = Vec::new();
-        for nid in neighbor_ids {
-            if let Some(nk) = self.kuni_repo.find_by_id(&nid).await? {
-                neighbor_kunis.push(nk);
-            }
-        }
+        let neighbor_kunis = KuniService::get_neighbor_kunis(
+            &kuni_id,
+            self.neighbor_repo.as_ref(),
+            self.kuni_repo.as_ref(),
+        )
+        .await?;
 
         if let Some(plan) = crate::domain::service::war_decision_service::WarDecisionService::new()
             .decide_invasion(&daimyo, &target_kuni, &neighbor_kunis)

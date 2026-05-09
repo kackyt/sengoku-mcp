@@ -36,6 +36,7 @@ pub struct App {
     pub domestic_logs: Vec<ActionLogEntry>,
     pub war_logs: Vec<ActionLogEntry>,
     pub active_battles: Vec<engine::domain::model::battle::WarStatus>,
+    pub all_kunis: Vec<Kuni>,
 }
 
 impl App {
@@ -66,6 +67,7 @@ impl App {
             domestic_logs: Vec::new(),
             war_logs: Vec::new(),
             active_battles: Vec::new(),
+            all_kunis: Vec::new(),
         }
     }
 
@@ -98,9 +100,8 @@ impl App {
         self.domestic_logs = snapshot.domestic_logs;
         self.war_logs = snapshot.war_logs;
         self.active_battles = snapshot.active_battles.clone();
-
         // プレイヤーが防御側となる合戦があれば、合戦画面へ遷移（モーダル表示の代わり）
-        if let Some(defense_battle) = self.selected_daimyo_id.and_then(|player_id| {
+        let defense_battle = self.selected_daimyo_id.and_then(|player_id| {
             snapshot.active_battles.iter().find(|b| {
                 // 防御側の国が自分のものかチェック
                 snapshot
@@ -108,19 +109,24 @@ impl App {
                     .iter()
                     .any(|k| k.id == b.defender.kuni_id && k.daimyo_id == player_id)
             })
-        }) {
+        });
+
+        let defense_battle_cloned = defense_battle.cloned();
+        self.all_kunis = snapshot.all_kunis;
+
+        if let Some(battle) = defense_battle_cloned {
             // まだ合戦画面でない、または別の合戦が表示されている場合は切り替え
             let should_switch = match &self.screen {
                 ScreenState::War { status, .. } => {
-                    status.attacker.kuni_id != defense_battle.attacker.kuni_id
-                        || status.defender.kuni_id != defense_battle.defender.kuni_id
+                    status.attacker.kuni_id != battle.attacker.kuni_id
+                        || status.defender.kuni_id != battle.defender.kuni_id
                 }
                 _ => true,
             };
 
             if should_switch {
                 self.screen = ScreenState::War {
-                    status: defense_battle.clone(),
+                    status: battle,
                     cursor: 0,
                     sub_state: crate::screen::WarSubState::Normal,
                 };
@@ -169,21 +175,38 @@ impl App {
             on_draw(terminal);
 
             // プレイヤーの手番でない場合は自動進行
-            if self.selected_daimyo_id.is_some()
-                && !self.is_player_turn()
-                && matches!(
+            let is_player_turn = self.is_player_turn();
+            let is_player_in_war = if let ScreenState::War { status: _, .. } = &self.screen {
+                let player_id = self.selected_daimyo_id;
+                // アタッカーかディフェンダーのいずれかがプレイヤーであれば、合戦は自動進行させない
+                // (update_cache で適切に kuni 情報が取得されている前提)
+                let is_attacker = self.attacker_kuni.as_ref().map(|k| k.daimyo_id) == player_id;
+                let is_defender = self.defender_kuni.as_ref().map(|k| k.daimyo_id) == player_id;
+                is_attacker || is_defender
+            } else {
+                false
+            };
+
+            if self.selected_daimyo_id.is_some() && !is_player_turn && !is_player_in_war {
+                // 進行可能なサブ状態かチェック
+                let can_progress = matches!(
                     self.screen,
                     ScreenState::Domestic {
                         sub_state: DomesticSubState::Normal,
                         ..
+                    } | ScreenState::War {
+                        sub_state: crate::screen::WarSubState::Normal,
+                        ..
                     }
-                )
-            {
-                // 1ステップ進める
-                self.turn_progression_usecase.progress().await?;
-                // CPUの行動を見せるために少し待機
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
+                );
+
+                if can_progress {
+                    // 1ステップ進める
+                    self.turn_progression_usecase.progress().await?;
+                    // CPUの行動を見せるために少し待機
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
             }
 
             match get_event(Duration::from_millis(16))? {

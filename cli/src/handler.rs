@@ -158,6 +158,9 @@ impl EventHandler {
                             app.domestic_usecase
                                 .set_delegation(kuni_id, delegate)
                                 .await?;
+                            app.turn_progression_usecase
+                                .complete_current_action()
+                                .await?;
                             let msg = if delegate {
                                 "委任しました"
                             } else {
@@ -190,6 +193,9 @@ impl EventHandler {
                                                 country.tyu
                                             ));
                                         }
+                                        app.turn_progression_usecase
+                                            .complete_current_action()
+                                            .await?;
                                         app.screen = ScreenState::Domestic {
                                             selected_kuni: kuni_id,
                                             cursor,
@@ -200,6 +206,9 @@ impl EventHandler {
                                         };
                                     }
                                     Err(e) => {
+                                        app.turn_progression_usecase
+                                            .complete_current_action()
+                                            .await?;
                                         app.screen = ScreenState::Domestic {
                                             selected_kuni: kuni_id,
                                             cursor,
@@ -744,6 +753,21 @@ impl EventHandler {
             && current_kuni.id == kuni_id
         {
             return Ok(true);
+        }
+
+        // 合戦中かつ自分が当事者の場合は、このチェックをパスさせる
+        // (合戦画面への遷移を許可するため)
+        if let Some(player_id) = app.selected_daimyo_id {
+            let is_war_party = app.active_battles.iter().any(|b| {
+                (b.attacker.kuni_id == kuni_id || b.defender.kuni_id == kuni_id)
+                    && (app
+                        .all_kunis
+                        .iter()
+                        .any(|k| k.id == kuni_id && k.daimyo_id == player_id))
+            });
+            if is_war_party {
+                return Ok(true);
+            }
         }
 
         app.screen = ScreenState::Domestic {

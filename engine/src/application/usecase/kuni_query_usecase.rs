@@ -7,6 +7,7 @@ use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
+use crate::domain::service::kuni_service::KuniService;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -120,17 +121,13 @@ impl KuniQueryUseCase {
 
     /// 指定した国の隣接国を取得します
     pub async fn get_neighbors(&self, kuni_id: &KuniId) -> anyhow::Result<Vec<Kuni>> {
-        let neighbor_ids = self.neighbor_repo.get_neighbors(kuni_id);
-        let mut neighbors = Vec::with_capacity(neighbor_ids.len());
-        for id in neighbor_ids {
-            let kuni = self
-                .kuni_repo
-                .find_by_id(&id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("隣接国が見つかりません: {:?}", id))?;
-            neighbors.push(kuni);
-        }
-        Ok(neighbors)
+        KuniService::get_neighbor_kunis(
+            kuni_id,
+            self.neighbor_repo.as_ref(),
+            self.kuni_repo.as_ref(),
+        )
+        .await
+        .map_err(|e| e.into())
     }
 
     /// 指定した国の隣接国のID一覧を取得します
@@ -144,29 +141,31 @@ impl KuniQueryUseCase {
         kuni_id: &KuniId,
         is_attack: bool,
     ) -> anyhow::Result<Vec<KuniId>> {
-        let neighbors = self.neighbor_repo.get_neighbors(kuni_id);
-        let mut filtered = Vec::new();
         let current_kuni = self
             .kuni_repo
             .find_by_id(kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません"))?;
 
-        for nid in neighbors {
-            if let Some(k) = self.kuni_repo.find_by_id(&nid).await? {
+        let neighbors = KuniService::get_neighbor_kunis(
+            kuni_id,
+            self.neighbor_repo.as_ref(),
+            self.kuni_repo.as_ref(),
+        )
+        .await?;
+
+        let filtered = neighbors
+            .into_iter()
+            .filter(|k| {
                 if is_attack {
-                    // 攻撃：領主が異なる国のみ
-                    if k.daimyo_id != current_kuni.daimyo_id {
-                        filtered.push(nid);
-                    }
+                    k.daimyo_id != current_kuni.daimyo_id
                 } else {
-                    // 輸送：領主が同じ国のみ
-                    if k.daimyo_id == current_kuni.daimyo_id {
-                        filtered.push(nid);
-                    }
+                    k.daimyo_id == current_kuni.daimyo_id
                 }
-            }
-        }
+            })
+            .map(|k| k.id)
+            .collect();
+
         Ok(filtered)
     }
     /// 全ての行動ログ（内部ログを含む）を取得します (デバッグ用)

@@ -40,11 +40,17 @@ impl WarDecisionService {
         let bias = personality.military_bias();
         let my_hei = kuni.resource.hei.value() as f64;
 
+        let mut rng = rand::thread_rng();
+
+        // 候補国を選出：必要兵力倍率に確率的ゆらぎを加え、毎回同じ判断にならないようにする
+        // military_biasが高い大名ほど少ない兵力差でも攻めようとする傾向があるが、
+        // 乱数係数によって状況次第では攻めないこともある
         let mut candidates = Vec::new();
         for neighbor in neighbors {
             let enemy_hei = neighbor.resource.hei.value() as f64;
-            // 80%の兵力で勝てるか判定 (military_biasで楽観度調整)
-            let required_hei = enemy_hei * 1.25 / bias;
+            // 必要兵力倍率：基準値1.25にゆらぎ(±0.3)を加え、military_biasで楽観補正
+            let noise_multiplier = rng.gen_range(-0.1..=0.1_f64);
+            let required_hei = enemy_hei * (1.25 + noise_multiplier);
 
             if my_hei > required_hei {
                 let win_prob = (my_hei / (my_hei + enemy_hei)).clamp(0.0, 1.0);
@@ -57,11 +63,14 @@ impl WarDecisionService {
         }
 
         // 最も期待値が高いターゲットを選択
+        // スコアにも乱数ゆらぎを乗せ、毎回同じ相手を狙わないようにする
         candidates.sort_by(|a, b| {
             let value_a = (a.2.stats.kokudaka.value() + a.2.stats.machi.value()) as f64;
             let value_b = (b.2.stats.kokudaka.value() + b.2.stats.machi.value()) as f64;
-            let score_a = a.1.powf(1.0 / bias) * value_a;
-            let score_b = b.1.powf(1.0 / bias) * value_b;
+            let jitter_a = rng.gen_range(0.8..=1.2_f64);
+            let jitter_b = rng.gen_range(0.8..=1.2_f64);
+            let score_a = a.1.powf(1.0 / bias) * value_a * jitter_a;
+            let score_b = b.1.powf(1.0 / bias) * value_b * jitter_b;
             score_b
                 .partial_cmp(&score_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -69,15 +78,18 @@ impl WarDecisionService {
 
         let (target_id, win_prob, _) = candidates[0];
 
-        // 最終的な出兵判断
-        let mut rng = rand::thread_rng();
-        let base_chance = 70.0;
-        let noise = rng.gen_range(-10.0..10.0);
-        let final_chance = ((base_chance + noise) as f64).clamp(50.0, 80.0);
+        // 最終的な出兵判断：勝率とmilitary_biasから出兵確率を動的に計算する
+        // 出兵確率 = (勝率 * military_bias * 100) に ±15% のゆらぎ
+        // これにより同一状況でも出兵するか否かが毎回確定しない
+        let base_attack_prob = (win_prob * bias * 100.0).clamp(30.0, 90.0);
+        let attack_noise = rng.gen_range(-15.0..=15.0_f64);
+        let final_attack_prob = (base_attack_prob + attack_noise).clamp(0.0, 100.0);
+        let dice_roll = rng.gen_range(0.0..100.0_f64);
+        let hei_ratio = rng.gen_range(0.5..=0.8_f64);
 
-        if win_prob * 100.0 > (100.0 - (final_chance * bias)) {
+        if dice_roll < final_attack_prob {
             let my_kome = kuni.resource.kome.value() as f64;
-            let invasion_hei = (my_hei * 0.8).min(my_kome);
+            let invasion_hei = (my_hei * hei_ratio).min(my_kome);
             let invasion_kome = invasion_hei;
 
             Some(InvasionPlan {
