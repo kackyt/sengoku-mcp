@@ -65,8 +65,6 @@ impl WarDecisionService {
         neighbor_repo: &dyn crate::domain::repository::neighbor_repository::NeighborRepository,
         kuni_repo: &dyn crate::domain::repository::kuni_repository::KuniRepository,
     ) -> anyhow::Result<Option<InvasionPlan>> {
-        let personality = &daimyo.personality;
-        let bias = personality.military_bias();
         let my_hei = kuni.resource.hei.mul_percent(50);
 
         // 国に残す兵力
