@@ -81,6 +81,14 @@ pub struct ExecuteBattleTurnParams {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ExecuteDefenseTurnParams {
+    /// 防御側の国ID
+    pub defender_kuni_id: u32,
+    /// 選択する戦術 (1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞)
+    pub tactic: u32,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct AutoActionParams {
     /// 対象となる国のID
     pub kuni_id: u32,
@@ -131,6 +139,24 @@ impl McpHandlers {
             ));
         }
         Ok(())
+    }
+
+    fn parse_tactic(&self, tactic: u32, is_attacker: bool) -> Result<Tactic, String> {
+        match tactic {
+            1 => Ok(Tactic::Normal),
+            2 => Ok(Tactic::Surprise),
+            3 => Ok(Tactic::Fire),
+            4 => Ok(Tactic::Inspire),
+            5 if is_attacker => Ok(Tactic::Retreat),
+            _ => {
+                let options = if is_attacker {
+                    "1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞, 5: 退却"
+                } else {
+                    "1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞"
+                };
+                Err(format!("無効な戦術IDです ({})", options))
+            }
+        }
     }
 }
 
@@ -200,7 +226,7 @@ impl McpHandlers {
         result.push_str(&format!("現在の手番: {}\n\n", current_daimyo_name));
         result.push_str("あなたの領地:\n");
 
-        for k in kunis {
+        for k in &kunis {
             result.push_str(&format!(
                 "- {} (ID: {}): 金={}, 米={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
                 k.name.0,
@@ -212,6 +238,36 @@ impl McpHandlers {
                 k.stats.machi.to_display().value(),
                 k.stats.tyu.value()
             ));
+        }
+
+        // 防衛戦の警告
+        let my_kuni_ids: std::collections::HashSet<_> = kunis.iter().map(|k| k.id).collect();
+        for battle in snapshot.active_battles {
+            if my_kuni_ids.contains(&battle.defender.kuni_id) {
+                let attacker_name = snapshot
+                    .kuni_names
+                    .get(&battle.attacker.kuni_id)
+                    .cloned()
+                    .unwrap_or_else(|| "不明".to_string());
+                let defender_name = snapshot
+                    .kuni_names
+                    .get(&battle.defender.kuni_id)
+                    .cloned()
+                    .unwrap_or_else(|| "不明".to_string());
+
+                result.push_str("\n⚠️ 【緊急：侵攻検知】 ⚠️\n");
+                result.push_str(&format!(
+                    "「{}」が「{}」に攻め込んでいます！\n",
+                    attacker_name, defender_name
+                ));
+                result.push_str(&format!(
+                    "敵軍勢: 兵数 {}\n",
+                    battle.attacker.hei.to_display().value()
+                ));
+                result.push_str(
+                    "直ちに battle_execute_defense_turn で防衛戦術を指示してください。\n",
+                );
+            }
         }
 
         Ok(result)
@@ -421,18 +477,7 @@ impl McpHandlers {
         let attacker_id = KuniId::new(attacker_kuni_id);
         self.check_kuni_ownership(attacker_id).await?;
 
-        let t = match tactic {
-            1 => Tactic::Normal,
-            2 => Tactic::Surprise,
-            3 => Tactic::Fire,
-            4 => Tactic::Inspire,
-            5 => Tactic::Retreat,
-            _ => {
-                return Err(
-                    "無効な戦術IDです (1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞, 5: 退却)".to_string(),
-                )
-            }
-        };
+        let t = self.parse_tactic(tactic, true)?;
 
         let next_status = self
             .battle_usecase
@@ -442,6 +487,41 @@ impl McpHandlers {
 
         let mut result = format!(
             "合戦ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
+            next_status.attacker.hei.to_display().value(),
+            next_status.defender.hei.to_display().value()
+        );
+
+        if let Some(winner) = next_status.winner {
+            result.push_str(&format!("決着！ 勝者: {:?}", winner));
+        }
+
+        Ok(result)
+    }
+
+    /// 防御側として合戦のターンを1回進めます
+    #[tool(
+        description = "プレイヤーが防御側として、合戦のターンを1回進めます。戦術を選択してください (1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞)"
+    )]
+    pub async fn battle_execute_defense_turn(
+        &self,
+        Parameters(ExecuteDefenseTurnParams {
+            defender_kuni_id,
+            tactic,
+        }): Parameters<ExecuteDefenseTurnParams>,
+    ) -> Result<String, String> {
+        let defender_id = KuniId::new(defender_kuni_id);
+        self.check_kuni_ownership(defender_id).await?;
+
+        let t = self.parse_tactic(tactic, false)?;
+
+        let next_status = self
+            .battle_usecase
+            .execute_defense_turn(defender_id, t)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut result = format!(
+            "防衛ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
             next_status.attacker.hei.to_display().value(),
             next_status.defender.hei.to_display().value()
         );
@@ -508,9 +588,14 @@ impl McpHandlers {
 
         state.check_turn(id).map_err(|e| e.to_string())?;
 
+        let player_id = {
+            let lock = self.selected_daimyo_id.lock().await;
+            *lock
+        };
+
         // 自動行動の実行と手番進行 (原子的な実行)
         self.turn_progression_usecase
-            .execute_cpu_action_and_advance(id)
+            .execute_cpu_action_and_advance(id, player_id)
             .await
             .map_err(|e| e.to_string())?;
 

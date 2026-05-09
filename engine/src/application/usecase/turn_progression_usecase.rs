@@ -24,6 +24,10 @@ pub struct TurnProgressionUseCase {
     game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
     event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
     action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
+    battle_repo:
+        Arc<dyn crate::domain::repository::battle_repository::BattleRepository + Send + Sync>,
+    neighbor_repo:
+        Arc<dyn crate::domain::repository::neighbor_repository::NeighborRepository + Send + Sync>,
 }
 
 impl TurnProgressionUseCase {
@@ -33,6 +37,12 @@ impl TurnProgressionUseCase {
         game_state_repo: Arc<dyn GameStateRepository + Send + Sync>,
         event_dispatcher: Arc<dyn EventDispatcher + Send + Sync>,
         action_log_repo: Arc<dyn ActionLogRepository + Send + Sync>,
+        battle_repo: Arc<
+            dyn crate::domain::repository::battle_repository::BattleRepository + Send + Sync,
+        >,
+        neighbor_repo: Arc<
+            dyn crate::domain::repository::neighbor_repository::NeighborRepository + Send + Sync,
+        >,
     ) -> Self {
         Self {
             kuni_repo,
@@ -40,6 +50,8 @@ impl TurnProgressionUseCase {
             game_state_repo,
             event_dispatcher,
             action_log_repo,
+            battle_repo,
+            neighbor_repo,
         }
     }
 
@@ -127,7 +139,7 @@ impl TurnProgressionUseCase {
                 .dispatch(GameEvent::DaimyoActionStarted { daimyo_id })
                 .await?;
 
-            self.execute_cpu_action(kuni_id).await?;
+            self.execute_cpu_action(kuni_id, player_daimyo_id).await?;
 
             state.advance_action();
             if state.is_turn_completed() {
@@ -158,8 +170,9 @@ impl TurnProgressionUseCase {
     pub async fn execute_cpu_action_and_advance(
         &self,
         kuni_id: KuniId,
+        player_daimyo_id: Option<DaimyoId>,
     ) -> Result<(), anyhow::Error> {
-        self.execute_cpu_action(kuni_id).await?;
+        self.execute_cpu_action(kuni_id, player_daimyo_id).await?;
         self.complete_current_action().await?;
         Ok(())
     }
@@ -167,6 +180,7 @@ impl TurnProgressionUseCase {
     pub async fn execute_cpu_action(
         &self,
         kuni_id: crate::domain::model::value_objects::KuniId,
+        player_daimyo_id: Option<DaimyoId>,
     ) -> Result<(), anyhow::Error> {
         let mut state = self
             .game_state_repo
@@ -194,28 +208,145 @@ impl TurnProgressionUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("大名が見つかりません: {:?}", daimyo_id))?;
 
+        // 1. 出兵判断 (内政より先に検討)
+        let neighbor_ids = self.neighbor_repo.get_neighbors(&kuni_id);
+        let mut neighbor_kunis = Vec::new();
+        for nid in neighbor_ids {
+            if let Some(nk) = self.kuni_repo.find_by_id(&nid).await? {
+                neighbor_kunis.push(nk);
+            }
+        }
+
+        if let Some(plan) = crate::domain::service::war_decision_service::WarDecisionService::new()
+            .decide_invasion(&daimyo, &target_kuni, &neighbor_kunis)
+        {
+            let (target_id, dispatched_hei, dispatched_kome) =
+                (plan.target_kuni_id, plan.hei, plan.kome);
+            let mut enemy_kuni = self
+                .kuni_repo
+                .find_by_id(&target_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("攻撃対象の国が見つかりません: {:?}", target_id))?;
+
+            // 出兵リソース消費
+            let attacker_army = target_kuni.dispatch_army(dispatched_hei, dispatched_kome)?;
+            self.kuni_repo.save(&target_kuni).await?;
+
+            // ログ（戦争開始 - 内政ログにも表示）
+            let _ = self.action_log_repo.save(ActionLogEntry::new(
+                ActionLogVisibility::Public,
+                state.current_turn(),
+                ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
+                    daimyo_id,
+                    action_msg: format!(
+                        "【侵攻】{} が {} へ攻め込みました！",
+                        target_kuni.name.0, enemy_kuni.name.0
+                    ),
+                    reasoning: None,
+                }),
+            ));
+
+            let _ = self.action_log_repo.save(ActionLogEntry::new(
+                ActionLogVisibility::Public,
+                state.current_turn(),
+                ActionLogEvent::War(crate::domain::model::action_log::WarLogEvent::WarStarted {
+                    attacker_name: target_kuni.name.clone(),
+                    defender_name: enemy_kuni.name.clone(),
+                    attacker_id: target_kuni.daimyo_id,
+                    defender_id: enemy_kuni.daimyo_id,
+                }),
+            ));
+
+            let is_target_player = player_daimyo_id.is_some_and(|id| id == enemy_kuni.daimyo_id);
+
+            if is_target_player {
+                // ターゲットがプレイヤーの場合：合戦状態を保存して停止
+                let defender_army = crate::domain::model::battle::ArmyStatus {
+                    kuni_id: enemy_kuni.id,
+                    hei: enemy_kuni.resource.hei,
+                    kome: enemy_kuni.resource.kome,
+                    morale: enemy_kuni.stats.tyu,
+                };
+                let war_status =
+                    crate::domain::model::battle::WarStatus::new(attacker_army, defender_army);
+                self.battle_repo.save(&war_status).await?;
+            } else {
+                // ターゲットがCPUの場合：自動決着
+                let defender_army = crate::domain::model::battle::ArmyStatus {
+                    kuni_id: enemy_kuni.id,
+                    hei: enemy_kuni.resource.hei,
+                    kome: enemy_kuni.resource.kome,
+                    morale: enemy_kuni.stats.tyu,
+                };
+                let war_status =
+                    crate::domain::model::battle::WarStatus::new(attacker_army, defender_army);
+
+                let (final_status, _turns) = {
+                    let mut rng = rand::thread_rng();
+                    crate::domain::service::battle_service::BattleService::auto_resolve(
+                        war_status, &mut rng,
+                    )?
+                };
+
+                // 結果の反映
+                match final_status.winner {
+                    Some(crate::domain::model::battle::BattleSide::Attacker) => {
+                        // 攻撃側勝利：占領
+                        enemy_kuni.occupy(daimyo_id, &final_status.attacker);
+                        self.kuni_repo.save(&enemy_kuni).await?;
+
+                        let _ = self.action_log_repo.save(ActionLogEntry::new(
+                            ActionLogVisibility::Public,
+                            state.current_turn(),
+                            ActionLogEvent::War(
+                                crate::domain::model::action_log::WarLogEvent::AttackerVictory {
+                                    home_name: target_kuni.name.clone(),
+                                    attacker_id: target_kuni.daimyo_id,
+                                    occupied_name: enemy_kuni.name.clone(),
+                                    defender_id: enemy_kuni.daimyo_id,
+                                },
+                            ),
+                        ));
+                    }
+                    _ => {
+                        // 防衛側勝利（または引き分け）
+                        enemy_kuni.survive_defense(&final_status.defender);
+                        target_kuni.survive_defense(&final_status.attacker); // 帰還兵の処理
+                        self.kuni_repo.save(&enemy_kuni).await?;
+                        self.kuni_repo.save(&target_kuni).await?;
+
+                        let _ = self.action_log_repo.save(ActionLogEntry::new(
+                            ActionLogVisibility::Public,
+                            state.current_turn(),
+                            ActionLogEvent::War(
+                                crate::domain::model::action_log::WarLogEvent::DefenderVictory {
+                                    home_name: target_kuni.name.clone(),
+                                    attacker_id: target_kuni.daimyo_id,
+                                    defender_id: enemy_kuni.daimyo_id,
+                                },
+                            ),
+                        ));
+                    }
+                }
+            }
+
+            // 行動済みフラグを立てて保存
+            state.mark_action_performed();
+            self.game_state_repo.save(&state).await?;
+            return Ok(());
+        }
+
+        // 2. 内政判断 (出兵しなかった場合)
         let (decision, reasoning) = {
             let mut rng = rand::thread_rng();
             CpuActionDecisionService::decide(&daimyo.personality, &target_kuni, turn, &mut rng)
         };
 
         let action_msg = match decision {
-            CpuActionDecision::Battle {
-                target_kuni_id: Some(target_id),
-            } => {
-                self.event_dispatcher
-                    .dispatch(GameEvent::BattleAction {
-                        attacker_id: daimyo_id,
-                        target_kuni_id: target_id,
-                        result_message: EventMessage::new("戦争を行いました（自動）"),
-                    })
-                    .await?;
-                return Ok(());
+            CpuActionDecision::Battle { .. } => {
+                // ここには来ないはずだが念のため
+                "戦況を静観しました".to_string()
             }
-            CpuActionDecision::Battle {
-                target_kuni_id: None,
-                ..
-            } => "攻撃対象が不明なため待機しました".to_string(),
             _ => {
                 match crate::domain::service::kuni_action_service::KuniActionService::apply_cpu_decision(
                     &mut target_kuni,

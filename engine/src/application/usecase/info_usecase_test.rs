@@ -14,10 +14,12 @@ mod tests {
         ActionOrderIndex, DaimyoId, DisplayAmount, IninFlag, KuniId, TurnNumber, INTERNAL_SCALE,
     };
     use crate::domain::repository::action_log_repository::ActionLogRepository;
+    use crate::domain::repository::battle_repository::BattleRepository;
     use crate::domain::repository::daimyo_repository::DaimyoRepository;
     use crate::domain::repository::event_dispatcher::EventDispatcher;
     use crate::domain::repository::game_state_repository::GameStateRepository;
     use crate::domain::repository::kuni_repository::KuniRepository;
+    use crate::domain::repository::neighbor_repository::NeighborRepository;
     use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -118,6 +120,47 @@ mod tests {
         }
     }
 
+    struct MockBattleRepository;
+    #[async_trait]
+    impl BattleRepository for MockBattleRepository {
+        async fn save(
+            &self,
+            _status: &crate::domain::model::battle::WarStatus,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn find_by_attacker(
+            &self,
+            _attacker_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_by_defender(
+            &self,
+            _defender_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_all(
+            &self,
+        ) -> Result<Vec<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(vec![])
+        }
+        async fn delete_by_attacker(&self, _attacker_id: &KuniId) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct MockNeighborRepository;
+    impl NeighborRepository for MockNeighborRepository {
+        fn get_neighbors(&self, _kuni_id: &KuniId) -> Vec<KuniId> {
+            vec![]
+        }
+        fn are_adjacent(&self, _a: &KuniId, _b: &KuniId) -> bool {
+            false
+        }
+    }
+
     // --- Helper ---
     fn to_internal(val: u32) -> u32 {
         val * INTERNAL_SCALE
@@ -209,6 +252,8 @@ mod tests {
             game_state_repo.clone(),
             event_dispatcher.clone(),
             action_log_repo.clone(),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         ));
 
         let info_usecase = InfoUseCase::new(

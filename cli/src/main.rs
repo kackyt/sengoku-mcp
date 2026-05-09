@@ -110,6 +110,8 @@ async fn build_app() -> Result<App> {
         game_state_repo.clone(),
         event_dispatcher.clone(),
         action_log_repo.clone(),
+        battle_repo.clone(),
+        neighbor_repo.clone(),
     );
     let turn_progression_arc = Arc::new(turn_progression_usecase.clone());
 
@@ -126,6 +128,7 @@ async fn build_app() -> Result<App> {
         battle_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
+        daimyo_repo.clone(),
         turn_progression_arc.clone(),
     );
     let kuni_query_usecase = KuniQueryUseCase::new(
@@ -134,6 +137,7 @@ async fn build_app() -> Result<App> {
         game_state_repo.clone(),
         neighbor_repo.clone(),
         action_log_repo.clone(),
+        battle_repo.clone(),
     );
     let info_usecase = InfoUseCase::new(
         kuni_repo.clone(),

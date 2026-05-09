@@ -647,14 +647,25 @@ impl EventHandler {
                         _ => Tactic::Normal,
                     };
 
-                    if !Self::check_player_turn(app, status.attacker_id(), 0).await? {
-                        return Ok(());
-                    }
+                    let is_player_attacker =
+                        app.selected_daimyo_id == app.attacker_kuni.as_ref().map(|k| k.daimyo_id);
+                    let is_player_defender =
+                        app.selected_daimyo_id == app.defender_kuni.as_ref().map(|k| k.daimyo_id);
 
-                    let result_status = app
-                        .battle_usecase
-                        .execute_battle_turn(status.attacker_id(), tactic)
-                        .await?;
+                    let result_status = if is_player_attacker {
+                        if !Self::check_player_turn(app, status.attacker_id(), 0).await? {
+                            return Ok(());
+                        }
+                        app.battle_usecase
+                            .execute_battle_turn(status.attacker_id(), tactic)
+                            .await?
+                    } else if is_player_defender {
+                        app.battle_usecase
+                            .execute_defense_turn(status.defender_id(), tactic)
+                            .await?
+                    } else {
+                        return Ok(());
+                    };
 
                     let msg = if let Some(winner) = result_status.winner {
                         use engine::domain::model::battle::BattleSide;
@@ -679,8 +690,13 @@ impl EventHandler {
                         app.turn_progression_usecase
                             .complete_current_action()
                             .await?;
+                        let return_kuni_id = if is_player_attacker {
+                            status.attacker_id()
+                        } else {
+                            status.defender_id()
+                        };
                         app.screen = ScreenState::Domestic {
-                            selected_kuni: status.attacker_id(),
+                            selected_kuni: return_kuni_id,
                             cursor: 0,
                             sub_state: DomesticSubState::ShowMessage {
                                 message: msg,

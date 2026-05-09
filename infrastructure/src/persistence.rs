@@ -273,6 +273,22 @@ impl BattleRepository for InMemoryBattleRepository {
         Ok(guard.get(attacker_id).cloned())
     }
 
+    async fn find_by_defender(
+        &self,
+        defender_id: &KuniId,
+    ) -> Result<Option<WarStatus>, DomainError> {
+        let guard = self.battles.read().await;
+        Ok(guard
+            .values()
+            .find(|status| &status.defender.kuni_id == defender_id)
+            .cloned())
+    }
+
+    async fn find_all(&self) -> Result<Vec<WarStatus>, DomainError> {
+        let guard = self.battles.read().await;
+        Ok(guard.values().cloned().collect())
+    }
+
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError> {
         let mut guard = self.battles.write().await;
         guard.remove(attacker_id);

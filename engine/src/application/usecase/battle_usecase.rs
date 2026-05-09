@@ -7,6 +7,7 @@ use crate::domain::{
     model::value_objects::{Amount, DisplayAmount, KuniId},
     repository::action_log_repository::ActionLogRepository,
     repository::battle_repository::BattleRepository,
+    repository::daimyo_repository::DaimyoRepository,
     repository::game_state_repository::GameStateRepository,
     repository::kuni_repository::KuniRepository,
     repository::neighbor_repository::NeighborRepository,
@@ -22,6 +23,7 @@ pub struct BattleUseCase {
     battle_repo: Arc<dyn BattleRepository>,
     action_log_repo: Arc<dyn ActionLogRepository>,
     game_state_repo: Arc<dyn GameStateRepository>,
+    daimyo_repo: Arc<dyn DaimyoRepository>,
     turn_progression_usecase:
         Arc<crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase>,
 }
@@ -34,6 +36,7 @@ impl BattleUseCase {
         battle_repo: Arc<dyn BattleRepository>,
         action_log_repo: Arc<dyn ActionLogRepository>,
         game_state_repo: Arc<dyn GameStateRepository>,
+        daimyo_repo: Arc<dyn DaimyoRepository>,
         turn_progression_usecase: Arc<
             crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase,
         >,
@@ -44,6 +47,7 @@ impl BattleUseCase {
             battle_repo,
             action_log_repo,
             game_state_repo,
+            daimyo_repo,
             turn_progression_usecase,
         }
     }
@@ -80,7 +84,10 @@ impl BattleUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("進行中の合戦が見つかりません"))?;
 
-        let defender_tactic = BattleService::decide_tactic();
+        let defender_tactic = {
+            let mut rng = rand::thread_rng();
+            BattleService::decide_tactic_for_defender(&status.defender, &status.attacker, &mut rng)
+        };
 
         let next_status =
             BattleService::calculate_turn(status.clone(), attacker_tactic, defender_tactic)?;
@@ -107,100 +114,161 @@ impl BattleUseCase {
             }),
         ))?;
 
-        // 戦争決着時の処理
         if let Some(winner) = next_status.winner {
-            match winner {
-                BattleSide::Attacker => {
-                    // 攻撃側勝利：占領処理
-                    let mut occupied = self
-                        .kuni_repo
-                        .find_by_id(&next_status.defender_id())
-                        .await?
-                        .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
-
-                    let home = self
-                        .kuni_repo
-                        .find_by_id(&next_status.attacker_id())
-                        .await?
-                        .ok_or_else(|| anyhow::anyhow!("本国が見つかりません"))?;
-
-                    // 勝利ログの記録
-                    self.action_log_repo.save(ActionLogEntry::new(
-                        ActionLogVisibility::Public,
-                        turn,
-                        ActionLogEvent::War(WarLogEvent::AttackerVictory {
-                            home_name: home.name.clone(),
-                            attacker_id: home.daimyo_id,
-                            occupied_name: occupied.name.clone(),
-                            defender_id: occupied.daimyo_id,
-                        }),
-                    ))?;
-
-                    // 内政ログにも記録
-                    self.action_log_repo.save(ActionLogEntry::new(
-                        ActionLogVisibility::Public,
-                        turn,
-                        ActionLogEvent::Domestic(DomesticLogEvent::WarAttackerOccupied {
-                            home_name: home.name.clone(),
-                            occupied_name: occupied.name.clone(),
-                        }),
-                    ))?;
-
-                    // 占領処理
-                    occupied.occupy(home.daimyo_id, &next_status.attacker);
-                    self.kuni_repo.save(&occupied).await?;
-
-                    self.battle_repo
-                        .delete_by_attacker(&next_status.attacker_id())
-                        .await?;
-                }
-                BattleSide::Defender => {
-                    // 防御側勝利
-                    let mut defender = self
-                        .kuni_repo
-                        .find_by_id(&next_status.defender_id())
-                        .await?
-                        .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
-
-                    let attacker_kuni = self
-                        .kuni_repo
-                        .find_by_id(&next_status.attacker_id())
-                        .await?
-                        .ok_or_else(|| anyhow::anyhow!("攻撃側の国が見つかりません"))?;
-
-                    // 敗北ログの記録
-                    self.action_log_repo.save(ActionLogEntry::new(
-                        ActionLogVisibility::Public,
-                        turn,
-                        ActionLogEvent::War(WarLogEvent::DefenderVictory {
-                            home_name: attacker_kuni.name.clone(),
-                            attacker_id: attacker_kuni.daimyo_id,
-                            defender_id: defender.daimyo_id,
-                        }),
-                    ))?;
-
-                    // 内政ログにも記録
-                    self.action_log_repo.save(ActionLogEntry::new(
-                        ActionLogVisibility::Public,
-                        turn,
-                        ActionLogEvent::Domestic(DomesticLogEvent::WarDefenderDefended {
-                            defender_name: defender.name.clone(),
-                        }),
-                    ))?;
-
-                    defender.survive_defense(&next_status.defender);
-                    self.kuni_repo.save(&defender).await?;
-
-                    self.battle_repo
-                        .delete_by_attacker(&next_status.attacker_id())
-                        .await?;
-                }
-            }
+            self.process_battle_result(next_status.clone(), winner, turn)
+                .await?;
         } else {
             self.battle_repo.save(&next_status).await?;
         }
 
         Ok(next_status)
+    }
+
+    /// プレイヤーが防御側の合戦ターンを実行します
+    pub async fn execute_defense_turn(
+        &self,
+        defender_id: KuniId,
+        defender_tactic: Tactic,
+    ) -> Result<WarStatus, anyhow::Error> {
+        let status = self
+            .battle_repo
+            .find_by_defender(&defender_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("進行中の防御戦が見つかりません"))?;
+
+        let attacker_kuni = self
+            .kuni_repo
+            .find_by_id(&status.attacker.kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("攻撃側の国が見つかりません"))?;
+
+        let attacker_daimyo = self
+            .daimyo_repo
+            .find_by_id(&attacker_kuni.daimyo_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("攻撃側の大名が見つかりません"))?;
+
+        let attacker_tactic = {
+            let mut rng = rand::thread_rng();
+            BattleService::decide_tactic_for_attacker(
+                &status.attacker,
+                &status.defender,
+                attacker_daimyo.personality.military_bias(),
+                &mut rng,
+            )
+        };
+
+        let next_status =
+            BattleService::calculate_turn(status.clone(), attacker_tactic, defender_tactic)?;
+
+        // ログ記録と事後処理 (execute_battle_turn と同様のロジック)
+        let turn = self
+            .game_state_repo
+            .get()
+            .await?
+            .map(|s| s.current_turn())
+            .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+
+        self.action_log_repo.save(ActionLogEntry::new(
+            ActionLogVisibility::Public,
+            turn,
+            ActionLogEvent::War(WarLogEvent::Damage {
+                attacker_tactic,
+                defender_tactic,
+                attacker_damage: Amount::new(
+                    status
+                        .attacker
+                        .hei
+                        .value()
+                        .saturating_sub(next_status.attacker.hei.value()),
+                ),
+                defender_damage: Amount::new(
+                    status
+                        .defender
+                        .hei
+                        .value()
+                        .saturating_sub(next_status.defender.hei.value()),
+                ),
+            }),
+        ))?;
+
+        if let Some(winner) = next_status.winner {
+            self.process_battle_result(next_status.clone(), winner, turn)
+                .await?;
+        } else {
+            self.battle_repo.save(&next_status).await?;
+        }
+
+        Ok(next_status)
+    }
+
+    /// 戦合戦結果の共通処理
+    async fn process_battle_result(
+        &self,
+        status: WarStatus,
+        winner: BattleSide,
+        turn: crate::domain::model::value_objects::TurnNumber,
+    ) -> Result<(), anyhow::Error> {
+        match winner {
+            BattleSide::Attacker => {
+                let mut occupied = self
+                    .kuni_repo
+                    .find_by_id(&status.defender_id())
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
+                let home = self
+                    .kuni_repo
+                    .find_by_id(&status.attacker_id())
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("本国が見つかりません"))?;
+
+                self.action_log_repo.save(ActionLogEntry::new(
+                    ActionLogVisibility::Public,
+                    turn,
+                    ActionLogEvent::War(WarLogEvent::AttackerVictory {
+                        home_name: home.name.clone(),
+                        attacker_id: home.daimyo_id,
+                        occupied_name: occupied.name.clone(),
+                        defender_id: occupied.daimyo_id,
+                    }),
+                ))?;
+
+                occupied.occupy(home.daimyo_id, &status.attacker);
+                self.kuni_repo.save(&occupied).await?;
+                self.battle_repo
+                    .delete_by_attacker(&status.attacker_id())
+                    .await?;
+            }
+            BattleSide::Defender => {
+                let mut defender = self
+                    .kuni_repo
+                    .find_by_id(&status.defender_id())
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
+                let attacker_kuni = self
+                    .kuni_repo
+                    .find_by_id(&status.attacker_id())
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("攻撃側の国が見つかりません"))?;
+
+                self.action_log_repo.save(ActionLogEntry::new(
+                    ActionLogVisibility::Public,
+                    turn,
+                    ActionLogEvent::War(WarLogEvent::DefenderVictory {
+                        home_name: attacker_kuni.name.clone(),
+                        attacker_id: attacker_kuni.daimyo_id,
+                        defender_id: defender.daimyo_id,
+                    }),
+                ))?;
+
+                defender.survive_defense(&status.defender);
+                self.kuni_repo.save(&defender).await?;
+                self.battle_repo
+                    .delete_by_attacker(&status.attacker_id())
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     /// 合戦を開始します

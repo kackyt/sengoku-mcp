@@ -13,9 +13,10 @@ mod tests {
         value_objects::{ActionOrderIndex, DaimyoId, IninFlag, KuniId, TurnNumber},
     };
     use crate::domain::repository::{
-        action_log_repository::ActionLogRepository, daimyo_repository::DaimyoRepository,
-        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
-        kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, battle_repository::BattleRepository,
+        daimyo_repository::DaimyoRepository, event_dispatcher::EventDispatcher,
+        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
+        neighbor_repository::NeighborRepository,
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -150,6 +151,47 @@ mod tests {
         }
     }
 
+    struct MockBattleRepository;
+    #[async_trait]
+    impl BattleRepository for MockBattleRepository {
+        async fn save(
+            &self,
+            _status: &crate::domain::model::battle::WarStatus,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn find_by_attacker(
+            &self,
+            _attacker_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_by_defender(
+            &self,
+            _defender_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_all(
+            &self,
+        ) -> Result<Vec<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(vec![])
+        }
+        async fn delete_by_attacker(&self, _attacker_id: &KuniId) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct MockNeighborRepository;
+    impl NeighborRepository for MockNeighborRepository {
+        fn get_neighbors(&self, _kuni_id: &KuniId) -> Vec<KuniId> {
+            vec![]
+        }
+        fn are_adjacent(&self, _a: &KuniId, _b: &KuniId) -> bool {
+            false
+        }
+    }
+
     // --- Helpers ---
 
     fn create_test_daimyo(id: u32, name: &str) -> Daimyo {
@@ -201,6 +243,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher.clone(),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 1. 初回進行: ターン1の開始をセットアップ（初期化のみ）
@@ -264,6 +308,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher,
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 初期状態セットアップ（ターン1, 行動順 [k1, k2], インデックス0）
@@ -301,6 +347,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher.clone(),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 初期状態セットアップ（ターン1, 行動順 [k1], インデックス0）
@@ -353,6 +401,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher,
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 初期状態で CPU -> プレイヤー の順とする

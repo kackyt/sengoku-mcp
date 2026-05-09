@@ -22,6 +22,8 @@ pub struct UiSnapshot {
     pub kuni_names: HashMap<KuniId, String>,
     pub domestic_logs: Vec<ActionLogEntry>,
     pub war_logs: Vec<ActionLogEntry>,
+    pub active_battles: Vec<crate::domain::model::battle::WarStatus>,
+    pub all_kunis: Vec<Kuni>,
 }
 
 /// 国の情報照会に関するユースケース
@@ -31,6 +33,7 @@ pub struct KuniQueryUseCase {
     game_state_repo: Arc<dyn GameStateRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
     action_log_repo: Arc<dyn ActionLogRepository>,
+    battle_repo: Arc<dyn crate::domain::repository::battle_repository::BattleRepository>,
 }
 
 impl KuniQueryUseCase {
@@ -40,6 +43,7 @@ impl KuniQueryUseCase {
         game_state_repo: Arc<dyn GameStateRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
         action_log_repo: Arc<dyn ActionLogRepository>,
+        battle_repo: Arc<dyn crate::domain::repository::battle_repository::BattleRepository>,
     ) -> Self {
         Self {
             kuni_repo,
@@ -47,6 +51,7 @@ impl KuniQueryUseCase {
             game_state_repo,
             neighbor_repo,
             action_log_repo,
+            battle_repo,
         }
     }
 
@@ -60,7 +65,7 @@ impl KuniQueryUseCase {
         // 基本情報の取得
         let all_daimyos = self.daimyo_repo.find_all().await?;
         let all_kunis = self.kuni_repo.find_all().await?;
-        let kuni_names = all_kunis.into_iter().map(|k| (k.id, k.name.0)).collect();
+        let kuni_names = all_kunis.iter().map(|k| (k.id, k.name.0.clone())).collect();
 
         let mut snapshot = UiSnapshot {
             all_daimyos,
@@ -71,6 +76,8 @@ impl KuniQueryUseCase {
             war_logs: self
                 .action_log_repo
                 .find_visible(ActionLogCategory::War, 100)?,
+            active_battles: self.battle_repo.find_all().await?,
+            all_kunis,
             ..Default::default()
         };
 

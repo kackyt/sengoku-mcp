@@ -121,6 +121,23 @@ impl BattleRepository for MockBattleRepository {
         Ok(())
     }
 
+    async fn find_by_defender(
+        &self,
+        defender_id: &KuniId,
+    ) -> Result<Option<WarStatus>, DomainError> {
+        Ok(self
+            .wars
+            .lock()
+            .unwrap()
+            .values()
+            .find(|w| &w.defender.kuni_id == defender_id)
+            .cloned())
+    }
+
+    async fn find_all(&self) -> Result<Vec<WarStatus>, DomainError> {
+        Ok(self.wars.lock().unwrap().values().cloned().collect())
+    }
+
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError> {
         self.wars.lock().unwrap().remove(attacker_id);
         Ok(())
@@ -262,6 +279,8 @@ async fn test_domestic_sell_rice() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -312,6 +331,8 @@ async fn test_domestic_buy_rice() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -362,6 +383,8 @@ async fn test_domestic_recruit() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -416,6 +439,8 @@ async fn test_domestic_transport_success_when_adjacent() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -475,6 +500,8 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -545,6 +572,8 @@ async fn test_battle_execution_success_when_adjacent() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -554,6 +583,7 @@ async fn test_battle_execution_success_when_adjacent() {
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
         state_repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         turn_progression,
     );
     let _initial_status = usecase
@@ -627,6 +657,8 @@ async fn test_battle_execution_fails_when_not_adjacent() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 
@@ -636,6 +668,7 @@ async fn test_battle_execution_fails_when_not_adjacent() {
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
         state_repo.clone(),
+        Arc::new(MockDaimyoRepository::new()),
         turn_progression,
     );
     let result = usecase
@@ -681,6 +714,8 @@ async fn test_turn_validation_fails_on_wrong_turn() {
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository::new()),
+            Arc::new(MockNeighborRepository::new()),
         ),
     );
 

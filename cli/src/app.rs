@@ -35,6 +35,7 @@ pub struct App {
     pub selected_daimyo_id: Option<DaimyoId>,
     pub domestic_logs: Vec<ActionLogEntry>,
     pub war_logs: Vec<ActionLogEntry>,
+    pub active_battles: Vec<engine::domain::model::battle::WarStatus>,
 }
 
 impl App {
@@ -64,6 +65,7 @@ impl App {
             selected_daimyo_id: None,
             domestic_logs: Vec::new(),
             war_logs: Vec::new(),
+            active_battles: Vec::new(),
         }
     }
 
@@ -95,6 +97,35 @@ impl App {
         self.kuni_names = snapshot.kuni_names;
         self.domestic_logs = snapshot.domestic_logs;
         self.war_logs = snapshot.war_logs;
+        self.active_battles = snapshot.active_battles.clone();
+
+        // プレイヤーが防御側となる合戦があれば、合戦画面へ遷移（モーダル表示の代わり）
+        if let Some(defense_battle) = self.selected_daimyo_id.and_then(|player_id| {
+            snapshot.active_battles.iter().find(|b| {
+                // 防御側の国が自分のものかチェック
+                snapshot
+                    .all_kunis
+                    .iter()
+                    .any(|k| k.id == b.defender.kuni_id && k.daimyo_id == player_id)
+            })
+        }) {
+            // まだ合戦画面でない、または別の合戦が表示されている場合は切り替え
+            let should_switch = match &self.screen {
+                ScreenState::War { status, .. } => {
+                    status.attacker.kuni_id != defense_battle.attacker.kuni_id
+                        || status.defender.kuni_id != defense_battle.defender.kuni_id
+                }
+                _ => true,
+            };
+
+            if should_switch {
+                self.screen = ScreenState::War {
+                    status: defense_battle.clone(),
+                    cursor: 0,
+                    sub_state: crate::screen::WarSubState::Normal,
+                };
+            }
+        }
 
         // 手番の国と表示されている国がズレないように強制同期
         match (&self.current_kuni, &self.screen) {
@@ -138,30 +169,21 @@ impl App {
             on_draw(terminal);
 
             // プレイヤーの手番でない場合は自動進行
-            if self.selected_daimyo_id.is_some() && !self.is_player_turn() {
-                match &self.screen {
+            if self.selected_daimyo_id.is_some()
+                && !self.is_player_turn()
+                && matches!(
+                    self.screen,
                     ScreenState::Domestic {
                         sub_state: DomesticSubState::Normal,
                         ..
-                    } => {
-                        // 1ステップ進める
-                        self.turn_progression_usecase.progress().await?;
-                        // CPUの行動を見せるために少し待機
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
                     }
-                    ScreenState::War {
-                        sub_state: crate::screen::WarSubState::Normal,
-                        ..
-                    } => {
-                        // 1ステップ進める
-                        self.turn_progression_usecase.progress().await?;
-                        // CPUの行動を見せるために少し待機
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
-                    }
-                    _ => {}
-                }
+                )
+            {
+                // 1ステップ進める
+                self.turn_progression_usecase.progress().await?;
+                // CPUの行動を見せるために少し待機
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
             }
 
             match get_event(Duration::from_millis(16))? {
