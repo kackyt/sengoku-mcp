@@ -118,13 +118,10 @@ impl WarDecisionService {
         let (target_id, score) = candidates[0];
 
         // 最終的な出兵判断：スコアとmilitary_biasから出兵確率を動的に計算する
-        let base_attack_prob = (score * bias * 100.0).clamp(10.0, 90.0);
-        let attack_noise = rng.gen_range(-15.0..=15.0_f64);
-        let final_attack_prob = (base_attack_prob + attack_noise).clamp(0.0, 100.0);
-        let dice_roll = rng.gen_range(0.0..100.0_f64);
+        let dice_roll = rng.gen_range(0.0..1.0_f64);
         let hei_ratio = rng.gen_range(50..=80);
 
-        if dice_roll < final_attack_prob {
+        if dice_roll < score {
             let my_kome = kuni.resource.kome;
             let invasion_hei = my_hei.mul_percent(hei_ratio).min(my_kome);
 
