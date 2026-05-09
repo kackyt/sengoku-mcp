@@ -218,7 +218,14 @@ impl TurnProgressionUseCase {
         .await?;
 
         if let Some(plan) = crate::domain::service::war_decision_service::WarDecisionService::new()
-            .decide_invasion(&daimyo, &target_kuni, &neighbor_kunis)
+            .decide_invasion(
+                &daimyo,
+                &target_kuni,
+                &neighbor_kunis,
+                self.neighbor_repo.as_ref(),
+                self.kuni_repo.as_ref(),
+            )
+            .await?
         {
             let (target_id, dispatched_hei, dispatched_kome) =
                 (plan.target_kuni_id, plan.hei, plan.kome);
