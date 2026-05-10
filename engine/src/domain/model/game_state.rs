@@ -61,6 +61,7 @@ impl GameState {
         current_action_index: ActionOrderIndex,
         action_performed: bool,
         phase: GamePhase,
+        winner_id: Option<DaimyoId>,
     ) -> Self {
         Self {
             current_turn,
@@ -68,7 +69,7 @@ impl GameState {
             current_action_index,
             action_performed,
             phase,
-            winner_id: None,
+            winner_id,
         }
     }
 
@@ -116,7 +117,10 @@ impl GameState {
             self.current_action_index =
                 ActionOrderIndex::new(self.current_action_index.value() + 1);
             self.action_performed = false;
-            self.phase = GamePhase::Domestic;
+            // ゲーム終了・クリア・合戦時はフェーズを戻さない
+            if !matches!(self.phase, GamePhase::GameOver | GamePhase::GameClear | GamePhase::Battle) {
+                self.phase = GamePhase::Domestic;
+            }
         }
     }
 
@@ -142,6 +146,12 @@ impl GameState {
         self.current_action_index = ActionOrderIndex::new(0);
         self.action_performed = false;
         self.phase = GamePhase::Domestic;
+    }
+
+    /// 合戦を開始し、合戦フェーズに移行します。
+    pub fn start_war(&mut self, _attacker_id: KuniId, _defender_id: KuniId) -> Result<(), DomainError> {
+        self.phase = GamePhase::Battle;
+        Ok(())
     }
 
     /// 指定された国IDが現在の手番であるかを確認します。

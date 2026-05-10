@@ -134,13 +134,16 @@ impl App {
         }
 
         // ゲームオーバー判定
-        if matches!(
-            snapshot.phase,
-            engine::domain::model::game_state::GamePhase::GameOver
-                | engine::domain::model::game_state::GamePhase::GameClear
-        ) {
-            if let Some(winner) = snapshot.winner {
-                self.screen = ScreenState::GameOver { winner };
+        let winner_opt = if !matches!(self.screen, ScreenState::Title) {
+            snapshot.winner
+        } else {
+            None
+        };
+        if let Some(winner) = winner_opt {
+            let is_victory = snapshot.phase == engine::domain::model::game_state::GamePhase::GameClear;
+            let is_game_over = is_victory || snapshot.phase == engine::domain::model::game_state::GamePhase::GameOver;
+            if is_game_over {
+                self.screen = ScreenState::GameOver { winner, is_victory };
             }
         }
 

@@ -292,7 +292,7 @@ async fn test_domestic_sell_rice() {
         turn_progression,
     );
     usecase
-        .sell_rice(kuni_id, DisplayAmount::new(1))
+        .sell_rice(None, kuni_id, DisplayAmount::new(1))
         .await
         .expect("売却成功");
 
@@ -344,7 +344,7 @@ async fn test_domestic_buy_rice() {
         turn_progression,
     );
     usecase
-        .buy_rice(kuni_id, DisplayAmount::new(1))
+        .buy_rice(None, kuni_id, DisplayAmount::new(1))
         .await
         .expect("購入成功");
 
@@ -396,7 +396,7 @@ async fn test_domestic_recruit() {
         turn_progression,
     );
     usecase
-        .recruit(kuni_id, DisplayAmount::new(1))
+        .recruit(None, kuni_id, DisplayAmount::new(1))
         .await
         .expect("徴募成功");
 
@@ -454,6 +454,7 @@ async fn test_domestic_transport_success_when_adjacent() {
 
     let res = usecase
         .transport(
+            None,
             from_id,
             to_id,
             DisplayAmount::new(1),
@@ -514,6 +515,7 @@ async fn test_domestic_transport_fails_when_not_adjacent() {
     );
     let res = usecase
         .transport(
+            None,
             from_id,
             to_id,
             DisplayAmount::new(1),
@@ -588,6 +590,7 @@ async fn test_battle_execution_success_when_adjacent() {
     );
     let _initial_status = usecase
         .start_war(
+            None,
             attacker_id,
             defender_id,
             DisplayAmount::new(5),
@@ -598,16 +601,19 @@ async fn test_battle_execution_success_when_adjacent() {
 
     // start_war で手番が進むため、テスト用に手番を戻す
     let mut state = state_repo.get().await.unwrap().unwrap();
-    state = GameState::new(
+    let current_phase = state.phase();
+    state = GameState::with_all_fields(
         state.current_turn(),
         state.action_order().to_vec(),
         crate::domain::model::value_objects::ActionOrderIndex::new(0),
-    )
-    .unwrap();
+        false, // action_performed
+        current_phase,
+        state.winner(),
+    );
     state_repo.save(&state).await.unwrap();
 
     let result = usecase
-        .execute_battle_turn(attacker_id, Tactic::Normal)
+        .execute_battle_turn(None, attacker_id, Tactic::Normal)
         .await
         .expect("合戦成功");
 
@@ -673,6 +679,7 @@ async fn test_battle_execution_fails_when_not_adjacent() {
     );
     let result = usecase
         .start_war(
+            None,
             attacker_id,
             defender_id,
             DisplayAmount::new(5),
@@ -728,7 +735,7 @@ async fn test_turn_validation_fails_on_wrong_turn() {
     );
 
     // 国1が行動しようとするとエラーになるはず
-    let res = usecase.sell_rice(kuni1.id, DisplayAmount::new(1)).await;
+    let res = usecase.sell_rice(None, kuni1.id, DisplayAmount::new(1)).await;
     assert!(res.is_err());
     assert!(res
         .unwrap_err()

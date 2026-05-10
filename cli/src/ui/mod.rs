@@ -35,7 +35,7 @@ pub fn draw(app: &App, f: &mut Frame) {
             cursor,
             sub_state,
         } => render_war(app, f, chunks[1], status, *cursor, sub_state),
-        ScreenState::GameOver { winner } => render_game_over(app, f, chunks[1], *winner),
+        ScreenState::GameOver { winner, is_victory } => render_game_over(app, f, chunks[1], *winner, *is_victory),
     }
 
     render_modals(app, f);
@@ -418,6 +418,7 @@ fn render_game_over(
     f: &mut Frame,
     area: Rect,
     winner_id: engine::domain::model::value_objects::DaimyoId,
+    is_victory: bool,
 ) {
     let winner_name = app
         .all_daimyos
@@ -426,14 +427,26 @@ fn render_game_over(
         .map(|d| d.name.0.as_str())
         .unwrap_or("勝者不明");
 
+    let (title, message, color) = if is_victory {
+        (
+            "全 国 統 一",
+            format!("{} 様が天下を平定されました！", winner_name),
+            Color::Yellow,
+        )
+    } else {
+        (
+            "滅  亡",
+            format!("{} 様は大望半ばにして倒れました…", winner_name),
+            Color::Red,
+        )
+    };
+
     let text = vec![
         Line::from(Span::styled(
-            "全 国 統 一",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            title,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
         )),
-        Line::from(format!("{} 様が天下を平定されました！", winner_name)),
+        Line::from(message),
     ];
     let p = Paragraph::new(text)
         .alignment(Alignment::Center)

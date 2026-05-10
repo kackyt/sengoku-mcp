@@ -159,7 +159,7 @@ impl EventHandler {
                                 .set_delegation(kuni_id, delegate)
                                 .await?;
                             app.turn_progression_usecase
-                                .complete_current_action()
+                                .complete_current_action(app.selected_daimyo_id)
                                 .await?;
                             let msg = if delegate {
                                 "委任しました"
@@ -177,7 +177,11 @@ impl EventHandler {
                         }
                         DomesticCommand::Information => {
                             if let Some(daimyo_id) = app.selected_daimyo_id {
-                                match app.info_usecase.get_other_countries_info(daimyo_id).await {
+                                match app
+                                    .info_usecase
+                                    .get_other_countries_info(app.selected_daimyo_id, daimyo_id)
+                                    .await
+                                {
                                     Ok(info) => {
                                         let mut msg = String::from("他国の情報を調査しました:\n");
                                         for country in info.countries {
@@ -193,9 +197,6 @@ impl EventHandler {
                                                 country.tyu
                                             ));
                                         }
-                                        app.turn_progression_usecase
-                                            .complete_current_action()
-                                            .await?;
                                         app.screen = ScreenState::Domestic {
                                             selected_kuni: kuni_id,
                                             cursor,
@@ -207,7 +208,7 @@ impl EventHandler {
                                     }
                                     Err(e) => {
                                         app.turn_progression_usecase
-                                            .complete_current_action()
+                                            .complete_current_action(app.selected_daimyo_id)
                                             .await?;
                                         app.screen = ScreenState::Domestic {
                                             selected_kuni: kuni_id,
@@ -319,37 +320,37 @@ impl EventHandler {
                     let result = match command {
                         DomesticCommand::SellRice => app
                             .domestic_usecase
-                            .sell_rice(kuni_id, amount)
+                            .sell_rice(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("米を売却し、金を {} 獲得しました", gain)),
                         DomesticCommand::BuyRice => app
                             .domestic_usecase
-                            .buy_rice(kuni_id, amount)
+                            .buy_rice(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("米を {} 購入しました", gain)),
                         DomesticCommand::Develop => app
                             .domestic_usecase
-                            .develop_land(kuni_id, amount)
+                            .develop_land(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("開墾完了！石高が {} 上昇しました", gain)),
                         DomesticCommand::BuildTown => app
                             .domestic_usecase
-                            .build_town(kuni_id, amount)
+                            .build_town(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("町造り完了！町ランクが {} 上昇しました", gain)),
                         DomesticCommand::Hire => app
                             .domestic_usecase
-                            .recruit(kuni_id, amount)
+                            .recruit(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|_| format!("兵を {} 雇用しました", amount_val)),
                         DomesticCommand::Dismiss => app
                             .domestic_usecase
-                            .dismiss(kuni_id, amount)
+                            .dismiss(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|_| format!("兵を {} 解雇しました", amount_val)),
                         DomesticCommand::Give => app
                             .domestic_usecase
-                            .give_charity(kuni_id, amount)
+                            .give_charity(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("施しを行い、忠誠度が {} 上昇しました", gain)),
                         _ => Ok("実行しました".to_string()),
@@ -357,9 +358,6 @@ impl EventHandler {
 
                     match result {
                         Ok(result_msg) => {
-                            app.turn_progression_usecase
-                                .complete_current_action()
-                                .await?;
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: kuni_id,
                                 cursor,
@@ -431,15 +429,11 @@ impl EventHandler {
                         } else if command == DomesticCommand::Transport {
                             let result = app
                                 .domestic_usecase
-                                .transport_with_rate(kuni_id, *target_id, 10)
+                                .transport_with_rate(app.selected_daimyo_id, kuni_id, *target_id, 10)
                                 .await;
 
                             match result {
                                 Ok(_) => {
-                                    app.turn_progression_usecase
-                                        .complete_current_action()
-                                        .await?;
-
                                     app.screen = ScreenState::Domestic {
                                         selected_kuni: kuni_id,
                                         cursor,
@@ -550,6 +544,7 @@ impl EventHandler {
                         let start_result = app
                             .battle_usecase
                             .start_war(
+                                app.selected_daimyo_id,
                                 kuni_id,
                                 target_id,
                                 DisplayAmount::new(hei),
@@ -666,11 +661,11 @@ impl EventHandler {
                             return Ok(());
                         }
                         app.battle_usecase
-                            .execute_battle_turn(status.attacker_id(), tactic)
+                            .execute_battle_turn(app.selected_daimyo_id, status.attacker_id(), tactic)
                             .await?
                     } else if is_player_defender {
                         app.battle_usecase
-                            .execute_defense_turn(status.defender_id(), tactic)
+                            .execute_defense_turn(app.selected_daimyo_id, status.defender_id(), tactic)
                             .await?
                     } else {
                         return Ok(());
@@ -696,9 +691,6 @@ impl EventHandler {
                     };
 
                     if result_status.winner.is_some() {
-                        app.turn_progression_usecase
-                            .complete_current_action()
-                            .await?;
                         let return_kuni_id = if is_player_attacker {
                             status.attacker_id()
                         } else {

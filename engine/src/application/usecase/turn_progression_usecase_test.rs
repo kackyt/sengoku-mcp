@@ -248,14 +248,14 @@ mod tests {
         );
 
         // 1. 初回進行: ターン1の開始をセットアップ（初期化のみ）
-        usecase.progress().await.expect("進行成功");
+        usecase.progress(None).await.expect("進行成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_turn().value(), 1);
         assert_eq!(state.current_action_index().value(), 0);
 
         // 2. 最初の大名が行動
-        usecase.progress().await.expect("進行成功");
+        usecase.progress(None).await.expect("進行成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_action_index().value(), 1);
@@ -270,7 +270,7 @@ mod tests {
             .any(|e| matches!(e, GameEvent::DaimyoActionStarted { .. })));
 
         // 3. 2番目の大名が行動（最後の行動なので自動的にターン終了処理まで走る）
-        usecase.progress().await.expect("進行成功");
+        usecase.progress(None).await.expect("進行成功");
 
         let state2 = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state2.current_turn().value(), 2); // すでにターンが進んでいる
@@ -322,7 +322,7 @@ mod tests {
         state_repo.save(&initial_state).await.unwrap();
 
         // 1人目の行動完了 -> 保存分岐 (index 0 -> 1)
-        usecase.complete_current_action().await.expect("成功");
+        usecase.complete_current_action(None).await.expect("成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_action_index().value(), 1);
@@ -358,7 +358,7 @@ mod tests {
         state_repo.save(&initial_state).await.unwrap();
 
         // 最後の行動完了 -> ターン終了分岐 (index 0 -> 1 -> 次のターンへ)
-        usecase.complete_current_action().await.expect("成功");
+        usecase.complete_current_action(None).await.expect("成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_turn().value(), 2);

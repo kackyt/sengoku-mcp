@@ -19,6 +19,7 @@ pub enum ScreenState {
     },
     GameOver {
         winner: DaimyoId,
+        is_victory: bool,
     },
 }
 

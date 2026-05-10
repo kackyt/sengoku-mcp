@@ -53,7 +53,9 @@ impl WarDecisionService {
         let max_prob = neighbors
             .iter()
             .filter(|n| n.daimyo_id != target.daimyo_id) // 敵対勢力のみ
-            .map(|n| Self::calculate_win_probability(n.resource.hei, target.resource.hei)) // 敵が自分に勝つ確率
+            .map(|n| {
+                Self::calculate_win_probability(n.resource.hei.mul_percent(50), target.resource.hei)
+            }) // 敵が自分に勝つ確率
             .fold(0.0, f64::max);
 
         Ok(max_prob)
@@ -140,13 +142,13 @@ impl WarDecisionService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::error::DomainError;
     use crate::domain::model::daimyo::Daimyo;
     use crate::domain::model::daimyo_personality::DaimyoPersonality;
     use crate::domain::model::resource::{DevelopmentStats, Resource};
     use crate::domain::model::value_objects::*;
     use crate::domain::repository::kuni_repository::KuniRepository;
     use crate::domain::repository::neighbor_repository::NeighborRepository;
-    use crate::domain::error::DomainError;
     use std::collections::HashMap;
 
     // --- Mocks ---
@@ -205,8 +207,7 @@ mod tests {
     async fn test_decide_invasion_prefers_weak_neighbor() {
         let service = WarDecisionService::new();
         let personality = DaimyoPersonality::new(1.0, 1.0, 1.0, 0.0).unwrap();
-        let my_daimyo =
-            Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
+        let my_daimyo = Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
 
         // 自分: 1000兵 (出兵に500兵使う想定)
         let my_kuni = create_test_kuni(1, 1, 1000);
@@ -244,15 +245,18 @@ mod tests {
 
         // 1000兵 vs 100兵なら勝率は約82%であり、リスクを引いたスコアは約0.63
         // 100回中40回以上は侵攻が選ばれるはず（統計的に極めて高い確率）
-        assert!(invasion_count > 40, "Invasion count was only {}", invasion_count);
+        assert!(
+            invasion_count > 40,
+            "Invasion count was only {}",
+            invasion_count
+        );
     }
 
     #[tokio::test]
     async fn test_decide_invasion_avoids_strong_neighbor() {
         let service = WarDecisionService::new();
         let personality = DaimyoPersonality::new(1.0, 1.0, 1.0, 0.0).unwrap();
-        let my_daimyo =
-            Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
+        let my_daimyo = Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
 
         // 自分: 500兵 (出兵に250兵使う想定)
         let my_kuni = create_test_kuni(1, 1, 500);
@@ -296,8 +300,7 @@ mod tests {
     async fn test_decide_invasion_prefers_safer_target() {
         let service = WarDecisionService::new();
         let personality = DaimyoPersonality::new(1.0, 1.0, 1.0, 0.0).unwrap();
-        let my_daimyo =
-            Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
+        let my_daimyo = Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
 
         // 自分: 1000兵
         let my_kuni = create_test_kuni(1, 1, 1000);
@@ -365,8 +368,7 @@ mod tests {
     async fn test_decide_invasion_considers_my_defense_risk() {
         let service = WarDecisionService::new();
         let personality = DaimyoPersonality::new(1.0, 1.0, 1.0, 0.0).unwrap();
-        let my_daimyo =
-            Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
+        let my_daimyo = Daimyo::new(DaimyoId::new(1), "MyDaimyo", personality);
 
         // 自分: 1000兵
         let my_kuni = create_test_kuni(1, 1, 1000);

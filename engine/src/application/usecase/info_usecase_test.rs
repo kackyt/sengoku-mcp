@@ -264,7 +264,7 @@ mod tests {
         );
 
         let result = info_usecase
-            .get_other_countries_info(player_id)
+            .get_other_countries_info(Some(player_id), player_id)
             .await
             .unwrap();
 

@@ -4,7 +4,7 @@ use crate::domain::{
         ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent, WarLogEvent,
     },
     model::battle::{BattleAdvantage, BattleSide, Tactic, WarStatus},
-    model::value_objects::{Amount, DisplayAmount, KuniId},
+    model::value_objects::{Amount, DaimyoId, DisplayAmount, KuniId},
     repository::action_log_repository::ActionLogRepository,
     repository::battle_repository::BattleRepository,
     repository::daimyo_repository::DaimyoRepository,
@@ -52,7 +52,7 @@ impl BattleUseCase {
         }
     }
 
-    async fn validate_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
+    async fn validate_battle_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
         let state = self
             .game_state_repo
             .get()
@@ -67,9 +67,24 @@ impl BattleUseCase {
         Ok(())
     }
 
-    async fn advance_turn(&self) -> Result<(), anyhow::Error> {
+    async fn validate_domestic_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
+        let state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+        if state.phase() != crate::domain::model::game_state::GamePhase::Domestic {
+            return Err(anyhow::anyhow!("現在は内政フェーズではありません"));
+        }
+
+        state.check_turn(kuni_id)?;
+        Ok(())
+    }
+
+    async fn advance_turn(&self, player_daimyo_id: Option<DaimyoId>) -> Result<(), anyhow::Error> {
         self.turn_progression_usecase
-            .complete_current_action()
+            .complete_current_action(player_daimyo_id)
             .await?;
         Ok(())
     }
@@ -77,10 +92,11 @@ impl BattleUseCase {
     /// 合戦の1ターンを実行します
     pub async fn execute_battle_turn(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         attacker_id: KuniId,
         attacker_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
-        self.validate_turn(attacker_id).await?;
+        self.validate_battle_turn(attacker_id).await?;
 
         let status = self
             .battle_repo
@@ -119,7 +135,7 @@ impl BattleUseCase {
         ))?;
 
         if let Some(winner) = next_status.winner {
-            self.process_battle_result(next_status.clone(), winner, turn)
+            self.process_battle_result(player_daimyo_id, next_status.clone(), winner, turn)
                 .await?;
         } else {
             self.battle_repo.save(&next_status).await?;
@@ -131,10 +147,11 @@ impl BattleUseCase {
     /// プレイヤーが防御側の合戦ターンを実行します
     pub async fn execute_defense_turn(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         defender_id: KuniId,
         defender_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
-        let mut state = self
+        let state = self
             .game_state_repo
             .get()
             .await?
@@ -207,7 +224,7 @@ impl BattleUseCase {
         ))?;
 
         if let Some(winner) = next_status.winner {
-            self.process_battle_result(next_status.clone(), winner, turn)
+            self.process_battle_result(player_daimyo_id, next_status.clone(), winner, turn)
                 .await?;
         } else {
             self.battle_repo.save(&next_status).await?;
@@ -219,6 +236,7 @@ impl BattleUseCase {
     /// 戦合戦結果の共通処理
     async fn process_battle_result(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         status: WarStatus,
         winner: BattleSide,
         turn: crate::domain::model::value_objects::TurnNumber,
@@ -283,16 +301,8 @@ impl BattleUseCase {
             }
         }
 
-        // 合戦終了：内政フェーズに戻して次のアクションへ
-        let mut state = self
-            .game_state_repo
-            .get()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
-        state.set_phase(crate::domain::model::game_state::GamePhase::Domestic);
-        self.game_state_repo.save(&state).await?;
-
-        self.advance_turn().await?;
+        // 合戦終了：complete_current_action がフェーズ遷移を管理する
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(())
     }
@@ -300,12 +310,13 @@ impl BattleUseCase {
     /// 合戦を開始します
     pub async fn start_war(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         attacker_id: KuniId,
         defender_id: KuniId,
         hei: DisplayAmount,
         kome: DisplayAmount,
     ) -> Result<WarStatus, anyhow::Error> {
-        self.validate_turn(attacker_id).await?;
+        self.validate_domestic_turn(attacker_id).await?;
 
         let mut attacker = self
             .kuni_repo
@@ -384,7 +395,16 @@ impl BattleUseCase {
 
         self.battle_repo.save(&status).await?;
 
-        self.advance_turn().await?;
+        // ゲーム状態を合戦フェーズに移行
+        let mut state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+        state.start_war(attacker_id, defender_id)?;
+        self.game_state_repo.save(&state).await?;
+
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(status)
     }

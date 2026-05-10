@@ -279,7 +279,7 @@ impl McpHandlers {
         let player_id = self.get_player_id().await?;
         let info = self
             .info_usecase
-            .get_other_countries_info(player_id)
+            .get_other_countries_info(Some(player_id), player_id)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -309,9 +309,10 @@ impl McpHandlers {
         let id = KuniId::new(kuni_id);
         self.check_kuni_ownership(id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let gain = self
             .domestic_usecase
-            .sell_rice(id, DisplayAmount::new(amount))
+            .sell_rice(player_id, id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("米を売却しました。得られた金: {}", gain.value()))
@@ -326,9 +327,10 @@ impl McpHandlers {
         let id = KuniId::new(kuni_id);
         self.check_kuni_ownership(id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let gain = self
             .domestic_usecase
-            .buy_rice(id, DisplayAmount::new(amount))
+            .buy_rice(player_id, id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("米を購入しました。得られた米: {}", gain.value()))
@@ -343,8 +345,9 @@ impl McpHandlers {
         let id = KuniId::new(kuni_id);
         self.check_kuni_ownership(id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         self.domestic_usecase
-            .recruit(id, DisplayAmount::new(amount))
+            .recruit(player_id, id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("兵を {} 人徴募しました。", amount))
@@ -359,9 +362,10 @@ impl McpHandlers {
         let id = KuniId::new(kuni_id);
         self.check_kuni_ownership(id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let gain = self
             .domestic_usecase
-            .develop_land(id, DisplayAmount::new(amount))
+            .develop_land(player_id, id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("開墾を行いました。上昇した石高: {}", gain.value()))
@@ -376,9 +380,10 @@ impl McpHandlers {
         let id = KuniId::new(kuni_id);
         self.check_kuni_ownership(id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let gain = self
             .domestic_usecase
-            .build_town(id, DisplayAmount::new(amount))
+            .build_town(player_id, id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("町作りを行いました。発展度: {}", gain.value()))
@@ -393,9 +398,10 @@ impl McpHandlers {
         let id = KuniId::new(kuni_id);
         self.check_kuni_ownership(id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let gain = self
             .domestic_usecase
-            .give_charity(id, DisplayAmount::new(amount))
+            .give_charity(player_id, id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("施しを行いました。上昇した忠誠度: {}", gain))
@@ -418,10 +424,12 @@ impl McpHandlers {
         self.check_kuni_ownership(from_id).await?;
         self.check_kuni_ownership(to_id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         self.domestic_usecase
             .transport(
+                player_id,
                 from_id,
-                KuniId::new(to_kuni_id),
+                to_id,
                 DisplayAmount::new(kin),
                 DisplayAmount::new(hei),
                 DisplayAmount::new(kome),
@@ -445,9 +453,11 @@ impl McpHandlers {
         let attacker_id = KuniId::new(attacker_kuni_id);
         self.check_kuni_ownership(attacker_id).await?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let status = self
             .battle_usecase
             .start_war(
+                player_id,
                 attacker_id,
                 KuniId::new(defender_kuni_id),
                 DisplayAmount::new(hei),
@@ -479,9 +489,10 @@ impl McpHandlers {
 
         let t = self.parse_tactic(tactic, true)?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let next_status = self
             .battle_usecase
-            .execute_battle_turn(attacker_id, t)
+            .execute_battle_turn(player_id, attacker_id, t)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -514,9 +525,10 @@ impl McpHandlers {
 
         let t = self.parse_tactic(tactic, false)?;
 
+        let player_id = *self.selected_daimyo_id.lock().await;
         let next_status = self
             .battle_usecase
-            .execute_defense_turn(defender_id, t)
+            .execute_defense_turn(player_id, defender_id, t)
             .await
             .map_err(|e| e.to_string())?;
 
