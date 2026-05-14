@@ -418,6 +418,8 @@ impl TurnProgressionUseCase {
 
         // 行動済みフラグを立てて保存
         state.mark_action_performed();
+        self.check_victory_and_defeat(&mut state, player_daimyo_id)
+            .await?;
         self.game_state_repo.save(&state).await?;
 
         Ok(())
@@ -538,7 +540,9 @@ impl TurnProgressionUseCase {
                 .await?;
         }
 
-        self.check_victory_and_defeat(&mut state, player_daimyo_id).await?;
+        self.check_victory_and_defeat(&mut state, player_daimyo_id)
+            .await?;
+        self.game_state_repo.save(&state).await?;
         Ok(())
     }
 
@@ -555,6 +559,19 @@ impl TurnProgressionUseCase {
 
         // 1. プレーヤーの敗北チェック
         if let Some(player_id) = player_daimyo_id {
+            let _ = self.action_log_repo.save(ActionLogEntry::new(
+                ActionLogVisibility::Internal,
+                state.current_turn(),
+                ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
+                    daimyo_id: player_id,
+                    action_msg: "敗北・勝利チェック".to_string(),
+                    reasoning: Some(format!(
+                        "player_id={:?}, kunis_count={}",
+                        player_id,
+                        all_kunis.len()
+                    )),
+                }),
+            ));
             let player_kunis = all_kunis
                 .iter()
                 .filter(|k| k.daimyo_id == player_id)

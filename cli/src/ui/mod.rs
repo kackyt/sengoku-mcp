@@ -420,12 +420,10 @@ fn render_game_over(
     winner_id: engine::domain::model::value_objects::DaimyoId,
     is_victory: bool,
 ) {
-    let winner_name = app
-        .all_daimyos
-        .iter()
-        .find(|d| d.id == winner_id)
-        .map(|d| d.name.0.as_str())
-        .unwrap_or("勝者不明");
+    let winner_name = match app.all_daimyos.iter().find(|d| d.id == winner_id) {
+        Some(d) => d.name.0.clone(),
+        None => format!("不明な大名(ID:{})", winner_id.value()),
+    };
 
     let (title, message, color) = if is_victory {
         (

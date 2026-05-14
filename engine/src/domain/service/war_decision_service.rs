@@ -70,42 +70,61 @@ impl WarDecisionService {
         neighbor_repo: &dyn crate::domain::repository::neighbor_repository::NeighborRepository,
         kuni_repo: &dyn crate::domain::repository::kuni_repository::KuniRepository,
     ) -> anyhow::Result<Option<InvasionPlan>> {
-        let my_hei = kuni.resource.hei.mul_percent(50);
-
-        // 国に残す兵力
-        let my_rest_hei = kuni.resource.hei - my_hei;
-
-        let rest_kuni = kuni.clone().with_hei(my_rest_hei);
-
-        // 自国が攻め取られる確率を計算
-        let my_risk_prob =
-            Self::calculate_lose_probability_from_neighbors(&rest_kuni, neighbor_repo, kuni_repo)
-                .await?;
-
-        // 勝利確率 - 攻め取られる確率を計算
         let mut candidates = Vec::new();
+
         for neighbor in neighbors {
             if neighbor.daimyo_id == daimyo.id {
                 continue;
             }
 
-            let win_prob = Self::calculate_win_probability(my_hei, neighbor.resource.hei);
-            let rest_hei = my_hei - neighbor.resource.hei;
+            // 相手の兵力より自分の兵力が少ない場合は攻めない
+            if kuni.resource.hei.mul_percent(80) < neighbor.resource.hei {
+                continue;
+            }
 
-            // 占領後の状態をシミュレート（兵力は残存兵力、大名は自分）
-            let win_kuni = neighbor.clone().with_hei(rest_hei).with_daimyo(daimyo.id);
-            let risk_prob = Self::calculate_lose_probability_from_neighbors(
-                &win_kuni,
-                neighbor_repo,
-                kuni_repo,
-            )
-            .await?;
+            let min_hei = neighbor.resource.hei;
+            let max_hei = kuni.resource.hei.mul_percent(80);
+            let mut hei_candidates = Vec::new();
+
+            for i in 0..=10 {
+                let current_hei = min_hei + (max_hei - min_hei).mul_percent(i * 10);
+
+                let my_rest_hei = kuni.resource.hei - current_hei;
+
+                let rest_kuni = kuni.clone().with_hei(my_rest_hei);
+
+                // 自国が攻め取られる確率を計算
+                let my_risk_prob = Self::calculate_lose_probability_from_neighbors(
+                    &rest_kuni,
+                    neighbor_repo,
+                    kuni_repo,
+                )
+                .await?;
+                let win_prob = Self::calculate_win_probability(current_hei, neighbor.resource.hei);
+                let rest_hei = current_hei - neighbor.resource.hei;
+
+                // 占領後の状態をシミュレート（兵力は残存兵力、大名は自分）
+                let win_kuni = neighbor.clone().with_hei(rest_hei).with_daimyo(daimyo.id);
+                let risk_prob = Self::calculate_lose_probability_from_neighbors(
+                    &win_kuni,
+                    neighbor_repo,
+                    kuni_repo,
+                )
+                .await?;
+
+                hei_candidates.push((
+                    current_hei,
+                    win_prob - (1.0f64 - (1.0f64 - my_risk_prob) * (1.0f64 - risk_prob)),
+                ));
+            }
+
+            let (hei_candidate, score) = hei_candidates
+                .into_iter()
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap();
 
             // 期待値スコア = 勝率 - (戦争元が攻め取られる確率 || 攻め取った後の国が攻め取られる確率)
-            candidates.push((
-                neighbor.id,
-                win_prob - (1.0f64 - (1.0f64 - my_risk_prob) * (1.0f64 - risk_prob)),
-            ));
+            candidates.push((neighbor.id, hei_candidate, score));
         }
 
         if candidates.is_empty() {
@@ -116,22 +135,21 @@ impl WarDecisionService {
         let mut rng = rand::thread_rng();
 
         // 最もスコアが高いターゲットを選択
-        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let (target_id, hei_candidate, score) = candidates
+            .into_iter()
+            .max_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
 
-        let (target_id, score) = candidates[0];
-
-        // 最終的な出兵判断：スコアとmilitary_biasから出兵確率を動的に計算する
+        // 最終的な出兵判断：スコアから出兵確率を動的に計算する
         let dice_roll = rng.gen_range(0.0..1.0_f64);
-        let hei_ratio = rng.gen_range(50..=80);
 
         if dice_roll < score {
-            let my_kome = kuni.resource.kome;
-            let invasion_hei = my_hei.mul_percent(hei_ratio).min(my_kome);
+            let invasion_kome = kuni.resource.kome.mul_percent(80).min(hei_candidate);
 
             Ok(Some(InvasionPlan {
                 target_kuni_id: target_id,
-                hei: invasion_hei,
-                kome: invasion_hei,
+                hei: hei_candidate,
+                kome: invasion_kome,
             }))
         } else {
             Ok(None)
@@ -179,7 +197,7 @@ mod tests {
             self.adjacents.get(kuni_id).cloned().unwrap_or_default()
         }
         fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
-            self.adjacents.get(a).map_or(false, |list| list.contains(b))
+            self.adjacents.get(a).is_some_and(|list| list.contains(b))
         }
     }
 
@@ -232,7 +250,7 @@ mod tests {
                 .decide_invasion(
                     &my_daimyo,
                     &my_kuni,
-                    &[weak_neighbor.clone()],
+                    std::slice::from_ref(&weak_neighbor),
                     &neighbor_repo,
                     &kuni_repo,
                 )
@@ -281,7 +299,7 @@ mod tests {
                 .decide_invasion(
                     &my_daimyo,
                     &my_kuni,
-                    &[strong_neighbor.clone()],
+                    std::slice::from_ref(&strong_neighbor),
                     &neighbor_repo,
                     &kuni_repo,
                 )
@@ -408,7 +426,7 @@ mod tests {
                 .decide_invasion(
                     &my_daimyo,
                     &my_kuni,
-                    &[weak_neighbor.clone()],
+                    std::slice::from_ref(&weak_neighbor),
                     &neighbor_repo,
                     &kuni_repo,
                 )
