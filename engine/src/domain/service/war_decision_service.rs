@@ -109,13 +109,12 @@ impl WarDecisionService {
 
                 // 占領後の状態をシミュレート（兵力は残存兵力、大名は自分）
                 let win_kuni = neighbor.clone().with_hei(rest_hei).with_daimyo(daimyo.id);
-                let risk_prob = (0.5
-                    * Self::calculate_lose_probability_from_neighbors(
-                        &win_kuni,
-                        neighbor_repo,
-                        kuni_repo,
-                    )
-                    .await?
+                let risk_prob = (Self::calculate_lose_probability_from_neighbors(
+                    &win_kuni,
+                    neighbor_repo,
+                    kuni_repo,
+                )
+                .await?
                     / military_bias)
                     .clamp(0.0, 1.0);
 
@@ -144,7 +143,7 @@ impl WarDecisionService {
         // 最もスコアが高いターゲットを選択
         let (target_id, hei_candidate, score) = candidates
             .into_iter()
-            .max_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap();
 
         // 最終的な出兵判断：スコアから出兵確率を動的に計算する
@@ -336,10 +335,14 @@ mod tests {
         let risky_neighbor = create_test_kuni(3, 3, 200);
 
         // モックデータ作成
-        let mut kunis = HashMap::new();
-        kunis.insert(safe_neighbor.id, safe_neighbor.clone());
-        kunis.insert(risky_neighbor.id, risky_neighbor.clone());
-        let kuni_repo = MockKuniRepo { kunis };
+        let mut kuni_map = HashMap::new();
+        kuni_map.insert(my_kuni.id, my_kuni.clone());
+        kuni_map.insert(safe_neighbor.id, safe_neighbor.clone());
+        kuni_map.insert(risky_neighbor.id, risky_neighbor.clone());
+        for i in 10..=14 {
+            kuni_map.insert(KuniId::new(i), create_test_kuni(i, i, 500));
+        }
+        let kuni_repo = MockKuniRepo { kunis: kuni_map };
 
         let mut adjacents = HashMap::new();
         // 自分は A, B 両方に隣接
@@ -405,7 +408,7 @@ mod tests {
         let mut kunis = HashMap::new();
         kunis.insert(weak_neighbor.id, weak_neighbor.clone());
         for i in 3..=6 {
-            let enemy = create_test_kuni(i, i, 500); // 適度な強さの他国
+            let enemy = create_test_kuni(i, i, 2000); // 兵力を大幅に増やしてリスクを最大化
             kunis.insert(enemy.id, enemy);
         }
         let kuni_repo = MockKuniRepo { kunis };

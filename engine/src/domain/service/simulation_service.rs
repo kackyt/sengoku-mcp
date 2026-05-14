@@ -130,8 +130,8 @@ impl SimulationService {
                     } else {
                         kunis[target_idx].survive_defense(&final_status.defender);
                         turn_logs.push(format!(
-                            "【戦争】{}({}) は {}({}) の防衛に成功しました。",
-                            defender_daimyo.name.0, target_name.0, daimyo.name.0, attacker_name.0
+                            "【戦争】{}({}) は {}({}) からの防衛に成功しました。",
+                            daimyo.name.0, attacker_name.0, defender_daimyo.name.0, target_name.0
                         ));
                     }
 
