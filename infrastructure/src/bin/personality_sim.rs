@@ -48,7 +48,7 @@ fn create_initial_kuni(id: u32, name: &str) -> Kuni {
     )
 }
 
-fn run_preset_simulation(turns: u32) {
+async fn run_preset_simulation(turns: u32) {
     let mil_p = DaimyoPersonality::new(0.5, 0.5, 2.0, 0.1).unwrap();
     let com_p = DaimyoPersonality::new(0.5, 2.0, 0.5, 0.1).unwrap();
     let agr_p = DaimyoPersonality::new(2.0, 0.5, 0.5, 0.1).unwrap();
@@ -65,20 +65,37 @@ fn run_preset_simulation(turns: u32) {
         create_initial_kuni(3, "AgrCountry"),
     ];
 
+    // 隣接情報の設定
+    let mut neighbors = HashMap::new();
+    neighbors.insert(KuniId::new(1), vec![KuniId::new(2)]);
+    neighbors.insert(KuniId::new(2), vec![KuniId::new(1), KuniId::new(3)]);
+    neighbors.insert(KuniId::new(3), vec![KuniId::new(2)]);
+
     let mut rng = thread_rng();
 
     println!("Starting {}-turn PRESET simulation...", turns);
     println!("Turn | Mil(HEI/MCH/KKD) | Com(HEI/MCH/KKD) | Agr(HEI/MCH/KKD)");
     println!("{:-<70}", "");
 
-    let snapshots = SimulationService::run_simulation(&daimyos, &kunis, turns, &mut rng)
-        .expect("Simulation failed");
+    let snapshots =
+        SimulationService::run_simulation(&daimyos, &kunis, &neighbors, turns, &mut rng)
+            .await
+            .expect("Simulation failed");
 
     for snapshot in snapshots {
         let t = snapshot.turn.value();
-        let mil = &snapshot.kuni_states[0];
-        let com = &snapshot.kuni_states[1];
-        let agr = &snapshot.kuni_states[2];
+        // snapshotから各国の最新状態を取得（戦争で大名が変わっている可能性があるためIDで引く）
+        let get_kuni = |id: u32| {
+            snapshot
+                .kuni_states
+                .iter()
+                .find(|k| k.id == KuniId::new(id))
+                .unwrap()
+        };
+
+        let mil = get_kuni(1);
+        let com = get_kuni(2);
+        let agr = get_kuni(3);
 
         println!(
             "{:>4} | {:>4}/{:>3}/{:>3} | {:>4}/{:>3}/{:>3} | {:>4}/{:>3}/{:>3}",
@@ -93,13 +110,19 @@ fn run_preset_simulation(turns: u32) {
             agr.stats.machi.to_display().value(),
             agr.stats.kokudaka.to_display().value(),
         );
+
+        for log in snapshot.logs {
+            println!("     > {}", log);
+        }
     }
 }
 
-fn run_master_data_simulation(turns: u32) {
+async fn run_master_data_simulation(turns: u32) {
     let bundle = MasterDataLoader::load().expect("Failed to load master data");
     let initial_kunis = bundle.kunis;
     let daimyos = bundle.daimyos;
+    let neighbors = bundle.adjacency_map;
+
     let mut daimyo_map = HashMap::new();
     for d in &daimyos {
         daimyo_map.insert(d.id, d.clone());
@@ -110,25 +133,39 @@ fn run_master_data_simulation(turns: u32) {
 
     println!("\n=== Master Data Simulation ({} Turns) ===", turns);
 
-    let snapshots = SimulationService::run_simulation(&daimyos, &initial_kunis, turns, &mut rng)
-        .expect("Simulation failed");
+    let snapshots =
+        SimulationService::run_simulation(&daimyos, &initial_kunis, &neighbors, turns, &mut rng)
+            .await
+            .expect("Simulation failed");
     if snapshots.is_empty() {
         println!("No snapshots generated.");
         return;
     }
+
+    // ログの表示
+    for snapshot in &snapshots {
+        if !snapshot.logs.is_empty() {
+            println!("Turn {}:", snapshot.turn.value());
+            for log in &snapshot.logs {
+                println!("  {}", log);
+            }
+        }
+    }
+
     let final_snapshot = snapshots.last().unwrap();
 
     println!("\n=== Final State After {} Turns ===", turns);
     println!(
-        "{:<10} | {:<8} | {:<5} | {:<5} | {:<5} | {:<5} | {:<5} | {:<5} | {:<6}",
-        "Daimyo", "Kokudaka", "Machi", "Hei", "Kin", "Kome", "Jinko", "Tyu", "Score"
+        "{:<12} | {:<12} | {:<8} | {:<5} | {:<5} | {:<5} | {:<5} | {:<5} | {:<5} | {:<6}",
+        "Kuni", "Daimyo", "Kokudaka", "Machi", "Hei", "Kin", "Kome", "Jinko", "Tyu", "Score"
     );
-    println!("{:-<80}", "");
+    println!("{:-<100}", "");
 
     for kuni in &final_snapshot.kuni_states {
         let daimyo = daimyo_map.get(&kuni.daimyo_id).unwrap();
         println!(
-            "{:<10} | {:>8} | {:>5} | {:>5} | {:>5} | {:>5} | {:>5} | {:>5} | {:>6}",
+            "{:<12} | {:<12} | {:>8} | {:>5} | {:>5} | {:>5} | {:>5} | {:>5} | {:>5} | {:>6}",
+            kuni.name.0,
             daimyo.name.0,
             kuni.stats.kokudaka.to_display().value(),
             kuni.stats.machi.to_display().value(),
@@ -142,13 +179,14 @@ fn run_master_data_simulation(turns: u32) {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     if args.master {
-        run_master_data_simulation(args.turns);
+        run_master_data_simulation(args.turns).await;
     } else {
-        run_preset_simulation(args.turns);
+        run_preset_simulation(args.turns).await;
         println!("\nTip: Use '--master' flag to run simulation with real master data.");
     }
 }

@@ -76,7 +76,9 @@ impl EventHandler {
                 app.selected_daimyo_id = Some(selected_daimyo.id);
 
                 // ゲーム状態の初期化（未作成の場合のみ作成される）
-                app.turn_progression_usecase.progress(app.selected_daimyo_id).await?;
+                app.turn_progression_usecase
+                    .progress(app.selected_daimyo_id)
+                    .await?;
 
                 let state = app
                     .turn_progression_usecase
@@ -429,7 +431,12 @@ impl EventHandler {
                         } else if command == DomesticCommand::Transport {
                             let result = app
                                 .domestic_usecase
-                                .transport_with_rate(app.selected_daimyo_id, kuni_id, *target_id, 10)
+                                .transport_with_rate(
+                                    app.selected_daimyo_id,
+                                    kuni_id,
+                                    *target_id,
+                                    10,
+                                )
                                 .await;
 
                             match result {
@@ -661,11 +668,19 @@ impl EventHandler {
                             return Ok(());
                         }
                         app.battle_usecase
-                            .execute_battle_turn(app.selected_daimyo_id, status.attacker_id(), tactic)
+                            .execute_battle_turn(
+                                app.selected_daimyo_id,
+                                status.attacker_id(),
+                                tactic,
+                            )
                             .await?
                     } else if is_player_defender {
                         app.battle_usecase
-                            .execute_defense_turn(app.selected_daimyo_id, status.defender_id(), tactic)
+                            .execute_defense_turn(
+                                app.selected_daimyo_id,
+                                status.defender_id(),
+                                tactic,
+                            )
                             .await?
                     } else {
                         return Ok(());

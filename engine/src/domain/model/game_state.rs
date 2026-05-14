@@ -118,7 +118,10 @@ impl GameState {
                 ActionOrderIndex::new(self.current_action_index.value() + 1);
             self.action_performed = false;
             // ゲーム終了・クリア・合戦時はフェーズを戻さない
-            if !matches!(self.phase, GamePhase::GameOver | GamePhase::GameClear | GamePhase::Battle) {
+            if !matches!(
+                self.phase,
+                GamePhase::GameOver | GamePhase::GameClear | GamePhase::Battle
+            ) {
                 self.phase = GamePhase::Domestic;
             }
         }
@@ -149,7 +152,11 @@ impl GameState {
     }
 
     /// 合戦を開始し、合戦フェーズに移行します。
-    pub fn start_war(&mut self, _attacker_id: KuniId, _defender_id: KuniId) -> Result<(), DomainError> {
+    pub fn start_war(
+        &mut self,
+        _attacker_id: KuniId,
+        _defender_id: KuniId,
+    ) -> Result<(), DomainError> {
         self.phase = GamePhase::Battle;
         Ok(())
     }

@@ -87,10 +87,7 @@ impl TurnProgressionUseCase {
 
     /// 次の1ステップ（1大名の行動、またはターンの終了）を進めます。
     /// プレイヤーの手番の場合は何もしません。
-    pub async fn progress(
-        &self,
-        player_daimyo_id: Option<DaimyoId>,
-    ) -> Result<(), anyhow::Error> {
+    pub async fn progress(&self, player_daimyo_id: Option<DaimyoId>) -> Result<(), anyhow::Error> {
         let state = match self.game_state_repo.get().await? {
             Some(s) => s,
             None => {

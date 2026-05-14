@@ -140,8 +140,10 @@ impl App {
             None
         };
         if let Some(winner) = winner_opt {
-            let is_victory = snapshot.phase == engine::domain::model::game_state::GamePhase::GameClear;
-            let is_game_over = is_victory || snapshot.phase == engine::domain::model::game_state::GamePhase::GameOver;
+            let is_victory =
+                snapshot.phase == engine::domain::model::game_state::GamePhase::GameClear;
+            let is_game_over = is_victory
+                || snapshot.phase == engine::domain::model::game_state::GamePhase::GameOver;
             if is_game_over {
                 self.screen = ScreenState::GameOver { winner, is_victory };
             }
@@ -216,7 +218,9 @@ impl App {
 
                 if can_progress {
                     // 1ステップ進める
-                    self.turn_progression_usecase.progress(self.selected_daimyo_id).await?;
+                    self.turn_progression_usecase
+                        .progress(self.selected_daimyo_id)
+                        .await?;
                     // CPUの行動を見せるために少し待機
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     continue;

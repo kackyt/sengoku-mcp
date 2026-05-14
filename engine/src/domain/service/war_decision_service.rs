@@ -71,6 +71,8 @@ impl WarDecisionService {
         kuni_repo: &dyn crate::domain::repository::kuni_repository::KuniRepository,
     ) -> anyhow::Result<Option<InvasionPlan>> {
         let mut candidates = Vec::new();
+        // 大名の性格 (軍事)
+        let military_bias = daimyo.personality().military_bias();
 
         for neighbor in neighbors {
             if neighbor.daimyo_id == daimyo.id {
@@ -94,23 +96,28 @@ impl WarDecisionService {
                 let rest_kuni = kuni.clone().with_hei(my_rest_hei);
 
                 // 自国が攻め取られる確率を計算
-                let my_risk_prob = Self::calculate_lose_probability_from_neighbors(
+                let my_risk_prob = (Self::calculate_lose_probability_from_neighbors(
                     &rest_kuni,
                     neighbor_repo,
                     kuni_repo,
                 )
-                .await?;
+                .await?
+                    / military_bias)
+                    .clamp(0.0, 1.0);
                 let win_prob = Self::calculate_win_probability(current_hei, neighbor.resource.hei);
                 let rest_hei = current_hei - neighbor.resource.hei;
 
                 // 占領後の状態をシミュレート（兵力は残存兵力、大名は自分）
                 let win_kuni = neighbor.clone().with_hei(rest_hei).with_daimyo(daimyo.id);
-                let risk_prob = Self::calculate_lose_probability_from_neighbors(
-                    &win_kuni,
-                    neighbor_repo,
-                    kuni_repo,
-                )
-                .await?;
+                let risk_prob = (0.5
+                    * Self::calculate_lose_probability_from_neighbors(
+                        &win_kuni,
+                        neighbor_repo,
+                        kuni_repo,
+                    )
+                    .await?
+                    / military_bias)
+                    .clamp(0.0, 1.0);
 
                 hei_candidates.push((
                     current_hei,

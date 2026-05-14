@@ -735,7 +735,9 @@ async fn test_turn_validation_fails_on_wrong_turn() {
     );
 
     // 国1が行動しようとするとエラーになるはず
-    let res = usecase.sell_rice(None, kuni1.id, DisplayAmount::new(1)).await;
+    let res = usecase
+        .sell_rice(None, kuni1.id, DisplayAmount::new(1))
+        .await;
     assert!(res.is_err());
     assert!(res
         .unwrap_err()

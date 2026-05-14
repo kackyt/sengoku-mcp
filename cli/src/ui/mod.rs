@@ -35,7 +35,9 @@ pub fn draw(app: &App, f: &mut Frame) {
             cursor,
             sub_state,
         } => render_war(app, f, chunks[1], status, *cursor, sub_state),
-        ScreenState::GameOver { winner, is_victory } => render_game_over(app, f, chunks[1], *winner, *is_victory),
+        ScreenState::GameOver { winner, is_victory } => {
+            render_game_over(app, f, chunks[1], *winner, *is_victory)
+        }
     }
 
     render_modals(app, f);
