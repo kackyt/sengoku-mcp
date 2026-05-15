@@ -625,8 +625,23 @@ impl EventHandler {
                     };
                 }
                 KeyCode::Esc => {
+                    let is_player_attacker = app
+                        .selected_daimyo_id
+                        .map(|pid| {
+                            BattleParticipationService::is_player_attacker(
+                                &status,
+                                &pid,
+                                &app.all_kunis,
+                            )
+                        })
+                        .unwrap_or(false);
+                    let return_kuni_id = if is_player_attacker {
+                        status.attacker_id()
+                    } else {
+                        status.defender_id()
+                    };
                     app.screen = ScreenState::Domestic {
-                        selected_kuni: status.attacker_id(),
+                        selected_kuni: return_kuni_id,
                         cursor: 0,
                         sub_state: DomesticSubState::Normal,
                     };
@@ -804,7 +819,8 @@ impl EventHandler {
 
         // 合戦中かつ自分が当事者の場合は、このチェックをパスさせる
         // (合戦画面への遷移を許可するため)
-        if let Some(player_id) = app.selected_daimyo_id
+        if matches!(app.screen, ScreenState::War { .. })
+            && let Some(player_id) = app.selected_daimyo_id
             && app.active_battles.iter().any(|b| {
                 BattleParticipationService::is_player_participating(b, &player_id, &app.all_kunis)
             })
