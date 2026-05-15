@@ -94,6 +94,12 @@ pub struct AutoActionParams {
     pub kuni_id: u32,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct KuniIdParams {
+    /// 対象の国ID
+    pub kuni_id: u32,
+}
+
 impl McpHandlers {
     pub fn new(
         turn_progression_usecase: Arc<TurnProgressionUseCase>,
@@ -571,6 +577,112 @@ impl McpHandlers {
             .map_err(|e| e.to_string())?;
 
         Ok(format!("国ID: {} の自動行動を実行しました。", kuni_id))
+    }
+
+    /// ゲーム全体の状態（フェーズ・ターン・季節・勝者）を取得します
+    #[tool(description = "ゲーム全体の状態（フェーズ・ターン・季節・勝者）を取得します")]
+    pub async fn get_game_status(&self) -> Result<String, String> {
+        let snapshot = self
+            .kuni_query_usecase
+            .get_ui_snapshot(None, None, None)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let phase_str = format!("{:?}", snapshot.phase);
+        let winner_str = snapshot
+            .winner
+            .and_then(|id| snapshot.all_daimyos.iter().find(|d| d.id == id))
+            .map(|d| d.name.0.clone())
+            .unwrap_or_else(|| "なし".to_string());
+
+        let turn = snapshot.current_turn.unwrap_or(0);
+        // ターン番号から季節を算出 (0: 春, 1: 夏, 2: 秋, 3: 冬)
+        let season_idx = engine::domain::model::value_objects::TurnNumber::new(turn).season();
+        let season_name = match season_idx {
+            0 => "春",
+            1 => "夏",
+            2 => "秋",
+            3 => "冬",
+            _ => "不明",
+        };
+
+        Ok(format!(
+            "フェーズ: {}\nターン: {}\n季節: {}\n勝者: {}",
+            phase_str, turn, season_name, winner_str
+        ))
+    }
+
+    /// 進行中の合戦の状態（兵数・士気・優劣）を取得します
+    #[tool(description = "進行中の合戦の状態（兵数・士気・優劣）を取得します")]
+    pub async fn get_battle_status(&self) -> Result<String, String> {
+        let snapshot = self
+            .kuni_query_usecase
+            .get_ui_snapshot(None, None, None)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if snapshot.active_battles.is_empty() {
+            return Ok("現在進行中の合戦はありません。".to_string());
+        }
+
+        let mut result = String::from("進行中の合戦:\n");
+        for battle in &snapshot.active_battles {
+            let attacker_name = snapshot
+                .kuni_names
+                .get(&battle.attacker.kuni_id)
+                .cloned()
+                .unwrap_or_else(|| "不明".to_string());
+            let defender_name = snapshot
+                .kuni_names
+                .get(&battle.defender.kuni_id)
+                .cloned()
+                .unwrap_or_else(|| "不明".to_string());
+
+            result.push_str(&format!(
+                "攻撃: {} (ID:{}) vs 防衛: {} (ID:{})\n",
+                attacker_name, battle.attacker.kuni_id.0, defender_name, battle.defender.kuni_id.0
+            ));
+            result.push_str(&format!(
+                "  攻撃側: 兵={}, 米={}, 士気={}\n",
+                battle.attacker.hei.to_display().value(),
+                battle.attacker.kome.to_display().value(),
+                battle.attacker.morale.value()
+            ));
+            result.push_str(&format!(
+                "  防衛側: 兵={}, 米={}, 士気={}\n",
+                battle.defender.hei.to_display().value(),
+                battle.defender.kome.to_display().value(),
+                battle.defender.morale.value()
+            ));
+            result.push_str(&format!("  優劣: {:?}\n", battle.advantage));
+        }
+        Ok(result)
+    }
+
+    /// 指定した国の隣接国一覧を取得します
+    #[tool(description = "指定した国の隣接国（攻撃・輸送可能な国）の一覧を取得します")]
+    pub async fn get_neighbor_info(
+        &self,
+        Parameters(KuniIdParams { kuni_id }): Parameters<KuniIdParams>,
+    ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        let player_id = self.get_player_id().await?;
+        let neighbors = self
+            .kuni_query_usecase
+            .get_neighbors(&id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut result = format!("国ID {} の隣接国:\n", kuni_id);
+        for n in &neighbors {
+            let relation = if n.daimyo_id == player_id {
+                "味方"
+            } else {
+                "敵"
+            };
+            result.push_str(&format!("- {} (ID: {}) [{}]\n", n.name.0, n.id.0, relation));
+        }
+        Ok(result)
     }
 
     /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します
