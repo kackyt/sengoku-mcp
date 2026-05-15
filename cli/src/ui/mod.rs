@@ -666,7 +666,7 @@ fn render_action_logs(app: &App, f: &mut Frame, area: Rect, is_war: bool) {
             let content = format!(
                 "{} {}",
                 turn_text,
-                action_log_renderer::render_event(&log.event)
+                action_log_renderer::render_event(&log.event, app.selected_daimyo_id)
             );
             ListItem::new(content)
         })

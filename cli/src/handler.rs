@@ -705,19 +705,42 @@ impl EventHandler {
 
                     let msg = if let Some(winner) = result_status.winner {
                         use engine::domain::model::battle::BattleSide;
-                        match winner {
-                            BattleSide::Attacker => "我が軍の勝利！敵国を占領したぞ！".to_string(),
-                            BattleSide::Defender => {
-                                "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string()
+                        if is_player_attacker {
+                            match winner {
+                                BattleSide::Attacker => {
+                                    "我が軍の勝利！敵国を占領したぞ！".to_string()
+                                }
+                                BattleSide::Defender => {
+                                    "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string()
+                                }
+                            }
+                        } else {
+                            match winner {
+                                BattleSide::Defender => {
+                                    "我が軍の勝利！侵攻を退けたぞ！".to_string()
+                                }
+                                BattleSide::Attacker => {
+                                    "我が軍の敗北...。国を奪われてしまった。".to_string()
+                                }
                             }
                         }
                     } else {
                         use engine::domain::model::battle::BattleAdvantage;
-                        match result_status.advantage {
+                        let advantage = if is_player_attacker {
+                            result_status.advantage
+                        } else {
+                            match result_status.advantage {
+                                BattleAdvantage::Advantage => BattleAdvantage::Disadvantage,
+                                BattleAdvantage::Disadvantage => BattleAdvantage::Advantage,
+                                BattleAdvantage::Even => BattleAdvantage::Even,
+                            }
+                        };
+
+                        match advantage {
                             BattleAdvantage::Advantage => "我が軍が圧倒している！".to_string(),
-                            BattleAdvantage::Even => "一進一退の攻防が続いている...！".to_string(),
+                            BattleAdvantage::Even => "一進一退の攻防が続いている...".to_string(),
                             BattleAdvantage::Disadvantage => {
-                                "我が軍は苦戦を強いられている...！".to_string()
+                                "我が軍は苦戦を強いられている...".to_string()
                             }
                         }
                     };

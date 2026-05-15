@@ -1,6 +1,9 @@
 use engine::domain::model::action_log::{ActionLogEvent, DomesticLogEvent, WarLogEvent};
 
-pub fn render_event(event: &ActionLogEvent) -> String {
+pub fn render_event(
+    event: &ActionLogEvent,
+    player_daimyo_id: Option<engine::domain::model::value_objects::DaimyoId>,
+) -> String {
     match event {
         ActionLogEvent::Domestic(e) => match e {
             DomesticLogEvent::RiceSold {
@@ -140,35 +143,88 @@ pub fn render_event(event: &ActionLogEvent) -> String {
         },
         ActionLogEvent::War(e) => match e {
             WarLogEvent::CpuDefenderTactic { tactic } => {
-                format!("守備側の戦術: {}", tactic.name())
+                format!("敵軍の戦術: {}", tactic.name())
             }
             WarLogEvent::Damage {
+                attacker_id,
+                defender_id,
                 attacker_tactic,
                 defender_tactic,
                 attacker_damage,
                 defender_damage,
             } => {
-                format!(
-                    "攻撃側({})の被害: {}、守備側({})の被害: {}",
-                    attacker_tactic.name(),
-                    attacker_damage.to_display(),
-                    defender_tactic.name(),
-                    defender_damage.to_display()
-                )
+                let is_player_attacker = player_daimyo_id == Some(*attacker_id);
+                let is_player_defender = player_daimyo_id == Some(*defender_id);
+
+                if is_player_attacker {
+                    format!(
+                        "我ら({})の被害: {}、敵軍({})の被害: {}",
+                        attacker_tactic.name(),
+                        attacker_damage.to_display(),
+                        defender_tactic.name(),
+                        defender_damage.to_display()
+                    )
+                } else if is_player_defender {
+                    format!(
+                        "我ら({})の被害: {}、敵軍({})の被害: {}",
+                        defender_tactic.name(),
+                        defender_damage.to_display(),
+                        attacker_tactic.name(),
+                        attacker_damage.to_display()
+                    )
+                } else {
+                    format!(
+                        "攻撃側({})の被害: {}、守備側({})の被害: {}",
+                        attacker_tactic.name(),
+                        attacker_damage.to_display(),
+                        defender_tactic.name(),
+                        defender_damage.to_display()
+                    )
+                }
             }
-            WarLogEvent::AttackerVictory { home_name, .. } => format!(
-                "合戦終了：攻撃軍（{}から出陣）の勝利！領地を占領しました",
-                home_name.0
-            ),
-            WarLogEvent::DefenderVictory { .. } => "合戦終了：防衛軍の勝利".to_string(),
+            WarLogEvent::AttackerVictory {
+                home_name,
+                attacker_id,
+                occupied_name,
+                ..
+            } => {
+                if player_daimyo_id == Some(*attacker_id) {
+                    format!("合戦終了：我らの勝利！{}を占領しました", occupied_name.0)
+                } else {
+                    format!(
+                        "合戦終了：攻撃軍（{}から出陣）の勝利！領地を占領しました",
+                        home_name.0
+                    )
+                }
+            }
+            WarLogEvent::DefenderVictory {
+                attacker_id,
+                defender_id,
+                ..
+            } => {
+                if player_daimyo_id == Some(*defender_id) {
+                    "合戦終了：我らの勝利！侵攻を退けました".to_string()
+                } else if player_daimyo_id == Some(*attacker_id) {
+                    "合戦終了：無念の敗北...退却しました".to_string()
+                } else {
+                    "合戦終了：防衛軍の勝利".to_string()
+                }
+            }
             WarLogEvent::WarStarted {
                 attacker_name,
                 defender_name,
+                attacker_id,
                 ..
-            } => format!(
-                "{} が {} へ侵攻を開始しました",
-                attacker_name.0, defender_name.0
-            ),
+            } => {
+                if player_daimyo_id == Some(*attacker_id) {
+                    format!("我らは {} へ進軍を開始しました！", defender_name.0)
+                } else {
+                    format!(
+                        "{} が {} へ侵攻を開始しました",
+                        attacker_name.0, defender_name.0
+                    )
+                }
+            }
         },
     }
 }

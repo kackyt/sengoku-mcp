@@ -158,17 +158,33 @@ impl BattleUseCase {
             .await?
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
+        let attacker_kuni = self
+            .kuni_repo
+            .find_by_id(&status.attacker.kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("攻撃側の国が見つかりません"))?;
+
         self.action_log_repo.save(ActionLogEntry::new(
             ActionLogVisibility::Public,
             turn,
             ActionLogEvent::War(WarLogEvent::Damage {
+                attacker_id: attacker_kuni.daimyo_id,
+                defender_id: defender_kuni.daimyo_id,
                 attacker_tactic,
                 defender_tactic,
                 attacker_damage: Amount::new(
-                    status.attacker.hei.value() - next_status.attacker.hei.value(),
+                    status
+                        .attacker
+                        .hei
+                        .value()
+                        .saturating_sub(next_status.attacker.hei.value()),
                 ),
                 defender_damage: Amount::new(
-                    status.defender.hei.value() - next_status.defender.hei.value(),
+                    status
+                        .defender
+                        .hei
+                        .value()
+                        .saturating_sub(next_status.defender.hei.value()),
                 ),
             }),
         ))?;
@@ -231,10 +247,18 @@ impl BattleUseCase {
             .map(|s| s.current_turn())
             .unwrap_or(crate::domain::model::value_objects::TurnNumber::new(1));
 
+        let defender_kuni = self
+            .kuni_repo
+            .find_by_id(&status.defender.kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("防衛側の国が見つかりません"))?;
+
         self.action_log_repo.save(ActionLogEntry::new(
             ActionLogVisibility::Public,
             turn,
             ActionLogEvent::War(WarLogEvent::Damage {
+                attacker_id: attacker_kuni.daimyo_id,
+                defender_id: defender_kuni.daimyo_id,
                 attacker_tactic,
                 defender_tactic,
                 attacker_damage: Amount::new(
