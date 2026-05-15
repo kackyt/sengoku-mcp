@@ -201,34 +201,41 @@ impl BattleService {
 
     /// 防衛側の戦術を決定します
     pub fn decide_tactic_for_defender<R: rand::Rng>(
-        _my: &crate::domain::model::battle::ArmyStatus,
-        _enemy: &crate::domain::model::battle::ArmyStatus,
+        my: &crate::domain::model::battle::ArmyStatus,
+        enemy: &crate::domain::model::battle::ArmyStatus,
         rng: &mut R,
     ) -> Tactic {
-        // 防衛側は相手の策を読んでアンチを出す。
-        // 攻撃側が何を選ぶか確率的に予測し、それに対するアンチを選ぶ。
+        // 攻撃側が何を選ぶか確率的に予測
+        let mut predicted_weights = std::collections::HashMap::new();
+        predicted_weights.insert(Tactic::Normal, 40.0);
+        predicted_weights.insert(Tactic::Surprise, 30.0);
+        predicted_weights.insert(Tactic::Fire, 20.0);
+        predicted_weights.insert(Tactic::Inspire, 10.0);
 
-        let mut threats = std::collections::HashMap::new();
-        threats.insert(Tactic::Normal, 33.0);
-        threats.insert(Tactic::Surprise, 33.0);
-        threats.insert(Tactic::Fire, 33.0);
-
-        // ノイズ付与 (読みのブレ)
-        for val in threats.values_mut() {
-            *val += rng.gen_range(-20.0..20.0);
+        // 兵力差などによる予測の補正 (攻撃側と同様のロジックで相手の思考を推測)
+        if enemy.hei > my.hei.mul_percent(150) {
+            *predicted_weights.get_mut(&Tactic::Normal).unwrap() += 20.0;
+        }
+        if my.kome < my.hei.mul_percent(500) {
+            *predicted_weights.get_mut(&Tactic::Fire).unwrap() += 20.0;
         }
 
-        // 最も可能性が高いと思われる戦術に対するアンチを選択
-        let predicted = threats
-            .into_iter()
-            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-            .map(|(t, _)| t)
-            .unwrap_or(Tactic::Normal);
+        // ノイズ付与 (読みのブレ)
+        for val in predicted_weights.values_mut() {
+            *val += rng.gen_range(-15.0..15.0);
+            if *val < 0.0 {
+                *val = 0.0;
+            }
+        }
 
+        let predicted = Self::weighted_sample(predicted_weights, rng);
+
+        // 予測された戦術に対する最適なカウンターを選択
         match predicted {
-            Tactic::Normal => Tactic::Surprise, // NormalにはSurpriseで対抗（設計上はSurprise Failだが、防衛側はNormalを崩したい）
-            Tactic::Surprise => Tactic::Surprise, // SurpriseにはSurpriseで相打ち
-            Tactic::Fire => Tactic::Fire,       // FireにはFireで相打ち
+            Tactic::Normal => Tactic::Normal, // NormalにはNormalで正面からぶつかるのが期待値最大
+            Tactic::Surprise => Tactic::Surprise, // SurpriseにはSurpriseでカウンター(300%ダメージ)
+            Tactic::Fire => Tactic::Fire,     // FireにはFireで対応(60% vs 40%)
+            Tactic::Inspire => Tactic::Normal, // Inspire中ならNormalで叩く
             _ => Tactic::Normal,
         }
     }

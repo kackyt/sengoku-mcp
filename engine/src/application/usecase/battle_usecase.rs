@@ -310,7 +310,7 @@ impl BattleUseCase {
     /// 合戦を開始します
     pub async fn start_war(
         &self,
-        player_daimyo_id: Option<DaimyoId>,
+        _player_daimyo_id: Option<DaimyoId>,
         attacker_id: KuniId,
         defender_id: KuniId,
         hei: DisplayAmount,
@@ -402,9 +402,8 @@ impl BattleUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
         state.start_war(attacker_id, defender_id)?;
+        state.mark_action_performed();
         self.game_state_repo.save(&state).await?;
-
-        self.advance_turn(player_daimyo_id).await?;
 
         Ok(status)
     }

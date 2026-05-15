@@ -1,11 +1,11 @@
 use crate::domain::error::DomainError;
+use crate::domain::model::action_log::ActionLogCategory;
 use crate::domain::repository::{
     action_log_repository::ActionLogRepository, battle_repository::BattleRepository,
     daimyo_repository::DaimyoRepository, event_dispatcher::EventDispatcher,
     game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
     master_data_repository::MasterDataRepository, neighbor_repository::NeighborRepository,
 };
-use crate::domain::model::action_log::ActionLogCategory;
 use std::sync::Arc;
 
 /// ゲームのライフサイクル（初期化、リセットなど）を管理するユースケース

@@ -142,21 +142,11 @@ impl McpHandlers {
     }
 
     fn parse_tactic(&self, tactic: u32, is_attacker: bool) -> Result<Tactic, String> {
-        match tactic {
-            1 => Ok(Tactic::Normal),
-            2 => Ok(Tactic::Surprise),
-            3 => Ok(Tactic::Fire),
-            4 => Ok(Tactic::Inspire),
-            5 if is_attacker => Ok(Tactic::Retreat),
-            _ => {
-                let options = if is_attacker {
-                    "1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞, 5: 退却"
-                } else {
-                    "1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞"
-                };
-                Err(format!("無効な戦術IDです ({})", options))
-            }
-        }
+        engine::domain::service::tactic_validation_service::TacticValidationService::parse_tactic(
+            tactic,
+            is_attacker,
+        )
+        .map_err(|e| e.to_string())
     }
 }
 
@@ -339,7 +329,7 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        let player_id = self.get_player_id().await?;
+        let player_id = self.check_kuni_ownership(id).await?;
         self.domestic_usecase
             .recruit(Some(player_id), id, DisplayAmount::new(amount))
             .await
@@ -409,7 +399,21 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let from_id = KuniId::new(from_kuni_id);
         let to_id = KuniId::new(to_kuni_id);
-        let player_id = self.get_player_id().await?;
+        let player_id = self.check_kuni_ownership(from_id).await?;
+
+        // 輸送先も自分の領地かチェック
+        let kunis = self
+            .kuni_query_usecase
+            .get_kunis_by_daimyo(&player_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !kunis.iter().any(|k| k.id == to_id) {
+            return Err(format!(
+                "輸送先の国ID: {} はあなたの領地ではありません。",
+                to_id.0
+            ));
+        }
+
         self.domestic_usecase
             .transport(
                 Some(player_id),
@@ -437,7 +441,7 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let attacker_id = KuniId::new(attacker_kuni_id);
         let defender_id = KuniId::new(defender_kuni_id);
-        let player_id = self.get_player_id().await?;
+        let player_id = self.check_kuni_ownership(attacker_id).await?;
 
         let status = self
             .battle_usecase
@@ -471,14 +475,18 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let id = KuniId::new(attacker_kuni_id);
         let tactic_enum = self.parse_tactic(tactic, true)?;
-        let player_id = self.get_player_id().await?;
+        let player_id = self.check_kuni_ownership(id).await?;
 
         self.battle_usecase
             .execute_battle_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
 
-        let next_status = self.battle_usecase.get_active_war(id).await.map_err(|e| e.to_string())?
+        let next_status = self
+            .battle_usecase
+            .get_active_war(id)
+            .await
+            .map_err(|e| e.to_string())?
             .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
@@ -507,14 +515,18 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let id = KuniId::new(defender_kuni_id);
         let tactic_enum = self.parse_tactic(tactic, false)?;
-        let player_id = self.get_player_id().await?;
+        let player_id = self.check_kuni_ownership(id).await?;
 
         self.battle_usecase
             .execute_defense_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
 
-        let next_status = self.battle_usecase.get_active_war(id).await.map_err(|e| e.to_string())?
+        let next_status = self
+            .battle_usecase
+            .get_active_war(id)
+            .await
+            .map_err(|e| e.to_string())?
             .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(

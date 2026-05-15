@@ -118,10 +118,7 @@ impl GameState {
                 ActionOrderIndex::new(self.current_action_index.value() + 1);
             self.action_performed = false;
             // ゲーム終了・クリア・合戦時はフェーズを戻さない
-            if !matches!(
-                self.phase,
-                GamePhase::GameOver | GamePhase::GameClear | GamePhase::Battle
-            ) {
+            if !matches!(self.phase, GamePhase::GameOver | GamePhase::GameClear) {
                 self.phase = GamePhase::Domestic;
             }
         }

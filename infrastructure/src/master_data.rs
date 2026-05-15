@@ -1,9 +1,9 @@
+use engine::domain::error::DomainError;
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::daimyo_personality::DaimyoPersonality;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::resource::{DevelopmentStats, Resource};
 use engine::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId, Rate};
-use engine::domain::error::DomainError;
 use engine::domain::repository::master_data_repository::{MasterDataBundle, MasterDataRepository};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -66,7 +66,7 @@ pub struct MasterDataLoader;
 
 impl MasterDataRepository for MasterDataLoader {
     fn load(&self) -> Result<MasterDataBundle, DomainError> {
-        Self::load().map_err(|e| DomainError::InfrastructureError(anyhow::anyhow!(e.to_string())))
+        Self::load().map_err(|e| DomainError::InfrastructureError(e.to_string()))
     }
 }
 

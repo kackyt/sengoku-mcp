@@ -11,7 +11,8 @@ use engine::domain::model::action_log::ActionLogEntry;
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
-use infrastructure::persistence::InMemoryNeighborRepository;
+use engine::domain::repository::neighbor_repository::NeighborRepository;
+use engine::domain::service::battle_participation_service::BattleParticipationService;
 use ratatui::prelude::*;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,7 +28,7 @@ pub struct App {
     pub info_usecase: InfoUseCase,
 
     pub game_lifecycle_usecase: GameLifecycleUseCase,
-    pub neighbor_repo: Arc<InMemoryNeighborRepository>,
+    pub neighbor_repo: Arc<dyn NeighborRepository>,
 
     // UI Cache
     pub current_kuni: Option<Kuni>,
@@ -54,7 +55,7 @@ impl App {
         kuni_query_usecase: KuniQueryUseCase,
         info_usecase: InfoUseCase,
         game_lifecycle_usecase: GameLifecycleUseCase,
-        neighbor_repo: Arc<InMemoryNeighborRepository>,
+        neighbor_repo: Arc<dyn NeighborRepository>,
     ) -> Self {
         Self {
             screen: ScreenState::Title,
@@ -133,13 +134,11 @@ impl App {
         self.active_battles = snapshot.active_battles.clone();
         // プレイヤーが防御側となる合戦があれば、合戦画面へ遷移（モーダル表示の代わり）
         let defense_battle = self.selected_daimyo_id.and_then(|player_id| {
-            snapshot.active_battles.iter().find(|b| {
-                // 防御側の国が自分のものかチェック
-                snapshot
-                    .all_kunis
-                    .iter()
-                    .any(|k| k.id == b.defender.kuni_id && k.daimyo_id == player_id)
-            })
+            BattleParticipationService::find_defense_battle_for_player(
+                player_id,
+                &snapshot.active_battles,
+                &snapshot.all_kunis,
+            )
         });
 
         let defense_battle_cloned = defense_battle.cloned();
@@ -223,16 +222,11 @@ impl App {
 
             // プレイヤーの手番でない場合は自動進行
             let is_player_turn = self.is_player_turn();
-            let is_player_in_war = if let ScreenState::War { status: _, .. } = &self.screen {
-                let player_id = self.selected_daimyo_id;
-                // アタッカーかディフェンダーのいずれかがプレイヤーであれば、合戦は自動進行させない
-                // (update_cache で適切に kuni 情報が取得されている前提)
-                let is_attacker = self.attacker_kuni.as_ref().map(|k| k.daimyo_id) == player_id;
-                let is_defender = self.defender_kuni.as_ref().map(|k| k.daimyo_id) == player_id;
-                is_attacker || is_defender
-            } else {
-                false
-            };
+            let is_player_in_war = BattleParticipationService::is_player_participating(
+                self.selected_daimyo_id,
+                self.attacker_kuni.as_ref(),
+                self.defender_kuni.as_ref(),
+            );
 
             if self.selected_daimyo_id.is_some() && !is_player_turn && !is_player_in_war {
                 // 進行可能なサブ状態かチェック

@@ -97,10 +97,10 @@ impl NeighborRepository for MockNeighborRepository {
     }
 
     fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
-        // MockNeighborRepository doesn't use Mutex for simplicity in initial implementation, 
+        // MockNeighborRepository doesn't use Mutex for simplicity in initial implementation,
         // but for reset to work in a real use case it would need it.
         // For tests, we'll just ignore it or assume it's not called concurrently.
-        // Actually, adjacency_map in struct is not Mutex. 
+        // Actually, adjacency_map in struct is not Mutex.
         // I should probably change the struct to use Mutex if I want to support reset properly.
         // But let's just do a no-op or panic if it's not supposed to be called in these tests.
         Ok(())

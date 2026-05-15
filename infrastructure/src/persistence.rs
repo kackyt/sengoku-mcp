@@ -149,10 +149,7 @@ impl NeighborRepository for InMemoryNeighborRepository {
     }
 
     /// 隣接情報をリセットし、新しいデータで初期化します
-    fn reset(
-        &self,
-        adjacency_map: HashMap<KuniId, Vec<KuniId>>,
-    ) -> Result<(), DomainError> {
+    fn reset(&self, adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
         let mut guard = self.adjacency_map.write().unwrap();
         *guard = adjacency_map;
         Ok(())

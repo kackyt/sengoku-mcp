@@ -658,10 +658,15 @@ impl EventHandler {
                         _ => Tactic::Normal,
                     };
 
-                    let is_player_attacker =
-                        app.selected_daimyo_id == app.attacker_kuni.as_ref().map(|k| k.daimyo_id);
-                    let is_player_defender =
-                        app.selected_daimyo_id == app.defender_kuni.as_ref().map(|k| k.daimyo_id);
+                    let player_id = app.selected_daimyo_id;
+                    let is_player_attacker = matches!(
+                        (player_id, app.attacker_kuni.as_ref()),
+                        (Some(pid), Some(k)) if k.daimyo_id == pid
+                    );
+                    let is_player_defender = matches!(
+                        (player_id, app.defender_kuni.as_ref()),
+                        (Some(pid), Some(k)) if k.daimyo_id == pid
+                    );
 
                     let result_status = if is_player_attacker {
                         if !Self::check_player_turn(app, status.attacker_id(), 0).await? {

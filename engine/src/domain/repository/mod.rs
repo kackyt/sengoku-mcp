@@ -6,3 +6,4 @@ pub mod game_state_repository;
 pub mod kuni_repository;
 pub mod master_data_repository;
 pub mod neighbor_repository;
+pub mod simulation;

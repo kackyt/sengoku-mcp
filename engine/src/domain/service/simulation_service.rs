@@ -3,19 +3,18 @@ use crate::domain::model::{
     battle::{BattleSide, WarStatus},
     daimyo::Daimyo,
     kuni::Kuni,
-    value_objects::{DaimyoId, KuniId, TurnNumber},
+    value_objects::{KuniId, TurnNumber},
 };
-use crate::domain::repository::{
-    kuni_repository::KuniRepository, neighbor_repository::NeighborRepository,
+use crate::domain::repository::simulation::{
+    SimulationKuniRepository, SimulationNeighborRepository,
 };
 use crate::domain::service::{
     battle_service::BattleService, cpu_action_decision_service::CpuActionDecisionService,
     kuni_action_service::KuniActionService, seasonal_event_service::SeasonalEventService,
     war_decision_service::WarDecisionService,
 };
-use async_trait::async_trait;
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// シミュレーションの結果のスナップショット
 #[derive(Debug, Clone)]
@@ -54,11 +53,13 @@ impl SimulationService {
             }
 
             // 2. 各大名の行動
-            // 戦争によって国の状態が変わるため、インデックスで管理
-            let mut acted = vec![false; kunis.len()];
+            // PRレビューの指摘に基づき、DaimyoIdで行功済みフラグを管理する。
+            // これにより、占領したばかりの国で同じターンに再度行動することを防ぐ。
+            let mut acted_daimyos = HashSet::new();
 
             for i in 0..kunis.len() {
-                if acted[i] {
+                let daimyo_id = kunis[i].daimyo_id;
+                if acted_daimyos.contains(&daimyo_id) {
                     continue;
                 }
 
@@ -76,8 +77,8 @@ impl SimulationService {
                     .collect();
 
                 // 出兵判断
-                let kuni_repo = SimulationKuniRepo { kunis: &kunis };
-                let neighbor_repo = SimulationNeighborRepo { neighbors };
+                let kuni_repo = SimulationKuniRepository { kunis: &kunis };
+                let neighbor_repo = SimulationNeighborRepository { neighbors };
 
                 let invasion_plan = war_decision_service
                     .decide_invasion(daimyo, kuni, &neighbor_kunis, &neighbor_repo, &kuni_repo)
@@ -129,12 +130,12 @@ impl SimulationService {
                     } else {
                         kunis[target_idx].survive_defense(&final_status.defender);
                         turn_logs.push(format!(
-                            "【戦争】{}({}) は {}({}) からの防衛に成功しました。",
-                            daimyo.name.0, attacker_name.0, defender_daimyo.name.0, target_name.0
+                            "【戦争】{}({}) は {}({}) からの侵攻を防ぎました。",
+                            defender_daimyo.name.0, target_name.0, daimyo.name.0, attacker_name.0
                         ));
                     }
 
-                    acted[i] = true;
+                    acted_daimyos.insert(daimyo_id);
                 } else {
                     // 内政実行
                     let kuni_mut = &mut kunis[i];
@@ -142,7 +143,7 @@ impl SimulationService {
                         CpuActionDecisionService::decide(daimyo.personality(), kuni_mut, turn, rng);
 
                     KuniActionService::apply_cpu_decision(kuni_mut, decision)?;
-                    acted[i] = true;
+                    acted_daimyos.insert(daimyo_id);
                 }
             }
 
@@ -162,58 +163,12 @@ impl SimulationService {
     }
 }
 
-// --- Simulation用のインメモリリポジトリ ---
-
-struct SimulationKuniRepo<'a> {
-    kunis: &'a [Kuni],
-}
-
-#[async_trait]
-impl<'a> KuniRepository for SimulationKuniRepo<'a> {
-    async fn find_by_id(&self, id: &KuniId) -> Result<Option<Kuni>, DomainError> {
-        Ok(self.kunis.iter().find(|k| k.id == *id).cloned())
-    }
-    async fn find_by_daimyo_id(&self, daimyo_id: &DaimyoId) -> Result<Vec<Kuni>, DomainError> {
-        Ok(self
-            .kunis
-            .iter()
-            .filter(|k| k.daimyo_id == *daimyo_id)
-            .cloned()
-            .collect())
-    }
-    async fn save(&self, _kuni: &Kuni) -> Result<(), DomainError> {
-        Ok(())
-    }
-    async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
-        Ok(self.kunis.to_vec())
-    }
-    async fn clear(&self) -> Result<(), DomainError> {
-        Ok(())
-    }
-}
-
-struct SimulationNeighborRepo<'a> {
-    neighbors: &'a HashMap<KuniId, Vec<KuniId>>,
-}
-
-impl<'a> NeighborRepository for SimulationNeighborRepo<'a> {
-    fn get_neighbors(&self, kuni_id: &KuniId) -> Vec<KuniId> {
-        self.neighbors.get(kuni_id).cloned().unwrap_or_default()
-    }
-    fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
-        self.neighbors.get(a).is_some_and(|l| l.contains(b))
-    }
-    fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::model::daimyo_personality::DaimyoPersonality;
     use crate::domain::model::resource::{DevelopmentStats, Resource};
-    use crate::domain::model::value_objects::IninFlag;
+    use crate::domain::model::value_objects::{DaimyoId, IninFlag};
     use rand::SeedableRng;
 
     #[tokio::test]

@@ -143,6 +143,16 @@ impl TurnProgressionUseCase {
 
         self.execute_cpu_action(kuni_id, player_daimyo_id).await?;
 
+        // 合戦フェーズに移行した場合は、アクション完了処理（次の国へ進める）を行わず停止する
+        let state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+        if state.phase() == GamePhase::Battle {
+            return Ok(());
+        }
+
         // 完了処理
         self.complete_current_action(player_daimyo_id).await?;
 
@@ -170,8 +180,14 @@ impl TurnProgressionUseCase {
                 continue;
             }
 
-            let kuni_id = state.current_kuni_id().unwrap();
-            let kuni = self.kuni_repo.find_by_id(&kuni_id).await?.unwrap();
+            let kuni_id = state
+                .current_kuni_id()
+                .ok_or_else(|| anyhow::anyhow!("行動中の国が見つかりません"))?;
+            let kuni = self
+                .kuni_repo
+                .find_by_id(&kuni_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
             if player_daimyo_id.is_some_and(|id| id == kuni.daimyo_id) {
                 return Ok(());
             }
@@ -578,6 +594,7 @@ impl TurnProgressionUseCase {
                 // 勝者を適当なCPU大名に設定（自分以外の大名のどれか）
                 if let Some(other_kuni) = all_kunis.iter().find(|k| k.daimyo_id != player_id) {
                     state.set_winner(other_kuni.daimyo_id);
+                    state.set_phase(GamePhase::GameOver);
                 } else {
                     state.set_phase(GamePhase::GameOver);
                 }
