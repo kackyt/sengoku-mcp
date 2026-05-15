@@ -194,70 +194,40 @@ impl McpHandlers {
     #[tool(description = "現在の自分の状況（領地、資源、手番）を取得します")]
     pub async fn get_my_status(&self) -> Result<String, String> {
         let player_id = self.get_player_id().await?;
-        let kunis = self
+        let status = self
             .kuni_query_usecase
-            .get_kunis_by_daimyo(&player_id)
+            .get_player_status(&player_id)
             .await
             .map_err(|e| e.to_string())?;
 
-        let snapshot = self
-            .kuni_query_usecase
-            .get_ui_snapshot(None, None, None)
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let turn = snapshot.current_turn.unwrap_or(0);
-        let current_daimyo_name = snapshot
-            .current_daimyo
-            .map(|d| d.name.0)
-            .unwrap_or_else(|| "不明".to_string());
-
-        let mut result = format!("=== 第 {} ターン ===\n", turn);
-        result.push_str(&format!("現在の手番: {}\n\n", current_daimyo_name));
+        let mut result = format!("=== 第 {} ターン ===\n", status.current_turn);
+        result.push_str(&format!("現在の手番: {}\n\n", status.current_daimyo_name));
         result.push_str("あなたの領地:\n");
 
-        for k in &kunis {
+        for k in &status.kunis {
             result.push_str(&format!(
                 "- {} (ID: {}): 金={}, 米={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
-                k.name.0,
+                k.name,
                 k.id.0,
-                k.resource.kin.to_display().value(),
-                k.resource.kome.to_display().value(),
-                k.resource.hei.to_display().value(),
-                k.stats.kokudaka.to_display().value(),
-                k.stats.machi.to_display().value(),
-                k.stats.tyu.value()
+                k.kin.value(),
+                k.kome.value(),
+                k.hei.value(),
+                k.kokudaka.value(),
+                k.machi.value(),
+                k.tyu
             ));
         }
 
-        // 防衛戦の警告
-        let my_kuni_ids: std::collections::HashSet<_> = kunis.iter().map(|k| k.id).collect();
-        for battle in snapshot.active_battles {
-            if my_kuni_ids.contains(&battle.defender.kuni_id) {
-                let attacker_name = snapshot
-                    .kuni_names
-                    .get(&battle.attacker.kuni_id)
-                    .cloned()
-                    .unwrap_or_else(|| "不明".to_string());
-                let defender_name = snapshot
-                    .kuni_names
-                    .get(&battle.defender.kuni_id)
-                    .cloned()
-                    .unwrap_or_else(|| "不明".to_string());
-
-                result.push_str("\n⚠️ 【緊急：侵攻検知】 ⚠️\n");
+        if !status.defense_alerts.is_empty() {
+            result.push_str("\n⚠️ 【緊急：侵攻検知】 ⚠️\n");
+            for alert in status.defense_alerts {
                 result.push_str(&format!(
                     "「{}」が「{}」に攻め込んでいます！\n",
-                    attacker_name, defender_name
+                    alert.attacker_kuni_name, alert.defender_kuni_name
                 ));
-                result.push_str(&format!(
-                    "敵軍勢: 兵数 {}\n",
-                    battle.attacker.hei.to_display().value()
-                ));
-                result.push_str(
-                    "直ちに battle_execute_defense_turn で防衛戦術を指示してください。\n",
-                );
+                result.push_str(&format!("敵軍勢: 兵数 {}\n", alert.enemy_hei.value()));
             }
+            result.push_str("直ちに battle_execute_defense_turn で防衛戦術を指示してください。\n");
         }
 
         Ok(result)

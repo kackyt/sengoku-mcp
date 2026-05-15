@@ -63,8 +63,30 @@ impl BattleUseCase {
             return Err(anyhow::anyhow!("現在は合戦フェーズではありません"));
         }
 
-        state.check_turn(kuni_id)?;
-        Ok(())
+        // 現在の手番（攻撃側）
+        let current_kuni_id = state
+            .current_kuni_id()
+            .ok_or_else(|| anyhow::anyhow!("現在行動可能な国がありません"))?;
+
+        // 攻撃側本人の場合
+        if current_kuni_id == kuni_id {
+            return Ok(());
+        }
+
+        // 防衛側の場合：現在の手番（攻撃側）が自分を攻撃しているか確認
+        let status = self
+            .battle_repo
+            .find_by_attacker(&current_kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("現在進行中の合戦が見つかりません"))?;
+
+        if status.defender.kuni_id == kuni_id {
+            return Ok(());
+        }
+
+        Err(anyhow::anyhow!(
+            "あなたの手番（または防衛対象）ではありません"
+        ))
     }
 
     async fn validate_domestic_turn(&self, kuni_id: KuniId) -> Result<(), anyhow::Error> {
@@ -104,9 +126,26 @@ impl BattleUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("進行中の合戦が見つかりません"))?;
 
+        let defender_kuni = self
+            .kuni_repo
+            .find_by_id(&status.defender.kuni_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("防御側の国が見つかりません"))?;
+
+        let defender_daimyo = self
+            .daimyo_repo
+            .find_by_id(&defender_kuni.daimyo_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("防御側の大名が見つかりません"))?;
+
         let defender_tactic = {
             let mut rng = rand::thread_rng();
-            BattleService::decide_tactic_for_defender(&status.defender, &status.attacker, &mut rng)
+            BattleService::decide_tactic_for_defender(
+                &status.defender,
+                &status.attacker,
+                defender_daimyo.personality.military_bias(),
+                &mut rng,
+            )
         };
 
         let next_status =
@@ -151,15 +190,7 @@ impl BattleUseCase {
         defender_id: KuniId,
         defender_tactic: Tactic,
     ) -> Result<WarStatus, anyhow::Error> {
-        let state = self
-            .game_state_repo
-            .get()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
-
-        if state.phase() != crate::domain::model::game_state::GamePhase::Battle {
-            return Err(anyhow::anyhow!("現在は合戦フェーズではありません"));
-        }
+        self.validate_battle_turn(defender_id).await?;
 
         let status = self
             .battle_repo

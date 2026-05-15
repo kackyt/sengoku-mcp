@@ -3,6 +3,7 @@ use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use engine::domain::model::value_objects::{DisplayAmount, KuniId};
+use engine::domain::service::battle_participation_service::BattleParticipationService;
 
 pub struct EventHandler;
 
@@ -658,15 +659,26 @@ impl EventHandler {
                         _ => Tactic::Normal,
                     };
 
-                    let player_id = app.selected_daimyo_id;
-                    let is_player_attacker = matches!(
-                        (player_id, app.attacker_kuni.as_ref()),
-                        (Some(pid), Some(k)) if k.daimyo_id == pid
-                    );
-                    let is_player_defender = matches!(
-                        (player_id, app.defender_kuni.as_ref()),
-                        (Some(pid), Some(k)) if k.daimyo_id == pid
-                    );
+                    let is_player_attacker = app
+                        .selected_daimyo_id
+                        .map(|pid| {
+                            BattleParticipationService::is_player_attacker(
+                                &status,
+                                &pid,
+                                &app.all_kunis,
+                            )
+                        })
+                        .unwrap_or(false);
+                    let is_player_defender = app
+                        .selected_daimyo_id
+                        .map(|pid| {
+                            BattleParticipationService::is_player_defender(
+                                &status,
+                                &pid,
+                                &app.all_kunis,
+                            )
+                        })
+                        .unwrap_or(false);
 
                     let result_status = if is_player_attacker {
                         if !Self::check_player_turn(app, status.attacker_id(), 0).await? {
@@ -769,17 +781,12 @@ impl EventHandler {
 
         // 合戦中かつ自分が当事者の場合は、このチェックをパスさせる
         // (合戦画面への遷移を許可するため)
-        if let Some(player_id) = app.selected_daimyo_id {
-            let is_war_party = app.active_battles.iter().any(|b| {
-                (b.attacker.kuni_id == kuni_id || b.defender.kuni_id == kuni_id)
-                    && (app
-                        .all_kunis
-                        .iter()
-                        .any(|k| k.id == kuni_id && k.daimyo_id == player_id))
-            });
-            if is_war_party {
-                return Ok(true);
-            }
+        if let Some(player_id) = app.selected_daimyo_id
+            && app.active_battles.iter().any(|b| {
+                BattleParticipationService::is_player_participating(b, &player_id, &app.all_kunis)
+            })
+        {
+            return Ok(true);
         }
 
         app.screen = ScreenState::Domestic {

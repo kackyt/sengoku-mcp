@@ -1,4 +1,5 @@
 pub mod in_memory_action_log_repository;
+pub mod simulation;
 use engine::domain::error::DomainError;
 use engine::domain::model::battle::WarStatus;
 use engine::domain::model::daimyo::Daimyo;

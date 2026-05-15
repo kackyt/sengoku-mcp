@@ -203,6 +203,7 @@ impl BattleService {
     pub fn decide_tactic_for_defender<R: rand::Rng>(
         my: &crate::domain::model::battle::ArmyStatus,
         enemy: &crate::domain::model::battle::ArmyStatus,
+        military_bias: f64,
         rng: &mut R,
     ) -> Tactic {
         // 攻撃側が何を選ぶか確率的に予測
@@ -218,6 +219,12 @@ impl BattleService {
         }
         if my.kome < my.hei.mul_percent(500) {
             *predicted_weights.get_mut(&Tactic::Fire).unwrap() += 20.0;
+        }
+
+        // military_biasによる補正 (高いなら相手がSurpriseを選びにくいと読み、あえて自分も強気に出る等の予測に使えるが、
+        // ここでは単純に攻撃側と同様にSurpriseの予測重みを上げることで、結果的にSurpriseへのカウンター(Surprise)を選びやすくする)
+        if military_bias > 1.2 {
+            *predicted_weights.get_mut(&Tactic::Surprise).unwrap() += 15.0;
         }
 
         // ノイズ付与 (読みのブレ)

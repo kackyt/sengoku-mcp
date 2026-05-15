@@ -181,4 +181,85 @@ impl KuniQueryUseCase {
             .find_all(category)
             .map_err(|e| e.into())
     }
+
+    /// プレイヤーの現在の状況を取得します（防衛戦の警告含む）
+    pub async fn get_player_status(
+        &self,
+        player_id: &DaimyoId,
+    ) -> anyhow::Result<crate::application::dto::player_status_dto::PlayerStatusDTO> {
+        let kunis = self.kuni_repo.find_by_daimyo_id(player_id).await?;
+        let battles = self.battle_repo.find_all().await?;
+        let state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+        let all_kunis = self.kuni_repo.find_all().await?;
+        let kuni_names: HashMap<KuniId, String> =
+            all_kunis.iter().map(|k| (k.id, k.name.0.clone())).collect();
+
+        let current_turn = state.current_turn().value();
+        let current_daimyo_name = if let Some(kuni_id) = state.current_kuni_id() {
+            let kuni = self
+                .kuni_repo
+                .find_by_id(&kuni_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("手番の国が見つかりません"))?;
+            let daimyo = self
+                .daimyo_repo
+                .find_by_id(&kuni.daimyo_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("手番の大名が見つかりません"))?;
+            daimyo.name.0.clone()
+        } else {
+            "不明".to_string()
+        };
+
+        let my_kuni_ids: std::collections::HashSet<_> = kunis.iter().map(|k| k.id).collect();
+        let mut defense_alerts = Vec::new();
+
+        for battle in battles {
+            if my_kuni_ids.contains(&battle.defender.kuni_id) {
+                defense_alerts.push(
+                    crate::application::dto::player_status_dto::DefenseAlertDTO {
+                        attacker_kuni_name: kuni_names
+                            .get(&battle.attacker.kuni_id)
+                            .cloned()
+                            .unwrap_or_else(|| "不明".to_string()),
+                        defender_kuni_name: kuni_names
+                            .get(&battle.defender.kuni_id)
+                            .cloned()
+                            .unwrap_or_else(|| "不明".to_string()),
+                        enemy_hei: battle.attacker.hei.to_display(),
+                    },
+                );
+            }
+        }
+
+        let kuni_dtos = kunis
+            .into_iter()
+            .map(
+                |k| crate::application::dto::player_status_dto::KuniStatusDTO {
+                    id: k.id,
+                    name: k.name.0,
+                    kin: k.resource.kin.to_display(),
+                    kome: k.resource.kome.to_display(),
+                    hei: k.resource.hei.to_display(),
+                    kokudaka: k.stats.kokudaka.to_display(),
+                    machi: k.stats.machi.to_display(),
+                    tyu: k.stats.tyu.value(),
+                },
+            )
+            .collect();
+
+        Ok(
+            crate::application::dto::player_status_dto::PlayerStatusDTO {
+                current_turn,
+                current_daimyo_name,
+                kunis: kuni_dtos,
+                defense_alerts,
+            },
+        )
+    }
 }

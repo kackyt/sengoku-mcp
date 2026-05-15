@@ -222,11 +222,18 @@ impl App {
 
             // プレイヤーの手番でない場合は自動進行
             let is_player_turn = self.is_player_turn();
-            let is_player_in_war = BattleParticipationService::is_player_participating(
-                self.selected_daimyo_id,
-                self.attacker_kuni.as_ref(),
-                self.defender_kuni.as_ref(),
-            );
+            let is_player_in_war = self
+                .selected_daimyo_id
+                .map(|pid| {
+                    self.active_battles.iter().any(|b| {
+                        BattleParticipationService::is_player_participating(
+                            b,
+                            &pid,
+                            &self.all_kunis,
+                        )
+                    })
+                })
+                .unwrap_or(false);
 
             if self.selected_daimyo_id.is_some() && !is_player_turn && !is_player_in_war {
                 // 進行可能なサブ状態かチェック

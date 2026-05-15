@@ -1,20 +1,66 @@
-use crate::domain::error::DomainError;
-use crate::domain::model::{
+use async_trait::async_trait;
+use engine::domain::error::DomainError;
+use engine::domain::model::{
     battle::{BattleSide, WarStatus},
     daimyo::Daimyo,
     kuni::Kuni,
-    value_objects::{KuniId, TurnNumber},
+    value_objects::{DaimyoId, KuniId, TurnNumber},
 };
-use crate::domain::repository::simulation::{
-    SimulationKuniRepository, SimulationNeighborRepository,
-};
-use crate::domain::service::{
+use engine::domain::repository::kuni_repository::KuniRepository;
+use engine::domain::repository::neighbor_repository::NeighborRepository;
+use engine::domain::service::{
     battle_service::BattleService, cpu_action_decision_service::CpuActionDecisionService,
     kuni_action_service::KuniActionService, seasonal_event_service::SeasonalEventService,
     war_decision_service::WarDecisionService,
 };
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
+
+/// シミュレーション用の読み取り専用国リポジトリ
+pub struct SimulationKuniRepository<'a> {
+    pub kunis: &'a [Kuni],
+}
+
+#[async_trait]
+impl<'a> KuniRepository for SimulationKuniRepository<'a> {
+    async fn find_by_id(&self, id: &KuniId) -> Result<Option<Kuni>, DomainError> {
+        Ok(self.kunis.iter().find(|k| k.id == *id).cloned())
+    }
+    async fn find_by_daimyo_id(&self, daimyo_id: &DaimyoId) -> Result<Vec<Kuni>, DomainError> {
+        Ok(self
+            .kunis
+            .iter()
+            .filter(|k| k.daimyo_id == *daimyo_id)
+            .cloned()
+            .collect())
+    }
+    async fn save(&self, _kuni: &Kuni) -> Result<(), DomainError> {
+        Ok(())
+    }
+    async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
+        Ok(self.kunis.to_vec())
+    }
+    async fn clear(&self) -> Result<(), DomainError> {
+        Ok(())
+    }
+}
+
+/// シミュレーション用の隣接情報リポジトリ
+pub struct SimulationNeighborRepository<'a> {
+    pub neighbors: &'a HashMap<KuniId, Vec<KuniId>>,
+}
+
+impl<'a> NeighborRepository for SimulationNeighborRepository<'a> {
+    fn get_neighbors(&self, kuni_id: &KuniId) -> Vec<KuniId> {
+        self.neighbors.get(kuni_id).cloned().unwrap_or_default()
+    }
+    fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
+        self.neighbors.get(a).is_some_and(|l| l.contains(b))
+    }
+    fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+        Ok(())
+    }
+}
 
 /// シミュレーションの結果のスナップショット
 #[derive(Debug, Clone)]
@@ -53,8 +99,6 @@ impl SimulationService {
             }
 
             // 2. 各大名の行動
-            // PRレビューの指摘に基づき、DaimyoIdで行功済みフラグを管理する。
-            // これにより、占領したばかりの国で同じターンに再度行動することを防ぐ。
             let mut acted_daimyos = HashSet::new();
 
             for i in 0..kunis.len() {
@@ -114,7 +158,7 @@ impl SimulationService {
                         attacker: attacker_army,
                         defender: defender_army,
                         winner: None,
-                        advantage: crate::domain::model::battle::BattleAdvantage::Even,
+                        advantage: engine::domain::model::battle::BattleAdvantage::Even,
                     };
 
                     let (final_status, _battle_turns) =
@@ -166,18 +210,16 @@ impl SimulationService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::model::daimyo_personality::DaimyoPersonality;
-    use crate::domain::model::resource::{DevelopmentStats, Resource};
-    use crate::domain::model::value_objects::{DaimyoId, IninFlag};
+    use engine::domain::model::daimyo_personality::DaimyoPersonality;
+    use engine::domain::model::resource::{DevelopmentStats, Resource};
+    use engine::domain::model::value_objects::{DaimyoId, IninFlag};
     use rand::SeedableRng;
 
     #[tokio::test]
     async fn test_run_simulation_log_includes_daimyo_name() {
-        // 決定論的なテストのためにシード固定
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
         let daimyo_id1 = DaimyoId(1);
-        // 軍事バイアスを最大にして出兵しやすくする
         let personality1 = DaimyoPersonality::new(2.0, 1.0, 1.0, 0.0).unwrap();
         let daimyo1 = Daimyo::new(daimyo_id1, "織田信長", personality1);
 
@@ -199,7 +241,7 @@ mod tests {
             KuniId(2),
             "駿河",
             daimyo_id2,
-            Resource::new(1000, 1000, 1000, 1000), // 非常に弱い
+            Resource::new(1000, 1000, 1000, 1000),
             DevelopmentStats::new(1000, 1000, 60),
             IninFlag(false),
         );
@@ -215,7 +257,6 @@ mod tests {
                 .await
                 .unwrap();
 
-        // ログに大名名が含まれているか確認
         let mut found_war_log = false;
         for snapshot in snapshots {
             for log in snapshot.logs {

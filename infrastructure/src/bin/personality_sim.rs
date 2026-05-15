@@ -1,5 +1,4 @@
 use clap::Parser;
-use engine::domain::service::simulation_service::SimulationService;
 use engine::domain::{
     model::{
         daimyo::Daimyo,
@@ -11,6 +10,7 @@ use engine::domain::{
     service::cpu_action_decision_service::CpuActionDecisionService,
 };
 use infrastructure::master_data::MasterDataLoader;
+use infrastructure::persistence::simulation::SimulationService;
 use rand::thread_rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;

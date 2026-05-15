@@ -583,6 +583,22 @@ async fn test_battle_execution_success_when_adjacent() {
     mock_neighbor.add_neighbor(attacker_id, defender_id);
     let neighbor_repo = Arc::new(mock_neighbor);
     let battle_repo = Arc::new(MockBattleRepository::new());
+    let daimyo_repo = Arc::new(MockDaimyoRepository::new());
+
+    // 大名の登録（性格パラメータが必要になったため）
+    let personality = crate::domain::model::daimyo_personality::DaimyoPersonality::default();
+    daimyo_repo
+        .save(&Daimyo::new(
+            DaimyoId(1),
+            "AttackerDaimyo",
+            personality.clone(),
+        ))
+        .await
+        .unwrap();
+    daimyo_repo
+        .save(&Daimyo::new(DaimyoId(2), "DefenderDaimyo", personality))
+        .await
+        .unwrap();
 
     let state_repo = Arc::new(MockGameStateRepository::new());
     state_repo
@@ -602,7 +618,7 @@ async fn test_battle_execution_success_when_adjacent() {
     let turn_progression = Arc::new(
         crate::application::usecase::turn_progression_usecase::TurnProgressionUseCase::new(
             repo.clone(),
-            Arc::new(MockDaimyoRepository::new()),
+            daimyo_repo.clone(),
             state_repo.clone(),
             Arc::new(MockEventDispatcher),
             Arc::new(MockActionLogRepository),
@@ -617,7 +633,7 @@ async fn test_battle_execution_success_when_adjacent() {
         battle_repo.clone(),
         Arc::new(MockActionLogRepository),
         state_repo.clone(),
-        Arc::new(MockDaimyoRepository::new()),
+        daimyo_repo.clone(),
         turn_progression,
     );
     let _initial_status = usecase
