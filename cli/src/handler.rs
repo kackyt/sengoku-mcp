@@ -35,7 +35,7 @@ impl EventHandler {
             }
             ScreenState::GameOver { .. } => {
                 if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
-                    app.screen = ScreenState::Title;
+                    app.reset().await?;
                 }
                 Ok(())
             }
@@ -97,7 +97,7 @@ impl EventHandler {
                 }
             }
             KeyCode::Esc => {
-                app.screen = ScreenState::Title;
+                app.reset().await?;
             }
             _ => {}
         }
@@ -278,7 +278,7 @@ impl EventHandler {
                     }
                 }
                 KeyCode::Esc => {
-                    app.screen = ScreenState::Title;
+                    app.reset().await?;
                 }
                 _ => {}
             },

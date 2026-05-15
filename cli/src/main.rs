@@ -152,6 +152,12 @@ async fn build_app() -> Result<App> {
         turn_progression_usecase,
         kuni_query_usecase,
         info_usecase,
+        kuni_repo,
+        daimyo_repo,
+        game_state_repo,
+        event_dispatcher,
+        battle_repo,
+        action_log_repo,
     ))
 }
 

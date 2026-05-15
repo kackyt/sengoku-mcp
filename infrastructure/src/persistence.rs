@@ -52,6 +52,13 @@ impl GameStateRepository for InMemoryGameStateRepository {
     }
 }
 
+impl InMemoryGameStateRepository {
+    pub async fn clear(&self) {
+        let mut guard = self.state.write().await;
+        *guard = None;
+    }
+}
+
 /// インメモリイベントディスパッチャの仮実装
 pub struct InMemoryEventDispatcher {
     events: Arc<RwLock<Vec<GameEvent>>>,
@@ -70,6 +77,10 @@ impl InMemoryEventDispatcher {
 
     pub async fn clear_events(&self) {
         self.events.write().await.clear();
+    }
+
+    pub async fn clear(&self) {
+        self.clear_events().await;
     }
 }
 
@@ -150,6 +161,11 @@ impl InMemoryKuniRepository {
         let mut guard = self.kunis.write().await;
         *guard = kunis.into_iter().map(|k| (k.id, k)).collect();
     }
+
+    pub async fn clear(&self) {
+        let mut guard = self.kunis.write().await;
+        guard.clear();
+    }
 }
 
 impl Default for InMemoryKuniRepository {
@@ -208,6 +224,11 @@ impl InMemoryDaimyoRepository {
         let mut guard = self.daimyos.write().await;
         *guard = daimyos.into_iter().map(|d| (d.id, d)).collect();
     }
+
+    pub async fn clear(&self) {
+        let mut guard = self.daimyos.write().await;
+        guard.clear();
+    }
 }
 
 impl Default for InMemoryDaimyoRepository {
@@ -248,6 +269,11 @@ impl InMemoryBattleRepository {
         Self {
             battles: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    pub async fn clear(&self) {
+        let mut guard = self.battles.write().await;
+        guard.clear();
     }
 }
 

@@ -6,11 +6,17 @@ use engine::application::usecase::{
     battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase, info_usecase::InfoUseCase,
     kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
-use engine::domain::model::action_log::ActionLogEntry;
+use engine::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
+use engine::domain::repository::action_log_repository::ActionLogRepository;
+use infrastructure::persistence::{
+    InMemoryActionLogRepository, InMemoryBattleRepository, InMemoryDaimyoRepository,
+    InMemoryEventDispatcher, InMemoryGameStateRepository, InMemoryKuniRepository,
+};
 use ratatui::prelude::*;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct App {
@@ -22,6 +28,14 @@ pub struct App {
     pub turn_progression_usecase: TurnProgressionUseCase,
     pub kuni_query_usecase: KuniQueryUseCase,
     pub info_usecase: InfoUseCase,
+
+    // Repositories for reset
+    pub kuni_repo: Arc<InMemoryKuniRepository>,
+    pub daimyo_repo: Arc<InMemoryDaimyoRepository>,
+    pub game_state_repo: Arc<InMemoryGameStateRepository>,
+    pub event_dispatcher: Arc<InMemoryEventDispatcher>,
+    pub battle_repo: Arc<InMemoryBattleRepository>,
+    pub action_log_repo: Arc<InMemoryActionLogRepository>,
 
     // UI Cache
     pub current_kuni: Option<Kuni>,
@@ -40,12 +54,19 @@ pub struct App {
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         domestic_usecase: DomesticUseCase,
         battle_usecase: BattleUseCase,
         turn_progression_usecase: TurnProgressionUseCase,
         kuni_query_usecase: KuniQueryUseCase,
         info_usecase: InfoUseCase,
+        kuni_repo: Arc<InMemoryKuniRepository>,
+        daimyo_repo: Arc<InMemoryDaimyoRepository>,
+        game_state_repo: Arc<InMemoryGameStateRepository>,
+        event_dispatcher: Arc<InMemoryEventDispatcher>,
+        battle_repo: Arc<InMemoryBattleRepository>,
+        action_log_repo: Arc<InMemoryActionLogRepository>,
     ) -> Self {
         Self {
             screen: ScreenState::Title,
@@ -55,6 +76,12 @@ impl App {
             turn_progression_usecase,
             kuni_query_usecase,
             info_usecase,
+            kuni_repo,
+            daimyo_repo,
+            game_state_repo,
+            event_dispatcher,
+            battle_repo,
+            action_log_repo,
             current_kuni: None,
             current_daimyo: None,
             all_daimyos: Vec::new(),
@@ -72,6 +99,38 @@ impl App {
     }
 
     pub async fn init(&mut self) -> Result<()> {
+        self.update_cache().await?;
+        Ok(())
+    }
+
+    /// ゲーム状態を完全にリセットします
+    pub async fn reset(&mut self) -> Result<()> {
+        // 各リポジトリのクリア
+        self.game_state_repo.clear().await;
+        self.event_dispatcher.clear().await;
+        self.battle_repo.clear().await;
+        self.action_log_repo
+            .clear(ActionLogCategory::Domestic)
+            .unwrap();
+        self.action_log_repo.clear(ActionLogCategory::War).unwrap();
+
+        // マスターデータの再ロードと初期化
+        let bundle = infrastructure::master_data::MasterDataLoader::load()?;
+        self.kuni_repo.init_with_data(bundle.kunis).await;
+        self.daimyo_repo.init_with_data(bundle.daimyos).await;
+
+        // UI情報のクリア
+        self.selected_daimyo_id = None;
+        self.current_kuni = None;
+        self.current_daimyo = None;
+        self.attacker_kuni = None;
+        self.defender_kuni = None;
+        self.messages.clear();
+        self.domestic_logs.clear();
+        self.war_logs.clear();
+        self.active_battles.clear();
+
+        self.screen = ScreenState::Title;
         self.update_cache().await?;
         Ok(())
     }

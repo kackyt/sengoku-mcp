@@ -109,12 +109,13 @@ impl WarDecisionService {
 
                 // 占領後の状態をシミュレート（兵力は残存兵力、大名は自分）
                 let win_kuni = neighbor.clone().with_hei(rest_hei).with_daimyo(daimyo.id);
-                let risk_prob = (Self::calculate_lose_probability_from_neighbors(
-                    &win_kuni,
-                    neighbor_repo,
-                    kuni_repo,
-                )
-                .await?
+                let risk_prob = (0.8
+                    * Self::calculate_lose_probability_from_neighbors(
+                        &win_kuni,
+                        neighbor_repo,
+                        kuni_repo,
+                    )
+                    .await?
                     / military_bias)
                     .clamp(0.0, 1.0);
 

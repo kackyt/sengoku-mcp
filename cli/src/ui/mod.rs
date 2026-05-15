@@ -297,7 +297,7 @@ fn render_domestic(
 }
 
 fn render_war(
-    _app: &App,
+    app: &App,
     f: &mut Frame,
     area: Rect,
     status: &engine::domain::model::battle::WarStatus,
@@ -319,7 +319,7 @@ fn render_war(
     };
 
     if log_area.height > 0 {
-        render_action_logs(_app, f, log_area, true);
+        render_action_logs(app, f, log_area, true);
     }
 
     let chunks = Layout::default()
@@ -328,11 +328,27 @@ fn render_war(
         .split(main_area);
 
     // Left: Attacker (Army)
+    let is_player_attacker =
+        app.selected_daimyo_id == app.attacker_kuni.as_ref().map(|k| k.daimyo_id);
+    let is_player_defender =
+        app.selected_daimyo_id == app.defender_kuni.as_ref().map(|k| k.daimyo_id);
+
+    let attacker_label = if is_player_attacker {
+        "自軍（攻撃軍）"
+    } else {
+        "敵軍（攻撃軍）"
+    };
+    let attacker_color = if is_player_attacker {
+        Color::Cyan
+    } else {
+        Color::Red
+    };
+
     let attacker_status = vec![
         Line::from(vec![Span::styled(
-            "自軍（攻撃軍）",
+            attacker_label,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(attacker_color)
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
@@ -365,10 +381,23 @@ fn render_war(
     f.render_widget(attacker_p, chunks[0]);
 
     // Right: Defender (Enemy Territory)
+    let defender_label = if is_player_defender {
+        "自軍（守備軍）"
+    } else {
+        "敵軍（守備軍）"
+    };
+    let defender_color = if is_player_defender {
+        Color::Cyan
+    } else {
+        Color::Red
+    };
+
     let defender_status = vec![
         Line::from(vec![Span::styled(
-            "敵軍（守備軍）",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            defender_label,
+            Style::default()
+                .fg(defender_color)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
             Span::raw("兵力: "),
@@ -427,6 +456,16 @@ fn render_game_over(
         None => format!("不明な大名(ID:{})", winner_id.value()),
     };
 
+    let player_name = if let Some(player_id) = app.selected_daimyo_id {
+        app.all_daimyos
+            .iter()
+            .find(|d| d.id == player_id)
+            .map(|d| d.name.0.clone())
+            .unwrap_or_else(|| "貴公".to_string())
+    } else {
+        "貴公".to_string()
+    };
+
     let (title, message, color) = if is_victory {
         (
             "全 国 統 一",
@@ -436,7 +475,7 @@ fn render_game_over(
     } else {
         (
             "滅  亡",
-            format!("{} 様は大望半ばにして倒れました…", winner_name),
+            format!("{} 様は大望半ばにして倒れました…", player_name),
             Color::Red,
         )
     };
