@@ -54,6 +54,10 @@ mod tests {
             self.kunis.write().await.insert(kuni.id, kuni.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.kunis.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockDaimyoRepository {
@@ -73,6 +77,10 @@ mod tests {
             self.daimyos.write().await.insert(daimyo.id, daimyo.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.daimyos.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockGameStateRepository {
@@ -87,12 +95,19 @@ mod tests {
             *self.state.write().await = Some(state.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            *self.state.write().await = None;
+            Ok(())
+        }
     }
 
     struct MockEventDispatcher;
     #[async_trait]
     impl EventDispatcher for MockEventDispatcher {
         async fn dispatch(&self, _event: GameEvent) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn clear(&self) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -149,6 +164,9 @@ mod tests {
         async fn delete_by_attacker(&self, _attacker_id: &KuniId) -> Result<(), DomainError> {
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            Ok(())
+        }
     }
 
     struct MockNeighborRepository;
@@ -158,6 +176,9 @@ mod tests {
         }
         fn are_adjacent(&self, _a: &KuniId, _b: &KuniId) -> bool {
             false
+        }
+        fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+            Ok(())
         }
     }
 

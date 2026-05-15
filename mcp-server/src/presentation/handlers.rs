@@ -122,7 +122,7 @@ impl McpHandlers {
         })
     }
 
-    async fn check_kuni_ownership(&self, kuni_id: KuniId) -> Result<(), String> {
+    async fn check_kuni_ownership(&self, kuni_id: KuniId) -> Result<DaimyoId, String> {
         let player_id = self.get_player_id().await?;
 
         // 選択された国の情報を探す
@@ -138,7 +138,7 @@ impl McpHandlers {
                 kuni_id.0
             ));
         }
-        Ok(())
+        Ok(player_id)
     }
 
     fn parse_tactic(&self, tactic: u32, is_attacker: bool) -> Result<Tactic, String> {
@@ -307,12 +307,10 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.check_kuni_ownership(id).await?;
         let gain = self
             .domestic_usecase
-            .sell_rice(player_id, id, DisplayAmount::new(amount))
+            .sell_rice(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("米を売却しました。得られた金: {}", gain.value()))
@@ -325,12 +323,10 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.check_kuni_ownership(id).await?;
         let gain = self
             .domestic_usecase
-            .buy_rice(player_id, id, DisplayAmount::new(amount))
+            .buy_rice(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("米を購入しました。得られた米: {}", gain.value()))
@@ -343,11 +339,9 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.get_player_id().await?;
         self.domestic_usecase
-            .recruit(player_id, id, DisplayAmount::new(amount))
+            .recruit(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("兵を {} 人徴募しました。", amount))
@@ -360,12 +354,10 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.check_kuni_ownership(id).await?;
         let gain = self
             .domestic_usecase
-            .develop_land(player_id, id, DisplayAmount::new(amount))
+            .develop_land(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("開墾を行いました。上昇した石高: {}", gain.value()))
@@ -378,12 +370,10 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.check_kuni_ownership(id).await?;
         let gain = self
             .domestic_usecase
-            .build_town(player_id, id, DisplayAmount::new(amount))
+            .build_town(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("町作りを行いました。発展度: {}", gain.value()))
@@ -396,12 +386,10 @@ impl McpHandlers {
         Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.check_kuni_ownership(id).await?;
         let gain = self
             .domestic_usecase
-            .give_charity(player_id, id, DisplayAmount::new(amount))
+            .give_charity(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!("施しを行いました。上昇した忠誠度: {}", gain))
@@ -421,13 +409,10 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let from_id = KuniId::new(from_kuni_id);
         let to_id = KuniId::new(to_kuni_id);
-        self.check_kuni_ownership(from_id).await?;
-        self.check_kuni_ownership(to_id).await?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
+        let player_id = self.get_player_id().await?;
         self.domestic_usecase
             .transport(
-                player_id,
+                Some(player_id),
                 from_id,
                 to_id,
                 DisplayAmount::new(kin),
@@ -451,15 +436,15 @@ impl McpHandlers {
         }): Parameters<StartWarParams>,
     ) -> Result<String, String> {
         let attacker_id = KuniId::new(attacker_kuni_id);
-        self.check_kuni_ownership(attacker_id).await?;
+        let defender_id = KuniId::new(defender_kuni_id);
+        let player_id = self.get_player_id().await?;
 
-        let player_id = *self.selected_daimyo_id.lock().await;
         let status = self
             .battle_usecase
             .start_war(
-                player_id,
+                Some(player_id),
                 attacker_id,
-                KuniId::new(defender_kuni_id),
+                defender_id,
                 DisplayAmount::new(hei),
                 DisplayAmount::new(kome),
             )
@@ -484,17 +469,17 @@ impl McpHandlers {
             tactic,
         }): Parameters<ExecuteBattleTurnParams>,
     ) -> Result<String, String> {
-        let attacker_id = KuniId::new(attacker_kuni_id);
-        self.check_kuni_ownership(attacker_id).await?;
+        let id = KuniId::new(attacker_kuni_id);
+        let tactic_enum = self.parse_tactic(tactic, true)?;
+        let player_id = self.get_player_id().await?;
 
-        let t = self.parse_tactic(tactic, true)?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
-        let next_status = self
-            .battle_usecase
-            .execute_battle_turn(player_id, attacker_id, t)
+        self.battle_usecase
+            .execute_battle_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
+
+        let next_status = self.battle_usecase.get_active_war(id).await.map_err(|e| e.to_string())?
+            .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
             "合戦ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -520,17 +505,17 @@ impl McpHandlers {
             tactic,
         }): Parameters<ExecuteDefenseTurnParams>,
     ) -> Result<String, String> {
-        let defender_id = KuniId::new(defender_kuni_id);
-        self.check_kuni_ownership(defender_id).await?;
+        let id = KuniId::new(defender_kuni_id);
+        let tactic_enum = self.parse_tactic(tactic, false)?;
+        let player_id = self.get_player_id().await?;
 
-        let t = self.parse_tactic(tactic, false)?;
-
-        let player_id = *self.selected_daimyo_id.lock().await;
-        let next_status = self
-            .battle_usecase
-            .execute_defense_turn(player_id, defender_id, t)
+        self.battle_usecase
+            .execute_defense_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
+
+        let next_status = self.battle_usecase.get_active_war(id).await.map_err(|e| e.to_string())?
+            .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
             "防衛ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -566,13 +551,10 @@ impl McpHandlers {
         description = "ゲームの進行処理を実行します。選択中の大名の手番になるか、1ターン終了するまで進みます。"
     )]
     pub async fn progress_turn(&self) -> Result<String, String> {
-        let player_id = {
-            let lock = self.selected_daimyo_id.lock().await;
-            *lock
-        };
+        let player_id = self.get_player_id().await?;
 
         self.turn_progression_usecase
-            .progress_until_player_turn(player_id)
+            .progress_until_player_turn(Some(player_id))
             .await
             .map_err(|e| e.to_string())?;
 
@@ -588,7 +570,7 @@ impl McpHandlers {
         Parameters(AutoActionParams { kuni_id }): Parameters<AutoActionParams>,
     ) -> Result<String, String> {
         let id = KuniId::new(kuni_id);
-        self.check_kuni_ownership(id).await?;
+        let player_id = self.check_kuni_ownership(id).await?;
 
         // 手番チェック
         let state = self
@@ -600,14 +582,9 @@ impl McpHandlers {
 
         state.check_turn(id).map_err(|e| e.to_string())?;
 
-        let player_id = {
-            let lock = self.selected_daimyo_id.lock().await;
-            *lock
-        };
-
         // 自動行動の実行と手番進行 (原子的な実行)
         self.turn_progression_usecase
-            .execute_cpu_action_and_advance(id, player_id)
+            .execute_cpu_action_and_advance(id, Some(player_id))
             .await
             .map_err(|e| e.to_string())?;
 

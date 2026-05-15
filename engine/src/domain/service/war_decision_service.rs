@@ -1,3 +1,4 @@
+use crate::domain::error::DomainError;
 use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
 use crate::domain::model::value_objects::{Amount, KuniId};
@@ -46,7 +47,7 @@ impl WarDecisionService {
         target: &Kuni,
         neighbor_repo: &dyn crate::domain::repository::neighbor_repository::NeighborRepository,
         kuni_repo: &dyn crate::domain::repository::kuni_repository::KuniRepository,
-    ) -> anyhow::Result<f64> {
+    ) -> Result<f64, DomainError> {
         let neighbors =
             KuniService::get_neighbor_kunis(&target.id, neighbor_repo, kuni_repo).await?;
 
@@ -69,7 +70,7 @@ impl WarDecisionService {
         neighbors: &[Kuni],
         neighbor_repo: &dyn crate::domain::repository::neighbor_repository::NeighborRepository,
         kuni_repo: &dyn crate::domain::repository::kuni_repository::KuniRepository,
-    ) -> anyhow::Result<Option<InvasionPlan>> {
+    ) -> Result<Option<InvasionPlan>, DomainError> {
         let mut candidates = Vec::new();
         // 大名の性格 (軍事)
         let military_bias = daimyo.personality().military_bias();
@@ -194,6 +195,9 @@ mod tests {
         async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
             Ok(vec![])
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            Ok(())
+        }
     }
 
     struct MockNeighborRepo {
@@ -205,6 +209,9 @@ mod tests {
         }
         fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
             self.adjacents.get(a).is_some_and(|list| list.contains(b))
+        }
+        fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+            Ok(())
         }
     }
 

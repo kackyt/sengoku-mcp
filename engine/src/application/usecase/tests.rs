@@ -61,6 +61,11 @@ impl KuniRepository for MockKuniRepository {
     async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
         Ok(self.kunis.lock().unwrap().values().cloned().collect())
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        self.kunis.lock().unwrap().clear();
+        Ok(())
+    }
 }
 
 struct MockNeighborRepository {
@@ -89,6 +94,16 @@ impl NeighborRepository for MockNeighborRepository {
         self.adjacency_map
             .get(a)
             .is_some_and(|neighbors| neighbors.contains(b))
+    }
+
+    fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+        // MockNeighborRepository doesn't use Mutex for simplicity in initial implementation, 
+        // but for reset to work in a real use case it would need it.
+        // For tests, we'll just ignore it or assume it's not called concurrently.
+        // Actually, adjacency_map in struct is not Mutex. 
+        // I should probably change the struct to use Mutex if I want to support reset properly.
+        // But let's just do a no-op or panic if it's not supposed to be called in these tests.
+        Ok(())
     }
 }
 
@@ -142,6 +157,11 @@ impl BattleRepository for MockBattleRepository {
         self.wars.lock().unwrap().remove(attacker_id);
         Ok(())
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        self.wars.lock().unwrap().clear();
+        Ok(())
+    }
 }
 
 struct MockActionLogRepository;
@@ -193,6 +213,11 @@ impl DaimyoRepository for MockDaimyoRepository {
     async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
         Ok(self.daimyos.lock().unwrap().values().cloned().collect())
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        self.daimyos.lock().unwrap().clear();
+        Ok(())
+    }
 }
 
 struct MockGameStateRepository {
@@ -222,6 +247,10 @@ impl GameStateRepository for MockGameStateRepository {
         *current = state.clone();
         Ok(())
     }
+    async fn clear(&self) -> Result<(), DomainError> {
+        // Dummy implementation for mock
+        Ok(())
+    }
 }
 
 struct MockEventDispatcher;
@@ -231,6 +260,9 @@ impl crate::domain::repository::event_dispatcher::EventDispatcher for MockEventD
         &self,
         _event: crate::domain::model::event::GameEvent,
     ) -> Result<(), DomainError> {
+        Ok(())
+    }
+    async fn clear(&self) -> Result<(), DomainError> {
         Ok(())
     }
 }

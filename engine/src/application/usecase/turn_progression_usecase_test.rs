@@ -60,6 +60,10 @@ mod tests {
         async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
             Ok(self.kunis.read().await.values().cloned().collect())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.kunis.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockDaimyoRepository {
@@ -84,6 +88,10 @@ mod tests {
         async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
             Ok(self.daimyos.read().await.values().cloned().collect())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.daimyos.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockGameStateRepository {
@@ -105,6 +113,10 @@ mod tests {
             *self.state.write().await = Some(state.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            *self.state.write().await = None;
+            Ok(())
+        }
     }
 
     struct MockEventDispatcher {
@@ -124,6 +136,10 @@ mod tests {
     impl EventDispatcher for MockEventDispatcher {
         async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError> {
             self.events.write().await.push(event);
+            Ok(())
+        }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.events.write().await.clear();
             Ok(())
         }
     }
@@ -180,6 +196,9 @@ mod tests {
         async fn delete_by_attacker(&self, _attacker_id: &KuniId) -> Result<(), DomainError> {
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            Ok(())
+        }
     }
 
     struct MockNeighborRepository;
@@ -189,6 +208,9 @@ mod tests {
         }
         fn are_adjacent(&self, _a: &KuniId, _b: &KuniId) -> bool {
             false
+        }
+        fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+            Ok(())
         }
     }
 

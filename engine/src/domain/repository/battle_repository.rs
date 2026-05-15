@@ -26,4 +26,6 @@ pub trait BattleRepository: Send + Sync {
 
     /// 合戦が終了した際、状態を削除します
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError>;
+    /// すべての合戦状態を削除します
+    async fn clear(&self) -> Result<(), DomainError>;
 }

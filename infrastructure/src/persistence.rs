@@ -50,12 +50,11 @@ impl GameStateRepository for InMemoryGameStateRepository {
         *guard = Some(state.clone());
         Ok(())
     }
-}
 
-impl InMemoryGameStateRepository {
-    pub async fn clear(&self) {
+    async fn clear(&self) -> Result<(), DomainError> {
         let mut guard = self.state.write().await;
         *guard = None;
+        Ok(())
     }
 }
 
@@ -94,6 +93,11 @@ impl Default for InMemoryEventDispatcher {
 impl EventDispatcher for InMemoryEventDispatcher {
     async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError> {
         self.events.write().await.push(event);
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        self.events.write().await.clear();
         Ok(())
     }
 }
@@ -142,6 +146,16 @@ impl NeighborRepository for InMemoryNeighborRepository {
             .unwrap()
             .get(a)
             .is_some_and(|neighbors| neighbors.contains(b))
+    }
+
+    /// 隣接情報をリセットし、新しいデータで初期化します
+    fn reset(
+        &self,
+        adjacency_map: HashMap<KuniId, Vec<KuniId>>,
+    ) -> Result<(), DomainError> {
+        let mut guard = self.adjacency_map.write().unwrap();
+        *guard = adjacency_map;
+        Ok(())
     }
 }
 
@@ -206,6 +220,12 @@ impl KuniRepository for InMemoryKuniRepository {
         kunis.sort_by_key(|k| k.id);
         Ok(kunis)
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.kunis.write().await;
+        guard.clear();
+        Ok(())
+    }
 }
 
 /// インメモリでの大名リポジトリの仮実装
@@ -256,6 +276,12 @@ impl DaimyoRepository for InMemoryDaimyoRepository {
         // 順序を安定させるためにIDでソート
         daimyos.sort_by_key(|d| d.id);
         Ok(daimyos)
+    }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.daimyos.write().await;
+        guard.clear();
+        Ok(())
     }
 }
 
@@ -318,6 +344,12 @@ impl BattleRepository for InMemoryBattleRepository {
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError> {
         let mut guard = self.battles.write().await;
         guard.remove(attacker_id);
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.battles.write().await;
+        guard.clear();
         Ok(())
     }
 }

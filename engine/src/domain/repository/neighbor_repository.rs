@@ -7,4 +7,6 @@ pub trait NeighborRepository: Send + Sync {
 
     /// 2つの国が隣接しているかどうかを判定します
     fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool;
+    /// 隣接情報をリセットし、新しいデータで初期化します
+    fn reset(&self, adjacency_map: std::collections::HashMap<KuniId, Vec<KuniId>>) -> Result<(), crate::domain::error::DomainError>;
 }

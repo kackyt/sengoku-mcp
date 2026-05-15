@@ -81,8 +81,7 @@ impl SimulationService {
 
                 let invasion_plan = war_decision_service
                     .decide_invasion(daimyo, kuni, &neighbor_kunis, &neighbor_repo, &kuni_repo)
-                    .await
-                    .map_err(DomainError::InfrastructureError)?;
+                    .await?;
 
                 if let Some(plan) = invasion_plan {
                     // 戦争実行
@@ -183,11 +182,13 @@ impl<'a> KuniRepository for SimulationKuniRepo<'a> {
             .collect())
     }
     async fn save(&self, _kuni: &Kuni) -> Result<(), DomainError> {
-        // シミュレーション中なので保存は不要（上位で管理）
         Ok(())
     }
     async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
         Ok(self.kunis.to_vec())
+    }
+    async fn clear(&self) -> Result<(), DomainError> {
+        Ok(())
     }
 }
 
@@ -201,6 +202,9 @@ impl<'a> NeighborRepository for SimulationNeighborRepo<'a> {
     }
     fn are_adjacent(&self, a: &KuniId, b: &KuniId) -> bool {
         self.neighbors.get(a).is_some_and(|l| l.contains(b))
+    }
+    fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+        Ok(())
     }
 }
 
