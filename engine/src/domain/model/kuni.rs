@@ -199,6 +199,18 @@ impl Kuni {
         let cost = internal_amount.mul_percent(50);
         let tyu_loss = amount.value() / 2;
 
+        // 人口が足りない場合は徴募不可 (兵士数は人口を上回って徴募できない)
+        if !self.resource.can_consume(
+            cost,
+            Amount::zero(),
+            Amount::zero(),
+            internal_amount.mul_percent(200) + self.resource.hei,
+        ) {
+            return Err(DomainError::InsufficientResource(
+                "人口は兵士数を上回る必要があります".to_string(),
+            ));
+        }
+
         self.consume_resource(cost, Amount::zero(), Amount::zero(), internal_amount)?;
         self.stats.tyu -= Rate::new(tyu_loss);
         self.resource.hei += internal_amount;
