@@ -204,7 +204,7 @@ impl Kuni {
             cost,
             Amount::zero(),
             Amount::zero(),
-            internal_amount.mul_percent(200) + self.resource.hei,
+            internal_amount.mul_percent(200),
         ) {
             return Err(DomainError::InsufficientResource(
                 "人口は兵士数を上回る必要があります".to_string(),
