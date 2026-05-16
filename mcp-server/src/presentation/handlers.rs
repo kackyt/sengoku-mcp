@@ -4,6 +4,7 @@ use engine::application::usecase::domestic_usecase::DomesticUseCase;
 use engine::application::usecase::info_usecase::InfoUseCase;
 use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
+#[cfg(debug_assertions)]
 use engine::domain::model::action_log::*;
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
@@ -685,47 +686,54 @@ impl McpHandlers {
         Ok(result)
     }
 
-    /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します
-    #[cfg(debug_assertions)]
+    /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。
     #[tool(description = "デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。")]
     pub async fn get_internal_logs(&self) -> Result<String, String> {
-        let logs = self
-            .kuni_query_usecase
-            .get_all_logs_internal(ActionLogCategory::Domestic)
-            .map_err(|e| e.to_string())?;
+        #[cfg(not(debug_assertions))]
+        {
+            Ok("内部ログはデバッグビルドでのみ利用可能です。".to_string())
+        }
 
-        let mut result = String::from("内部ログ（デバッグ用）:\n");
-        for log in logs {
-            let visibility_str = match log.visibility {
-                ActionLogVisibility::Public => "Public",
-                ActionLogVisibility::Player => "Player",
-                ActionLogVisibility::Internal => "Internal",
-            };
+        #[cfg(debug_assertions)]
+        {
+            let logs = self
+                .kuni_query_usecase
+                .get_all_logs_internal(ActionLogCategory::Domestic)
+                .map_err(|e| e.to_string())?;
 
-            let event_str = match &log.event {
-                ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
-                    daimyo_id,
-                    action_msg,
-                    reasoning,
-                }) => {
-                    format!(
-                        "AI行動 [大名ID:{:?}] {}. 理由: {}",
+            let mut result = String::from("内部ログ（デバッグ用）:\n");
+            for log in logs {
+                let visibility_str = match log.visibility {
+                    ActionLogVisibility::Public => "Public",
+                    ActionLogVisibility::Player => "Player",
+                    ActionLogVisibility::Internal => "Internal",
+                };
+
+                let event_str = match &log.event {
+                    ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
                         daimyo_id,
                         action_msg,
-                        reasoning.as_deref().unwrap_or("なし")
-                    )
-                }
-                _ => format!("{:?}", log.event),
-            };
+                        reasoning,
+                    }) => {
+                        format!(
+                            "AI行動 [大名ID:{:?}] {}. 理由: {}",
+                            daimyo_id,
+                            action_msg,
+                            reasoning.as_deref().unwrap_or("なし")
+                        )
+                    }
+                    _ => format!("{:?}", log.event),
+                };
 
-            result.push_str(&format!(
-                "- [ターン{}] [{}] {}\n",
-                log.turn.value(),
-                visibility_str,
-                event_str
-            ));
+                result.push_str(&format!(
+                    "- [ターン{}] [{}] {}\n",
+                    log.turn.value(),
+                    visibility_str,
+                    event_str
+                ));
+            }
+            Ok(result)
         }
-        Ok(result)
     }
 }
 
