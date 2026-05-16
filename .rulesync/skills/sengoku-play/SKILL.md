@@ -2,11 +2,9 @@
 name: sengoku-play
 description: >-
   sengoku-mcp ツール群を使って、ユーザーと対話的に戦国シミュレーションを進めるスキルです。
-  ターン進行・内政コマンド実行・合戦モード・お任せレコメンドを含む。
-  「プレイしたい」「戦国ゲームを始めて」「ターンを進めて」「合戦を仕掛けて」「お任せで」
+  ターン進行・内政コマンド実行・合戦モード・お任せレコメンドを含む。 「プレイしたい」「戦国ゲームを始めて」「ターンを進めて」「合戦を仕掛けて」「お任せで」
   「内政してほしい」「戦略をアドバイスして」などと要求されたときにトリガーします。
 ---
-
 # Sengoku Play（戦国プレイ）スキル
 
 プレイヤーと対話しながら sengoku-mcp の MCP ツールを呼び出し、ターン制戦国シミュレーションを進行させるスキルです。
@@ -136,11 +134,14 @@ get_my_status → 自国の状態取得
 
 [scripts/recommend.py](./scripts/recommend.py) を使ってレコメンドを生成します。
 
-入力JSONを組み立てて実行:
+> [!IMPORTANT]
+> **入力JSONは毎ターン、必ず最新のステータスから新規作成してください。**
+> `scratch/recommend_input.json` などの既存ファイルを再利用すると、古いデータに基づいた誤ったレコメンドが生成されます。
 
-```
-python <recommend_path> <input_json_file>
-```
+入力JSONを組み立てる際の注意点：
+1. `get_my_status` の結果から、`kin`, `kome`, `hei`, `kokudaka`, `machi`, `tyu`, **`jinko`** を正確に抽出します。
+2. **`jinko` (人口) は必須です。** 省略すると推定値が使われ、正確な徴募レコメンドができなくなります。
+3. 全ての数値は `get_my_status` で表示された値（Display Amount）をそのまま使用します。
 
 入力 JSON の形式（[strategy.md](./references/strategy.md) を参照）:
 ```json
@@ -149,9 +150,14 @@ python <recommend_path> <input_json_file>
   "season": 0-3,
   "turn": <int>,
   "my_countries": [ ... ],
-  "enemy_countries": [ ... ],  // get_other_countries_info の結果（省略可）
-  "neighbor_map": { "<kuni_id>": [<neighbor_id>, ...] }  // 省略可
+  "enemy_countries": [ ... ],
+  "neighbor_map": { ... }
 }
+```
+
+実行コマンド:
+```powershell
+python <recommend_path> <input_json_file>
 ```
 
 ### ステップ3: 結果を提示して実行
@@ -183,11 +189,12 @@ recommend.py の出力に攻撃推奨が含まれている場合：
 - 自軍が劣勢 → 奇襲（2）で逆転を狙うか退却（5）
 - 防衛かつ敵が多い → 鼓舞（4）で士気維持 → 次ターン奇襲
 
-## 注意事項
+## トラブルシューティング
 
-- **もし実行中にmcpの不具合を見つけた場合プレーヤーに報告してMCPの再起動をお願いすること**
-- `select_daimyo` が未実行の場合、ほぼすべてのコマンドがエラーになる
-- 合戦フェーズ中（`GamePhase::Battle`）は内政コマンドが使えない
-- `get_other_countries_info` は1ターンの行動を消費する
-- ターン終了イベント（洪水・疫病など）は自動で処理される
-- 領地が増えるほど各国へのコマンド実行回数が増える。お任せでは recommend.py が全国を一括レコメンドする
+- **推奨される徴募数が異常に多い/少ない**: 
+  - `recommend_input.json` の `jinko`（人口）と `hei`（兵数）が最新の `get_my_status` と一致しているか確認してください。
+  - 特に人口が兵士数に対して極端に多い古いデータが残っていると、過剰な徴募が推奨されます。
+- **実行中にmcpの不具合を見つけた場合**: プレイヤーに報告してMCPの再起動をお願いしてください。
+- **`select_daimyo` が未実行**: ほぼすべてのコマンドがエラーになります。
+- **合戦フェーズ中**: 内政コマンドは使用できません。
+- **領地が増えた場合**: `recommend.py` は全領地を一括評価しますが、Agentは各国に対して個別にコマンドを発行する必要があります。
