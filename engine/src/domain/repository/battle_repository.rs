@@ -15,6 +15,17 @@ pub trait BattleRepository: Send + Sync {
         attacker_id: &KuniId,
     ) -> Result<Option<WarStatus>, DomainError>;
 
+    /// 防御側の国IDに関連付けられた合戦状態を取得します
+    async fn find_by_defender(
+        &self,
+        defender_id: &KuniId,
+    ) -> Result<Option<WarStatus>, DomainError>;
+
+    /// 全ての進行中の合戦状態を取得します
+    async fn find_all(&self) -> Result<Vec<WarStatus>, DomainError>;
+
     /// 合戦が終了した際、状態を削除します
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError>;
+    /// すべての合戦状態を削除します
+    async fn clear(&self) -> Result<(), DomainError>;
 }

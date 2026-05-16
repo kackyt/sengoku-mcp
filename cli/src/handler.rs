@@ -3,6 +3,7 @@ use crate::screen::{DomesticCommand, DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use engine::domain::model::value_objects::{DisplayAmount, KuniId};
+use engine::domain::service::battle_participation_service::BattleParticipationService;
 
 pub struct EventHandler;
 
@@ -35,7 +36,7 @@ impl EventHandler {
             }
             ScreenState::GameOver { .. } => {
                 if key.code == KeyCode::Enter || key.code == KeyCode::Esc {
-                    app.screen = ScreenState::Title;
+                    app.reset().await?;
                 }
                 Ok(())
             }
@@ -76,7 +77,9 @@ impl EventHandler {
                 app.selected_daimyo_id = Some(selected_daimyo.id);
 
                 // ゲーム状態の初期化（未作成の場合のみ作成される）
-                app.turn_progression_usecase.progress().await?;
+                app.turn_progression_usecase
+                    .progress(app.selected_daimyo_id)
+                    .await?;
 
                 let state = app
                     .turn_progression_usecase
@@ -95,7 +98,7 @@ impl EventHandler {
                 }
             }
             KeyCode::Esc => {
-                app.screen = ScreenState::Title;
+                app.reset().await?;
             }
             _ => {}
         }
@@ -158,6 +161,9 @@ impl EventHandler {
                             app.domestic_usecase
                                 .set_delegation(kuni_id, delegate)
                                 .await?;
+                            app.turn_progression_usecase
+                                .complete_current_action(app.selected_daimyo_id)
+                                .await?;
                             let msg = if delegate {
                                 "委任しました"
                             } else {
@@ -174,7 +180,11 @@ impl EventHandler {
                         }
                         DomesticCommand::Information => {
                             if let Some(daimyo_id) = app.selected_daimyo_id {
-                                match app.info_usecase.get_other_countries_info(daimyo_id).await {
+                                match app
+                                    .info_usecase
+                                    .get_other_countries_info(app.selected_daimyo_id, daimyo_id)
+                                    .await
+                                {
                                     Ok(info) => {
                                         let mut msg = String::from("他国の情報を調査しました:\n");
                                         for country in info.countries {
@@ -200,6 +210,9 @@ impl EventHandler {
                                         };
                                     }
                                     Err(e) => {
+                                        app.turn_progression_usecase
+                                            .complete_current_action(app.selected_daimyo_id)
+                                            .await?;
                                         app.screen = ScreenState::Domestic {
                                             selected_kuni: kuni_id,
                                             cursor,
@@ -266,7 +279,7 @@ impl EventHandler {
                     }
                 }
                 KeyCode::Esc => {
-                    app.screen = ScreenState::Title;
+                    app.reset().await?;
                 }
                 _ => {}
             },
@@ -310,37 +323,37 @@ impl EventHandler {
                     let result = match command {
                         DomesticCommand::SellRice => app
                             .domestic_usecase
-                            .sell_rice(kuni_id, amount)
+                            .sell_rice(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("米を売却し、金を {} 獲得しました", gain)),
                         DomesticCommand::BuyRice => app
                             .domestic_usecase
-                            .buy_rice(kuni_id, amount)
+                            .buy_rice(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("米を {} 購入しました", gain)),
                         DomesticCommand::Develop => app
                             .domestic_usecase
-                            .develop_land(kuni_id, amount)
+                            .develop_land(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("開墾完了！石高が {} 上昇しました", gain)),
                         DomesticCommand::BuildTown => app
                             .domestic_usecase
-                            .build_town(kuni_id, amount)
+                            .build_town(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("町造り完了！町ランクが {} 上昇しました", gain)),
                         DomesticCommand::Hire => app
                             .domestic_usecase
-                            .recruit(kuni_id, amount)
+                            .recruit(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|_| format!("兵を {} 雇用しました", amount_val)),
                         DomesticCommand::Dismiss => app
                             .domestic_usecase
-                            .dismiss(kuni_id, amount)
+                            .dismiss(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|_| format!("兵を {} 解雇しました", amount_val)),
                         DomesticCommand::Give => app
                             .domestic_usecase
-                            .give_charity(kuni_id, amount)
+                            .give_charity(app.selected_daimyo_id, kuni_id, amount)
                             .await
                             .map(|gain| format!("施しを行い、忠誠度が {} 上昇しました", gain)),
                         _ => Ok("実行しました".to_string()),
@@ -348,9 +361,6 @@ impl EventHandler {
 
                     match result {
                         Ok(result_msg) => {
-                            app.turn_progression_usecase
-                                .complete_current_action()
-                                .await?;
                             app.screen = ScreenState::Domestic {
                                 selected_kuni: kuni_id,
                                 cursor,
@@ -422,15 +432,16 @@ impl EventHandler {
                         } else if command == DomesticCommand::Transport {
                             let result = app
                                 .domestic_usecase
-                                .transport_with_rate(kuni_id, *target_id, 10)
+                                .transport_with_rate(
+                                    app.selected_daimyo_id,
+                                    kuni_id,
+                                    *target_id,
+                                    10,
+                                )
                                 .await;
 
                             match result {
                                 Ok(_) => {
-                                    app.turn_progression_usecase
-                                        .complete_current_action()
-                                        .await?;
-
                                     app.screen = ScreenState::Domestic {
                                         selected_kuni: kuni_id,
                                         cursor,
@@ -541,6 +552,7 @@ impl EventHandler {
                         let start_result = app
                             .battle_usecase
                             .start_war(
+                                app.selected_daimyo_id,
                                 kuni_id,
                                 target_id,
                                 DisplayAmount::new(hei),
@@ -613,8 +625,23 @@ impl EventHandler {
                     };
                 }
                 KeyCode::Esc => {
+                    let is_player_attacker = app
+                        .selected_daimyo_id
+                        .map(|pid| {
+                            BattleParticipationService::is_player_attacker(
+                                &status,
+                                &pid,
+                                &app.all_kunis,
+                            )
+                        })
+                        .unwrap_or(false);
+                    let return_kuni_id = if is_player_attacker {
+                        status.attacker_id()
+                    } else {
+                        status.defender_id()
+                    };
                     app.screen = ScreenState::Domestic {
-                        selected_kuni: status.attacker_id(),
+                        selected_kuni: return_kuni_id,
                         cursor: 0,
                         sub_state: DomesticSubState::Normal,
                     };
@@ -647,40 +674,100 @@ impl EventHandler {
                         _ => Tactic::Normal,
                     };
 
-                    if !Self::check_player_turn(app, status.attacker_id(), 0).await? {
-                        return Ok(());
-                    }
+                    let is_player_attacker = app
+                        .selected_daimyo_id
+                        .map(|pid| {
+                            BattleParticipationService::is_player_attacker(
+                                &status,
+                                &pid,
+                                &app.all_kunis,
+                            )
+                        })
+                        .unwrap_or(false);
+                    let is_player_defender = app
+                        .selected_daimyo_id
+                        .map(|pid| {
+                            BattleParticipationService::is_player_defender(
+                                &status,
+                                &pid,
+                                &app.all_kunis,
+                            )
+                        })
+                        .unwrap_or(false);
 
-                    let result_status = app
-                        .battle_usecase
-                        .execute_battle_turn(status.attacker_id(), tactic)
-                        .await?;
+                    let result_status = if is_player_attacker {
+                        if !Self::check_player_turn(app, status.attacker_id(), 0).await? {
+                            return Ok(());
+                        }
+                        app.battle_usecase
+                            .execute_battle_turn(
+                                app.selected_daimyo_id,
+                                status.attacker_id(),
+                                tactic,
+                            )
+                            .await?
+                    } else if is_player_defender {
+                        app.battle_usecase
+                            .execute_defense_turn(
+                                app.selected_daimyo_id,
+                                status.defender_id(),
+                                tactic,
+                            )
+                            .await?
+                    } else {
+                        return Ok(());
+                    };
 
                     let msg = if let Some(winner) = result_status.winner {
                         use engine::domain::model::battle::BattleSide;
-                        match winner {
-                            BattleSide::Attacker => "我が軍の勝利！敵国を占領したぞ！".to_string(),
-                            BattleSide::Defender => {
-                                "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string()
+                        if is_player_attacker {
+                            match winner {
+                                BattleSide::Attacker => {
+                                    "我が軍の勝利！敵国を占領したぞ！".to_string()
+                                }
+                                BattleSide::Defender => {
+                                    "我が軍の敗北...。兵力と兵糧を失ってしまった。".to_string()
+                                }
+                            }
+                        } else {
+                            match winner {
+                                BattleSide::Defender => {
+                                    "我が軍の勝利！侵攻を退けたぞ！".to_string()
+                                }
+                                BattleSide::Attacker => {
+                                    "我が軍の敗北...。国を奪われてしまった。".to_string()
+                                }
                             }
                         }
                     } else {
                         use engine::domain::model::battle::BattleAdvantage;
-                        match result_status.advantage {
+                        let advantage = if is_player_attacker {
+                            result_status.advantage
+                        } else {
+                            match result_status.advantage {
+                                BattleAdvantage::Advantage => BattleAdvantage::Disadvantage,
+                                BattleAdvantage::Disadvantage => BattleAdvantage::Advantage,
+                                BattleAdvantage::Even => BattleAdvantage::Even,
+                            }
+                        };
+
+                        match advantage {
                             BattleAdvantage::Advantage => "我が軍が圧倒している！".to_string(),
-                            BattleAdvantage::Even => "一進一退の攻防が続いている...！".to_string(),
+                            BattleAdvantage::Even => "一進一退の攻防が続いている...".to_string(),
                             BattleAdvantage::Disadvantage => {
-                                "我が軍は苦戦を強いられている...！".to_string()
+                                "我が軍は苦戦を強いられている...".to_string()
                             }
                         }
                     };
 
                     if result_status.winner.is_some() {
-                        app.turn_progression_usecase
-                            .complete_current_action()
-                            .await?;
+                        let return_kuni_id = if is_player_attacker {
+                            status.attacker_id()
+                        } else {
+                            status.defender_id()
+                        };
                         app.screen = ScreenState::Domestic {
-                            selected_kuni: status.attacker_id(),
+                            selected_kuni: return_kuni_id,
                             cursor: 0,
                             sub_state: DomesticSubState::ShowMessage {
                                 message: msg,
@@ -726,6 +813,17 @@ impl EventHandler {
             && let Some(current_kuni) = &app.current_kuni
             && current_daimyo.id == player_id
             && current_kuni.id == kuni_id
+        {
+            return Ok(true);
+        }
+
+        // 合戦中かつ自分が当事者の場合は、このチェックをパスさせる
+        // (合戦画面への遷移を許可するため)
+        if matches!(app.screen, ScreenState::War { .. })
+            && let Some(player_id) = app.selected_daimyo_id
+            && app.active_battles.iter().any(|b| {
+                BattleParticipationService::is_player_participating(b, &player_id, &app.all_kunis)
+            })
         {
             return Ok(true);
         }

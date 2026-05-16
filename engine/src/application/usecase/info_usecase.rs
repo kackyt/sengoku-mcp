@@ -35,6 +35,7 @@ impl InfoUseCase {
     /// 実行には1アクション（1ターン）を消費します。
     pub async fn get_other_countries_info(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         daimyo_id: DaimyoId,
     ) -> Result<OtherCountriesInfoDTO> {
         // 1. 手番の確認
@@ -81,7 +82,7 @@ impl InfoUseCase {
 
         // 3. アクションを完了させてターン（手番）を消費
         self.turn_progression_usecase
-            .complete_current_action()
+            .complete_current_action(player_daimyo_id)
             .await?;
 
         Ok(OtherCountriesInfoDTO {

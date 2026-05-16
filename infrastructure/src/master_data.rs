@@ -1,22 +1,14 @@
+use engine::domain::error::DomainError;
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::daimyo_personality::DaimyoPersonality;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::resource::{DevelopmentStats, Resource};
 use engine::domain::model::value_objects::{DaimyoId, DisplayAmount, IninFlag, KuniId, Rate};
+use engine::domain::repository::master_data_repository::{MasterDataBundle, MasterDataRepository};
 use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::master_data_error::MasterDataError;
-
-/// マスターデータのロード結果をまとめた構造体
-pub struct MasterDataBundle {
-    /// ロードされた大名のリスト
-    pub daimyos: Vec<Daimyo>,
-    /// ロードされた国のリスト
-    pub kunis: Vec<Kuni>,
-    /// ロードされた隣接情報 (内部ID間)
-    pub adjacency_map: HashMap<KuniId, Vec<KuniId>>,
-}
 
 /// 大名情報のCSVレコード
 #[derive(Debug, Deserialize)]
@@ -71,6 +63,12 @@ struct KuniRecord {
 
 /// CSVファイルからマスターデータを読み込むローダー
 pub struct MasterDataLoader;
+
+impl MasterDataRepository for MasterDataLoader {
+    fn load(&self) -> Result<MasterDataBundle, DomainError> {
+        Self::load().map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+}
 
 impl MasterDataLoader {
     pub fn load() -> Result<MasterDataBundle, MasterDataError> {

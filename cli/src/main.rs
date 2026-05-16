@@ -6,7 +6,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use engine::application::usecase::{
-    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase, info_usecase::InfoUseCase,
+    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
+    game_lifecycle_usecase::GameLifecycleUseCase, info_usecase::InfoUseCase,
     kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
 use infrastructure::master_data::MasterDataLoader;
@@ -96,12 +97,7 @@ async fn build_app() -> Result<App> {
     let battle_repo = Arc::new(infrastructure::persistence::InMemoryBattleRepository::new());
     let action_log_repo = Arc::new(InMemoryActionLogRepository::new());
 
-    // マスターデータのロードと初期化
-    let bundle = MasterDataLoader::load()?;
-
-    kuni_repo.init_with_data(bundle.kunis).await;
-    daimyo_repo.init_with_data(bundle.daimyos).await;
-    neighbor_repo.init_with_data(bundle.adjacency_map);
+    // マスターデータのロードと初期化は GameLifecycleUseCase で行うため、ここでは個別のロードを削除
 
     // ユースケースの構築
     let turn_progression_usecase = TurnProgressionUseCase::new(
@@ -110,6 +106,8 @@ async fn build_app() -> Result<App> {
         game_state_repo.clone(),
         event_dispatcher.clone(),
         action_log_repo.clone(),
+        battle_repo.clone(),
+        neighbor_repo.clone(),
     );
     let turn_progression_arc = Arc::new(turn_progression_usecase.clone());
 
@@ -126,6 +124,7 @@ async fn build_app() -> Result<App> {
         battle_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
+        daimyo_repo.clone(),
         turn_progression_arc.clone(),
     );
     let kuni_query_usecase = KuniQueryUseCase::new(
@@ -134,6 +133,7 @@ async fn build_app() -> Result<App> {
         game_state_repo.clone(),
         neighbor_repo.clone(),
         action_log_repo.clone(),
+        battle_repo.clone(),
     );
     let info_usecase = InfoUseCase::new(
         kuni_repo.clone(),
@@ -142,12 +142,29 @@ async fn build_app() -> Result<App> {
         turn_progression_arc.clone(),
     );
 
+    let master_data_repo = Arc::new(MasterDataLoader);
+    let game_lifecycle_usecase = GameLifecycleUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        action_log_repo.clone(),
+        battle_repo.clone(),
+        neighbor_repo.clone(),
+        event_dispatcher.clone(),
+        master_data_repo.clone(),
+    );
+
+    // 初期化
+    game_lifecycle_usecase.reset_game().await?;
+
     Ok(App::new(
         domestic_usecase,
         battle_usecase,
         turn_progression_usecase,
         kuni_query_usecase,
         info_usecase,
+        game_lifecycle_usecase,
+        neighbor_repo,
     ))
 }
 

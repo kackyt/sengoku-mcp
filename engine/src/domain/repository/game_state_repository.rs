@@ -8,4 +8,6 @@ pub trait GameStateRepository: Send + Sync {
     async fn get(&self) -> Result<Option<GameState>, DomainError>;
     /// ゲーム状態を保存または更新します
     async fn save(&self, state: &GameState) -> Result<(), DomainError>;
+    /// ゲーム状態を削除します
+    async fn clear(&self) -> Result<(), DomainError>;
 }

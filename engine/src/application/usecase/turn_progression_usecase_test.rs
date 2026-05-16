@@ -13,9 +13,10 @@ mod tests {
         value_objects::{ActionOrderIndex, DaimyoId, IninFlag, KuniId, TurnNumber},
     };
     use crate::domain::repository::{
-        action_log_repository::ActionLogRepository, daimyo_repository::DaimyoRepository,
-        event_dispatcher::EventDispatcher, game_state_repository::GameStateRepository,
-        kuni_repository::KuniRepository,
+        action_log_repository::ActionLogRepository, battle_repository::BattleRepository,
+        daimyo_repository::DaimyoRepository, event_dispatcher::EventDispatcher,
+        game_state_repository::GameStateRepository, kuni_repository::KuniRepository,
+        neighbor_repository::NeighborRepository,
     };
     use async_trait::async_trait;
     use std::collections::HashMap;
@@ -59,6 +60,10 @@ mod tests {
         async fn find_all(&self) -> Result<Vec<Kuni>, DomainError> {
             Ok(self.kunis.read().await.values().cloned().collect())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.kunis.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockDaimyoRepository {
@@ -83,6 +88,10 @@ mod tests {
         async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError> {
             Ok(self.daimyos.read().await.values().cloned().collect())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.daimyos.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockGameStateRepository {
@@ -102,6 +111,10 @@ mod tests {
         }
         async fn save(&self, state: &GameState) -> Result<(), DomainError> {
             *self.state.write().await = Some(state.clone());
+            Ok(())
+        }
+        async fn clear(&self) -> Result<(), DomainError> {
+            *self.state.write().await = None;
             Ok(())
         }
     }
@@ -125,6 +138,10 @@ mod tests {
             self.events.write().await.push(event);
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.events.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockActionLogRepository;
@@ -146,6 +163,53 @@ mod tests {
             Ok(vec![])
         }
         fn clear(&self, _category: ActionLogCategory) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct MockBattleRepository;
+    #[async_trait]
+    impl BattleRepository for MockBattleRepository {
+        async fn save(
+            &self,
+            _status: &crate::domain::model::battle::WarStatus,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn find_by_attacker(
+            &self,
+            _attacker_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_by_defender(
+            &self,
+            _defender_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_all(
+            &self,
+        ) -> Result<Vec<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(vec![])
+        }
+        async fn delete_by_attacker(&self, _attacker_id: &KuniId) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn clear(&self) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct MockNeighborRepository;
+    impl NeighborRepository for MockNeighborRepository {
+        fn get_neighbors(&self, _kuni_id: &KuniId) -> Vec<KuniId> {
+            vec![]
+        }
+        fn are_adjacent(&self, _a: &KuniId, _b: &KuniId) -> bool {
+            false
+        }
+        fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -201,17 +265,19 @@ mod tests {
             state_repo.clone(),
             event_dispatcher.clone(),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 1. 初回進行: ターン1の開始をセットアップ（初期化のみ）
-        usecase.progress().await.expect("進行成功");
+        usecase.progress(None).await.expect("進行成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_turn().value(), 1);
         assert_eq!(state.current_action_index().value(), 0);
 
         // 2. 最初の大名が行動
-        usecase.progress().await.expect("進行成功");
+        usecase.progress(None).await.expect("進行成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_action_index().value(), 1);
@@ -226,7 +292,7 @@ mod tests {
             .any(|e| matches!(e, GameEvent::DaimyoActionStarted { .. })));
 
         // 3. 2番目の大名が行動（最後の行動なので自動的にターン終了処理まで走る）
-        usecase.progress().await.expect("進行成功");
+        usecase.progress(None).await.expect("進行成功");
 
         let state2 = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state2.current_turn().value(), 2); // すでにターンが進んでいる
@@ -264,6 +330,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher,
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 初期状態セットアップ（ターン1, 行動順 [k1, k2], インデックス0）
@@ -276,7 +344,7 @@ mod tests {
         state_repo.save(&initial_state).await.unwrap();
 
         // 1人目の行動完了 -> 保存分岐 (index 0 -> 1)
-        usecase.complete_current_action().await.expect("成功");
+        usecase.complete_current_action(None).await.expect("成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_action_index().value(), 1);
@@ -301,6 +369,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher.clone(),
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 初期状態セットアップ（ターン1, 行動順 [k1], インデックス0）
@@ -310,7 +380,7 @@ mod tests {
         state_repo.save(&initial_state).await.unwrap();
 
         // 最後の行動完了 -> ターン終了分岐 (index 0 -> 1 -> 次のターンへ)
-        usecase.complete_current_action().await.expect("成功");
+        usecase.complete_current_action(None).await.expect("成功");
 
         let state = state_repo.get().await.unwrap().unwrap();
         assert_eq!(state.current_turn().value(), 2);
@@ -353,6 +423,8 @@ mod tests {
             state_repo.clone(),
             event_dispatcher,
             Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         );
 
         // 初期状態で CPU -> プレイヤー の順とする

@@ -14,10 +14,12 @@ mod tests {
         ActionOrderIndex, DaimyoId, DisplayAmount, IninFlag, KuniId, TurnNumber, INTERNAL_SCALE,
     };
     use crate::domain::repository::action_log_repository::ActionLogRepository;
+    use crate::domain::repository::battle_repository::BattleRepository;
     use crate::domain::repository::daimyo_repository::DaimyoRepository;
     use crate::domain::repository::event_dispatcher::EventDispatcher;
     use crate::domain::repository::game_state_repository::GameStateRepository;
     use crate::domain::repository::kuni_repository::KuniRepository;
+    use crate::domain::repository::neighbor_repository::NeighborRepository;
     use async_trait::async_trait;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -52,6 +54,10 @@ mod tests {
             self.kunis.write().await.insert(kuni.id, kuni.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.kunis.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockDaimyoRepository {
@@ -71,6 +77,10 @@ mod tests {
             self.daimyos.write().await.insert(daimyo.id, daimyo.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            self.daimyos.write().await.clear();
+            Ok(())
+        }
     }
 
     struct MockGameStateRepository {
@@ -85,12 +95,19 @@ mod tests {
             *self.state.write().await = Some(state.clone());
             Ok(())
         }
+        async fn clear(&self) -> Result<(), DomainError> {
+            *self.state.write().await = None;
+            Ok(())
+        }
     }
 
     struct MockEventDispatcher;
     #[async_trait]
     impl EventDispatcher for MockEventDispatcher {
         async fn dispatch(&self, _event: GameEvent) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn clear(&self) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -114,6 +131,53 @@ mod tests {
             Ok(vec![])
         }
         fn clear(&self, _category: ActionLogCategory) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct MockBattleRepository;
+    #[async_trait]
+    impl BattleRepository for MockBattleRepository {
+        async fn save(
+            &self,
+            _status: &crate::domain::model::battle::WarStatus,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn find_by_attacker(
+            &self,
+            _attacker_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_by_defender(
+            &self,
+            _defender_id: &KuniId,
+        ) -> Result<Option<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(None)
+        }
+        async fn find_all(
+            &self,
+        ) -> Result<Vec<crate::domain::model::battle::WarStatus>, DomainError> {
+            Ok(vec![])
+        }
+        async fn delete_by_attacker(&self, _attacker_id: &KuniId) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn clear(&self) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct MockNeighborRepository;
+    impl NeighborRepository for MockNeighborRepository {
+        fn get_neighbors(&self, _kuni_id: &KuniId) -> Vec<KuniId> {
+            vec![]
+        }
+        fn are_adjacent(&self, _a: &KuniId, _b: &KuniId) -> bool {
+            false
+        }
+        fn reset(&self, _adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -209,6 +273,8 @@ mod tests {
             game_state_repo.clone(),
             event_dispatcher.clone(),
             action_log_repo.clone(),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
         ));
 
         let info_usecase = InfoUseCase::new(
@@ -219,7 +285,7 @@ mod tests {
         );
 
         let result = info_usecase
-            .get_other_countries_info(player_id)
+            .get_other_countries_info(Some(player_id), player_id)
             .await
             .unwrap();
 

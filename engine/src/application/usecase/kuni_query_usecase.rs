@@ -7,6 +7,7 @@ use crate::domain::repository::daimyo_repository::DaimyoRepository;
 use crate::domain::repository::game_state_repository::GameStateRepository;
 use crate::domain::repository::kuni_repository::KuniRepository;
 use crate::domain::repository::neighbor_repository::NeighborRepository;
+use crate::domain::service::kuni_service::KuniService;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -22,6 +23,10 @@ pub struct UiSnapshot {
     pub kuni_names: HashMap<KuniId, String>,
     pub domestic_logs: Vec<ActionLogEntry>,
     pub war_logs: Vec<ActionLogEntry>,
+    pub active_battles: Vec<crate::domain::model::battle::WarStatus>,
+    pub all_kunis: Vec<Kuni>,
+    pub phase: crate::domain::model::game_state::GamePhase,
+    pub winner: Option<DaimyoId>,
 }
 
 /// 国の情報照会に関するユースケース
@@ -31,6 +36,7 @@ pub struct KuniQueryUseCase {
     game_state_repo: Arc<dyn GameStateRepository>,
     neighbor_repo: Arc<dyn NeighborRepository>,
     action_log_repo: Arc<dyn ActionLogRepository>,
+    battle_repo: Arc<dyn crate::domain::repository::battle_repository::BattleRepository>,
 }
 
 impl KuniQueryUseCase {
@@ -40,6 +46,7 @@ impl KuniQueryUseCase {
         game_state_repo: Arc<dyn GameStateRepository>,
         neighbor_repo: Arc<dyn NeighborRepository>,
         action_log_repo: Arc<dyn ActionLogRepository>,
+        battle_repo: Arc<dyn crate::domain::repository::battle_repository::BattleRepository>,
     ) -> Self {
         Self {
             kuni_repo,
@@ -47,6 +54,7 @@ impl KuniQueryUseCase {
             game_state_repo,
             neighbor_repo,
             action_log_repo,
+            battle_repo,
         }
     }
 
@@ -60,7 +68,7 @@ impl KuniQueryUseCase {
         // 基本情報の取得
         let all_daimyos = self.daimyo_repo.find_all().await?;
         let all_kunis = self.kuni_repo.find_all().await?;
-        let kuni_names = all_kunis.into_iter().map(|k| (k.id, k.name.0)).collect();
+        let kuni_names = all_kunis.iter().map(|k| (k.id, k.name.0.clone())).collect();
 
         let mut snapshot = UiSnapshot {
             all_daimyos,
@@ -71,12 +79,16 @@ impl KuniQueryUseCase {
             war_logs: self
                 .action_log_repo
                 .find_visible(ActionLogCategory::War, 100)?,
+            active_battles: self.battle_repo.find_all().await?,
+            all_kunis,
             ..Default::default()
         };
 
         // 現在の手番情報を取得（これを優先する）
         if let Some(state) = self.game_state_repo.get().await? {
             snapshot.current_turn = Some(state.current_turn().value());
+            snapshot.phase = state.phase();
+            snapshot.winner = state.winner();
             if let Some(kuni_id) = state.current_kuni_id() {
                 if let Some(kuni) = self.kuni_repo.find_by_id(&kuni_id).await? {
                     snapshot.current_kuni = Some(kuni.clone());
@@ -113,17 +125,13 @@ impl KuniQueryUseCase {
 
     /// 指定した国の隣接国を取得します
     pub async fn get_neighbors(&self, kuni_id: &KuniId) -> anyhow::Result<Vec<Kuni>> {
-        let neighbor_ids = self.neighbor_repo.get_neighbors(kuni_id);
-        let mut neighbors = Vec::with_capacity(neighbor_ids.len());
-        for id in neighbor_ids {
-            let kuni = self
-                .kuni_repo
-                .find_by_id(&id)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("隣接国が見つかりません: {:?}", id))?;
-            neighbors.push(kuni);
-        }
-        Ok(neighbors)
+        KuniService::get_neighbor_kunis(
+            kuni_id,
+            self.neighbor_repo.as_ref(),
+            self.kuni_repo.as_ref(),
+        )
+        .await
+        .map_err(|e| e.into())
     }
 
     /// 指定した国の隣接国のID一覧を取得します
@@ -137,29 +145,31 @@ impl KuniQueryUseCase {
         kuni_id: &KuniId,
         is_attack: bool,
     ) -> anyhow::Result<Vec<KuniId>> {
-        let neighbors = self.neighbor_repo.get_neighbors(kuni_id);
-        let mut filtered = Vec::new();
         let current_kuni = self
             .kuni_repo
             .find_by_id(kuni_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("国が見つかりません"))?;
 
-        for nid in neighbors {
-            if let Some(k) = self.kuni_repo.find_by_id(&nid).await? {
+        let neighbors = KuniService::get_neighbor_kunis(
+            kuni_id,
+            self.neighbor_repo.as_ref(),
+            self.kuni_repo.as_ref(),
+        )
+        .await?;
+
+        let filtered = neighbors
+            .into_iter()
+            .filter(|k| {
                 if is_attack {
-                    // 攻撃：領主が異なる国のみ
-                    if k.daimyo_id != current_kuni.daimyo_id {
-                        filtered.push(nid);
-                    }
+                    k.daimyo_id != current_kuni.daimyo_id
                 } else {
-                    // 輸送：領主が同じ国のみ
-                    if k.daimyo_id == current_kuni.daimyo_id {
-                        filtered.push(nid);
-                    }
+                    k.daimyo_id == current_kuni.daimyo_id
                 }
-            }
-        }
+            })
+            .map(|k| k.id)
+            .collect();
+
         Ok(filtered)
     }
     /// 全ての行動ログ（内部ログを含む）を取得します (デバッグ用)
@@ -170,5 +180,86 @@ impl KuniQueryUseCase {
         self.action_log_repo
             .find_all(category)
             .map_err(|e| e.into())
+    }
+
+    /// プレイヤーの現在の状況を取得します（防衛戦の警告含む）
+    pub async fn get_player_status(
+        &self,
+        player_id: &DaimyoId,
+    ) -> anyhow::Result<crate::application::dto::player_status_dto::PlayerStatusDTO> {
+        let kunis = self.kuni_repo.find_by_daimyo_id(player_id).await?;
+        let battles = self.battle_repo.find_all().await?;
+        let state = self
+            .game_state_repo
+            .get()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+
+        let all_kunis = self.kuni_repo.find_all().await?;
+        let kuni_names: HashMap<KuniId, String> =
+            all_kunis.iter().map(|k| (k.id, k.name.0.clone())).collect();
+
+        let current_turn = state.current_turn().value();
+        let current_daimyo_name = if let Some(kuni_id) = state.current_kuni_id() {
+            let kuni = self
+                .kuni_repo
+                .find_by_id(&kuni_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("手番の国が見つかりません"))?;
+            let daimyo = self
+                .daimyo_repo
+                .find_by_id(&kuni.daimyo_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("手番の大名が見つかりません"))?;
+            daimyo.name.0.clone()
+        } else {
+            "不明".to_string()
+        };
+
+        let my_kuni_ids: std::collections::HashSet<_> = kunis.iter().map(|k| k.id).collect();
+        let mut defense_alerts = Vec::new();
+
+        for battle in battles {
+            if my_kuni_ids.contains(&battle.defender.kuni_id) {
+                defense_alerts.push(
+                    crate::application::dto::player_status_dto::DefenseAlertDTO {
+                        attacker_kuni_name: kuni_names
+                            .get(&battle.attacker.kuni_id)
+                            .cloned()
+                            .unwrap_or_else(|| "不明".to_string()),
+                        defender_kuni_name: kuni_names
+                            .get(&battle.defender.kuni_id)
+                            .cloned()
+                            .unwrap_or_else(|| "不明".to_string()),
+                        enemy_hei: battle.attacker.hei.to_display(),
+                    },
+                );
+            }
+        }
+
+        let kuni_dtos = kunis
+            .into_iter()
+            .map(
+                |k| crate::application::dto::player_status_dto::KuniStatusDTO {
+                    id: k.id,
+                    name: k.name.0,
+                    kin: k.resource.kin.to_display(),
+                    kome: k.resource.kome.to_display(),
+                    hei: k.resource.hei.to_display(),
+                    kokudaka: k.stats.kokudaka.to_display(),
+                    machi: k.stats.machi.to_display(),
+                    tyu: k.stats.tyu.value(),
+                },
+            )
+            .collect();
+
+        Ok(
+            crate::application::dto::player_status_dto::PlayerStatusDTO {
+                current_turn,
+                current_daimyo_name,
+                kunis: kuni_dtos,
+                defense_alerts,
+            },
+        )
     }
 }

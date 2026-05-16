@@ -35,7 +35,9 @@ pub fn draw(app: &App, f: &mut Frame) {
             cursor,
             sub_state,
         } => render_war(app, f, chunks[1], status, *cursor, sub_state),
-        ScreenState::GameOver { winner } => render_game_over(app, f, chunks[1], *winner),
+        ScreenState::GameOver { winner, is_victory } => {
+            render_game_over(app, f, chunks[1], *winner, *is_victory)
+        }
     }
 
     render_modals(app, f);
@@ -295,7 +297,7 @@ fn render_domestic(
 }
 
 fn render_war(
-    _app: &App,
+    app: &App,
     f: &mut Frame,
     area: Rect,
     status: &engine::domain::model::battle::WarStatus,
@@ -317,7 +319,7 @@ fn render_war(
     };
 
     if log_area.height > 0 {
-        render_action_logs(_app, f, log_area, true);
+        render_action_logs(app, f, log_area, true);
     }
 
     let chunks = Layout::default()
@@ -326,11 +328,27 @@ fn render_war(
         .split(main_area);
 
     // Left: Attacker (Army)
+    let is_player_attacker =
+        app.selected_daimyo_id == app.attacker_kuni.as_ref().map(|k| k.daimyo_id);
+    let is_player_defender =
+        app.selected_daimyo_id == app.defender_kuni.as_ref().map(|k| k.daimyo_id);
+
+    let attacker_label = if is_player_attacker {
+        "自軍（攻撃軍）"
+    } else {
+        "敵軍（攻撃軍）"
+    };
+    let attacker_color = if is_player_attacker {
+        Color::Cyan
+    } else {
+        Color::Red
+    };
+
     let attacker_status = vec![
         Line::from(vec![Span::styled(
-            "自軍（攻撃軍）",
+            attacker_label,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(attacker_color)
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
@@ -363,10 +381,23 @@ fn render_war(
     f.render_widget(attacker_p, chunks[0]);
 
     // Right: Defender (Enemy Territory)
+    let defender_label = if is_player_defender {
+        "自軍（守備軍）"
+    } else {
+        "敵軍（守備軍）"
+    };
+    let defender_color = if is_player_defender {
+        Color::Cyan
+    } else {
+        Color::Red
+    };
+
     let defender_status = vec![
         Line::from(vec![Span::styled(
-            "敵軍（守備軍）",
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            defender_label,
+            Style::default()
+                .fg(defender_color)
+                .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![
             Span::raw("兵力: "),
@@ -418,22 +449,43 @@ fn render_game_over(
     f: &mut Frame,
     area: Rect,
     winner_id: engine::domain::model::value_objects::DaimyoId,
+    is_victory: bool,
 ) {
-    let winner_name = app
-        .all_daimyos
-        .iter()
-        .find(|d| d.id == winner_id)
-        .map(|d| d.name.0.as_str())
-        .unwrap_or("勝者不明");
+    let winner_name = match app.all_daimyos.iter().find(|d| d.id == winner_id) {
+        Some(d) => d.name.0.clone(),
+        None => format!("不明な大名(ID:{})", winner_id.value()),
+    };
+
+    let player_name = if let Some(player_id) = app.selected_daimyo_id {
+        app.all_daimyos
+            .iter()
+            .find(|d| d.id == player_id)
+            .map(|d| d.name.0.clone())
+            .unwrap_or_else(|| "貴公".to_string())
+    } else {
+        "貴公".to_string()
+    };
+
+    let (title, message, color) = if is_victory {
+        (
+            "全 国 統 一",
+            format!("{} 様が天下を平定されました！", winner_name),
+            Color::Yellow,
+        )
+    } else {
+        (
+            "滅  亡",
+            format!("{} 様は大望半ばにして倒れました…", player_name),
+            Color::Red,
+        )
+    };
 
     let text = vec![
         Line::from(Span::styled(
-            "全 国 統 一",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            title,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
         )),
-        Line::from(format!("{} 様が天下を平定されました！", winner_name)),
+        Line::from(message),
     ];
     let p = Paragraph::new(text)
         .alignment(Alignment::Center)
@@ -614,7 +666,7 @@ fn render_action_logs(app: &App, f: &mut Frame, area: Rect, is_war: bool) {
             let content = format!(
                 "{} {}",
                 turn_text,
-                action_log_renderer::render_event(&log.event)
+                action_log_renderer::render_event(&log.event, app.selected_daimyo_id)
             );
             ListItem::new(content)
         })

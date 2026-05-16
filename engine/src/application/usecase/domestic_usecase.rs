@@ -1,7 +1,7 @@
 use crate::domain::{
     error::DomainError,
     model::action_log::{ActionLogEntry, ActionLogEvent, ActionLogVisibility, DomesticLogEvent},
-    model::value_objects::{Amount, DisplayAmount, IninFlag, KuniId},
+    model::value_objects::{Amount, DaimyoId, DisplayAmount, IninFlag, KuniId},
     repository::action_log_repository::ActionLogRepository,
     repository::game_state_repository::GameStateRepository,
     repository::kuni_repository::KuniRepository,
@@ -68,13 +68,17 @@ impl DomesticUseCase {
             .await?
             .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
 
+        if state.phase() != crate::domain::model::game_state::GamePhase::Domestic {
+            return Err(anyhow::anyhow!("現在は内政フェーズではありません"));
+        }
+
         state.check_turn(kuni_id)?;
         Ok(())
     }
 
-    async fn advance_turn(&self) -> Result<(), anyhow::Error> {
+    async fn advance_turn(&self, player_daimyo_id: Option<DaimyoId>) -> Result<(), anyhow::Error> {
         self.turn_progression_usecase
-            .complete_current_action()
+            .complete_current_action(player_daimyo_id)
             .await?;
         Ok(())
     }
@@ -82,6 +86,7 @@ impl DomesticUseCase {
     /// 米を売却します
     pub async fn sell_rice(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
@@ -106,7 +111,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(gain)
     }
@@ -114,6 +119,7 @@ impl DomesticUseCase {
     /// 米を購入します
     pub async fn buy_rice(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
@@ -138,7 +144,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(gain)
     }
@@ -146,6 +152,7 @@ impl DomesticUseCase {
     /// 開墾を行います
     pub async fn develop_land(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
@@ -169,7 +176,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(gain)
     }
@@ -177,6 +184,7 @@ impl DomesticUseCase {
     /// 町作りを行います
     pub async fn build_town(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<DisplayAmount, anyhow::Error> {
@@ -200,7 +208,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(gain)
     }
@@ -208,6 +216,7 @@ impl DomesticUseCase {
     /// 兵を徴募します
     pub async fn recruit(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
@@ -232,7 +241,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(())
     }
@@ -240,6 +249,7 @@ impl DomesticUseCase {
     /// 兵を解雇します
     pub async fn dismiss(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<(), anyhow::Error> {
@@ -264,7 +274,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(())
     }
@@ -272,6 +282,7 @@ impl DomesticUseCase {
     /// 施しを行います
     pub async fn give_charity(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         kuni_id: KuniId,
         amount: DisplayAmount,
     ) -> Result<u32, anyhow::Error> {
@@ -295,7 +306,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(gain)
     }
@@ -303,6 +314,7 @@ impl DomesticUseCase {
     /// 輸送を行います
     pub async fn transport(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         from_kuni_id: KuniId,
         to_kuni_id: KuniId,
         kin: DisplayAmount,
@@ -347,7 +359,7 @@ impl DomesticUseCase {
         })
         .await?;
 
-        self.advance_turn().await?;
+        self.advance_turn(player_daimyo_id).await?;
 
         Ok(())
     }
@@ -355,6 +367,7 @@ impl DomesticUseCase {
     /// 指定した割合で資源を輸送します（内政コマンド用）
     pub async fn transport_with_rate(
         &self,
+        player_daimyo_id: Option<DaimyoId>,
         from_kuni_id: KuniId,
         to_kuni_id: KuniId,
         rate_percent: u32,
@@ -371,6 +384,7 @@ impl DomesticUseCase {
         let kome = from_kuni.resource.kome.mul_percent(rate_percent);
 
         self.transport(
+            player_daimyo_id,
             from_kuni_id,
             to_kuni_id,
             kin.to_display(),

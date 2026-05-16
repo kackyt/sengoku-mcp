@@ -60,6 +60,18 @@ impl Kuni {
         }
     }
 
+    /// 支配大名を変更した新しいインスタンスを返します（所有権を消費します）
+    pub fn with_daimyo(mut self, daimyo_id: DaimyoId) -> Self {
+        self.daimyo_id = daimyo_id;
+        self
+    }
+
+    /// 兵力を変更した新しいインスタンスを返します（所有権を消費します）
+    pub fn with_hei(mut self, hei: Amount) -> Self {
+        self.resource.hei = hei;
+        self
+    }
+
     /// 支配大名を変更します
     pub fn set_daimyo_id(&mut self, daimyo_id: DaimyoId) {
         self.daimyo_id = daimyo_id;

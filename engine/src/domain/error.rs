@@ -17,7 +17,7 @@ pub enum DomainError {
 
     /// 永続化層などのインフラストラクチャ由来のエラー
     #[error("内部エラー: {0}")]
-    InfrastructureError(#[from] anyhow::Error),
+    InfrastructureError(String),
 
     /// その他のバリデーションエラーなど
     #[error("バリデーションエラー: {0}")]
@@ -30,4 +30,7 @@ pub enum DomainError {
     /// 現在の手番ではない場合のエラー
     #[error("現在の手番ではありません（現在の手番の国: {0:?}）")]
     NotYourTurn(crate::domain::model::value_objects::KuniId),
+    /// 無効な戦術が指定された場合のエラー
+    #[error("無効な戦術です (ID: {tactic_id}, 攻撃側: {is_attacker})")]
+    InvalidTactic { tactic_id: u32, is_attacker: bool },
 }

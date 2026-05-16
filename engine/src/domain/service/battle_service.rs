@@ -160,17 +160,141 @@ impl BattleService {
         Ok(status)
     }
 
-    /// 敵の策を決定します
-    pub fn decide_tactic() -> Tactic {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        match rng.gen_range(0..4) {
-            0 => Tactic::Normal,
-            1 => Tactic::Surprise,
-            2 => Tactic::Fire,
-            3 => Tactic::Inspire,
+    /// 攻撃側の戦術を決定します
+    pub fn decide_tactic_for_attacker<R: rand::Rng>(
+        my: &crate::domain::model::battle::ArmyStatus,
+        enemy: &crate::domain::model::battle::ArmyStatus,
+        military_bias: f64,
+        rng: &mut R,
+    ) -> Tactic {
+        let mut weights = std::collections::HashMap::new();
+        weights.insert(Tactic::Normal, 40.0);
+        weights.insert(Tactic::Surprise, 30.0);
+        weights.insert(Tactic::Fire, 20.0);
+        weights.insert(Tactic::Inspire, 10.0);
+
+        // 兵力差による補正 (自分が圧倒的ならNormalを増やす)
+        if my.hei > enemy.hei.mul_percent(150) {
+            *weights.get_mut(&Tactic::Normal).unwrap() += 20.0;
+        }
+
+        // 兵糧状況による補正 (相手の兵糧が少ないならFireを増やす)
+        if enemy.kome < enemy.hei.mul_percent(500) {
+            *weights.get_mut(&Tactic::Fire).unwrap() += 20.0;
+        }
+
+        // military_biasによる補正 (高いならSurpriseを増やす)
+        if military_bias > 1.2 {
+            *weights.get_mut(&Tactic::Surprise).unwrap() += 15.0;
+        }
+
+        // ノイズの付与
+        for weight in weights.values_mut() {
+            *weight += rng.gen_range(-15.0..15.0);
+            if *weight < 0.0 {
+                *weight = 0.0;
+            }
+        }
+
+        Self::weighted_sample(weights, rng)
+    }
+
+    /// 防衛側の戦術を決定します
+    pub fn decide_tactic_for_defender<R: rand::Rng>(
+        my: &crate::domain::model::battle::ArmyStatus,
+        enemy: &crate::domain::model::battle::ArmyStatus,
+        military_bias: f64,
+        rng: &mut R,
+    ) -> Tactic {
+        // 攻撃側が何を選ぶか確率的に予測
+        let mut predicted_weights = std::collections::HashMap::new();
+        predicted_weights.insert(Tactic::Normal, 40.0);
+        predicted_weights.insert(Tactic::Surprise, 30.0);
+        predicted_weights.insert(Tactic::Fire, 20.0);
+        predicted_weights.insert(Tactic::Inspire, 10.0);
+
+        // 兵力差などによる予測の補正 (攻撃側と同様のロジックで相手の思考を推測)
+        if enemy.hei > my.hei.mul_percent(150) {
+            *predicted_weights.get_mut(&Tactic::Normal).unwrap() += 20.0;
+        }
+        if my.kome < my.hei.mul_percent(500) {
+            *predicted_weights.get_mut(&Tactic::Fire).unwrap() += 20.0;
+        }
+
+        // military_biasによる補正 (高いなら相手がSurpriseを選びにくいと読み、あえて自分も強気に出る等の予測に使えるが、
+        // ここでは単純に攻撃側と同様にSurpriseの予測重みを上げることで、結果的にSurpriseへのカウンター(Surprise)を選びやすくする)
+        if military_bias > 1.2 {
+            *predicted_weights.get_mut(&Tactic::Surprise).unwrap() += 15.0;
+        }
+
+        // ノイズ付与 (読みのブレ)
+        for val in predicted_weights.values_mut() {
+            *val += rng.gen_range(-15.0..15.0);
+            if *val < 0.0 {
+                *val = 0.0;
+            }
+        }
+
+        let predicted = Self::weighted_sample(predicted_weights, rng);
+
+        // 予測された戦術に対する最適なカウンターを選択
+        match predicted {
+            Tactic::Normal => Tactic::Normal, // NormalにはNormalで正面からぶつかるのが期待値最大
+            Tactic::Surprise => Tactic::Surprise, // SurpriseにはSurpriseでカウンター(300%ダメージ)
+            Tactic::Fire => Tactic::Fire,     // FireにはFireで対応(60% vs 40%)
+            Tactic::Inspire => Tactic::Normal, // Inspire中ならNormalで叩く
             _ => Tactic::Normal,
         }
+    }
+
+    /// 重み付き抽選
+    fn weighted_sample<R: rand::Rng>(
+        weights: std::collections::HashMap<Tactic, f64>,
+        rng: &mut R,
+    ) -> Tactic {
+        let total: f64 = weights.values().sum();
+        if total <= 0.0 {
+            return Tactic::Normal;
+        }
+        let mut n = rng.gen_range(0.0..total);
+        for (tactic, weight) in weights {
+            if n < weight {
+                return tactic;
+            }
+            n -= weight;
+        }
+        Tactic::Normal
+    }
+
+    /// CPU同士の自動決着を行います
+    pub fn auto_resolve<R: rand::Rng>(
+        mut status: WarStatus,
+        rng: &mut R,
+    ) -> Result<(WarStatus, u32), DomainError> {
+        let mut turn = 1;
+        while turn <= 10 && status.winner.is_none() {
+            // 自動決着では Normal/Surprise/Fire を 1/3 ずつランダムで選択
+            let atk_t = match rng.gen_range(0..3) {
+                0 => Tactic::Normal,
+                1 => Tactic::Surprise,
+                _ => Tactic::Fire,
+            };
+            let def_t = match rng.gen_range(0..3) {
+                0 => Tactic::Normal,
+                1 => Tactic::Surprise,
+                _ => Tactic::Fire,
+            };
+
+            status = Self::calculate_turn(status, atk_t, def_t)?;
+            turn += 1;
+        }
+
+        // 10ターンで決着がつかなければ防衛勝利
+        if status.winner.is_none() {
+            status.winner = Some(BattleSide::Defender);
+        }
+
+        Ok((status, turn - 1))
     }
 
     /// 戦況の優劣を判定します

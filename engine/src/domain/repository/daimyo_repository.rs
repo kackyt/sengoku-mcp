@@ -10,4 +10,6 @@ pub trait DaimyoRepository: Send + Sync {
     async fn save(&self, daimyo: &Daimyo) -> Result<(), DomainError>;
     /// すべての大名を取得します
     async fn find_all(&self) -> Result<Vec<Daimyo>, DomainError>;
+    /// すべての大名情報を削除します
+    async fn clear(&self) -> Result<(), DomainError>;
 }

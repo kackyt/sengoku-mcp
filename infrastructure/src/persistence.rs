@@ -1,4 +1,5 @@
 pub mod in_memory_action_log_repository;
+pub mod simulation;
 use engine::domain::error::DomainError;
 use engine::domain::model::battle::WarStatus;
 use engine::domain::model::daimyo::Daimyo;
@@ -50,6 +51,12 @@ impl GameStateRepository for InMemoryGameStateRepository {
         *guard = Some(state.clone());
         Ok(())
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.state.write().await;
+        *guard = None;
+        Ok(())
+    }
 }
 
 /// インメモリイベントディスパッチャの仮実装
@@ -71,6 +78,10 @@ impl InMemoryEventDispatcher {
     pub async fn clear_events(&self) {
         self.events.write().await.clear();
     }
+
+    pub async fn clear(&self) {
+        self.clear_events().await;
+    }
 }
 
 impl Default for InMemoryEventDispatcher {
@@ -83,6 +94,11 @@ impl Default for InMemoryEventDispatcher {
 impl EventDispatcher for InMemoryEventDispatcher {
     async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError> {
         self.events.write().await.push(event);
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        self.events.write().await.clear();
         Ok(())
     }
 }
@@ -132,6 +148,13 @@ impl NeighborRepository for InMemoryNeighborRepository {
             .get(a)
             .is_some_and(|neighbors| neighbors.contains(b))
     }
+
+    /// 隣接情報をリセットし、新しいデータで初期化します
+    fn reset(&self, adjacency_map: HashMap<KuniId, Vec<KuniId>>) -> Result<(), DomainError> {
+        let mut guard = self.adjacency_map.write().unwrap();
+        *guard = adjacency_map;
+        Ok(())
+    }
 }
 
 /// インメモリでの国リポジトリの仮実装
@@ -149,6 +172,11 @@ impl InMemoryKuniRepository {
     pub async fn init_with_data(&self, kunis: Vec<Kuni>) {
         let mut guard = self.kunis.write().await;
         *guard = kunis.into_iter().map(|k| (k.id, k)).collect();
+    }
+
+    pub async fn clear(&self) {
+        let mut guard = self.kunis.write().await;
+        guard.clear();
     }
 }
 
@@ -190,6 +218,12 @@ impl KuniRepository for InMemoryKuniRepository {
         kunis.sort_by_key(|k| k.id);
         Ok(kunis)
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.kunis.write().await;
+        guard.clear();
+        Ok(())
+    }
 }
 
 /// インメモリでの大名リポジトリの仮実装
@@ -207,6 +241,11 @@ impl InMemoryDaimyoRepository {
     pub async fn init_with_data(&self, daimyos: Vec<Daimyo>) {
         let mut guard = self.daimyos.write().await;
         *guard = daimyos.into_iter().map(|d| (d.id, d)).collect();
+    }
+
+    pub async fn clear(&self) {
+        let mut guard = self.daimyos.write().await;
+        guard.clear();
     }
 }
 
@@ -236,6 +275,12 @@ impl DaimyoRepository for InMemoryDaimyoRepository {
         daimyos.sort_by_key(|d| d.id);
         Ok(daimyos)
     }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.daimyos.write().await;
+        guard.clear();
+        Ok(())
+    }
 }
 
 /// インメモリでの合戦リポジトリの仮実装
@@ -248,6 +293,11 @@ impl InMemoryBattleRepository {
         Self {
             battles: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    pub async fn clear(&self) {
+        let mut guard = self.battles.write().await;
+        guard.clear();
     }
 }
 
@@ -273,9 +323,31 @@ impl BattleRepository for InMemoryBattleRepository {
         Ok(guard.get(attacker_id).cloned())
     }
 
+    async fn find_by_defender(
+        &self,
+        defender_id: &KuniId,
+    ) -> Result<Option<WarStatus>, DomainError> {
+        let guard = self.battles.read().await;
+        Ok(guard
+            .values()
+            .find(|status| &status.defender.kuni_id == defender_id)
+            .cloned())
+    }
+
+    async fn find_all(&self) -> Result<Vec<WarStatus>, DomainError> {
+        let guard = self.battles.read().await;
+        Ok(guard.values().cloned().collect())
+    }
+
     async fn delete_by_attacker(&self, attacker_id: &KuniId) -> Result<(), DomainError> {
         let mut guard = self.battles.write().await;
         guard.remove(attacker_id);
+        Ok(())
+    }
+
+    async fn clear(&self) -> Result<(), DomainError> {
+        let mut guard = self.battles.write().await;
+        guard.clear();
         Ok(())
     }
 }

@@ -3,14 +3,18 @@ use crate::screen::{DomesticSubState, ScreenState};
 use anyhow::Result;
 use crossterm::event::{Event, KeyEventKind};
 use engine::application::usecase::{
-    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase, info_usecase::InfoUseCase,
+    battle_usecase::BattleUseCase, domestic_usecase::DomesticUseCase,
+    game_lifecycle_usecase::GameLifecycleUseCase, info_usecase::InfoUseCase,
     kuni_query_usecase::KuniQueryUseCase, turn_progression_usecase::TurnProgressionUseCase,
 };
 use engine::domain::model::action_log::ActionLogEntry;
 use engine::domain::model::daimyo::Daimyo;
 use engine::domain::model::kuni::Kuni;
 use engine::domain::model::value_objects::{DaimyoId, KuniId};
+use engine::domain::repository::neighbor_repository::NeighborRepository;
+use engine::domain::service::battle_participation_service::BattleParticipationService;
 use ratatui::prelude::*;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct App {
@@ -22,6 +26,9 @@ pub struct App {
     pub turn_progression_usecase: TurnProgressionUseCase,
     pub kuni_query_usecase: KuniQueryUseCase,
     pub info_usecase: InfoUseCase,
+
+    pub game_lifecycle_usecase: GameLifecycleUseCase,
+    pub neighbor_repo: Arc<dyn NeighborRepository>,
 
     // UI Cache
     pub current_kuni: Option<Kuni>,
@@ -35,15 +42,20 @@ pub struct App {
     pub selected_daimyo_id: Option<DaimyoId>,
     pub domestic_logs: Vec<ActionLogEntry>,
     pub war_logs: Vec<ActionLogEntry>,
+    pub active_battles: Vec<engine::domain::model::battle::WarStatus>,
+    pub all_kunis: Vec<Kuni>,
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         domestic_usecase: DomesticUseCase,
         battle_usecase: BattleUseCase,
         turn_progression_usecase: TurnProgressionUseCase,
         kuni_query_usecase: KuniQueryUseCase,
         info_usecase: InfoUseCase,
+        game_lifecycle_usecase: GameLifecycleUseCase,
+        neighbor_repo: Arc<dyn NeighborRepository>,
     ) -> Self {
         Self {
             screen: ScreenState::Title,
@@ -53,6 +65,8 @@ impl App {
             turn_progression_usecase,
             kuni_query_usecase,
             info_usecase,
+            game_lifecycle_usecase,
+            neighbor_repo,
             current_kuni: None,
             current_daimyo: None,
             all_daimyos: Vec::new(),
@@ -64,10 +78,32 @@ impl App {
             selected_daimyo_id: None,
             domestic_logs: Vec::new(),
             war_logs: Vec::new(),
+            active_battles: Vec::new(),
+            all_kunis: Vec::new(),
         }
     }
 
     pub async fn init(&mut self) -> Result<()> {
+        self.update_cache().await?;
+        Ok(())
+    }
+
+    /// ゲーム状態を完全にリセットします
+    pub async fn reset(&mut self) -> Result<()> {
+        self.game_lifecycle_usecase.reset_game().await?;
+
+        // UI情報のクリア
+        self.selected_daimyo_id = None;
+        self.current_kuni = None;
+        self.current_daimyo = None;
+        self.attacker_kuni = None;
+        self.defender_kuni = None;
+        self.messages.clear();
+        self.domestic_logs.clear();
+        self.war_logs.clear();
+        self.active_battles.clear();
+
+        self.screen = ScreenState::Title;
         self.update_cache().await?;
         Ok(())
     }
@@ -95,6 +131,53 @@ impl App {
         self.kuni_names = snapshot.kuni_names;
         self.domestic_logs = snapshot.domestic_logs;
         self.war_logs = snapshot.war_logs;
+        self.active_battles = snapshot.active_battles.clone();
+        // プレイヤーが防御側となる合戦があれば、合戦画面へ遷移（モーダル表示の代わり）
+        let defense_battle = self.selected_daimyo_id.and_then(|player_id| {
+            BattleParticipationService::find_defense_battle_for_player(
+                player_id,
+                &snapshot.active_battles,
+                &snapshot.all_kunis,
+            )
+        });
+
+        let defense_battle_cloned = defense_battle.cloned();
+        self.all_kunis = snapshot.all_kunis;
+
+        if let Some(battle) = defense_battle_cloned {
+            // まだ合戦画面でない、または別の合戦が表示されている場合は切り替え
+            let should_switch = match &self.screen {
+                ScreenState::War { status, .. } => {
+                    status.attacker.kuni_id != battle.attacker.kuni_id
+                        || status.defender.kuni_id != battle.defender.kuni_id
+                }
+                _ => true,
+            };
+
+            if should_switch {
+                self.screen = ScreenState::War {
+                    status: battle,
+                    cursor: 0,
+                    sub_state: crate::screen::WarSubState::Normal,
+                };
+            }
+        }
+
+        // ゲームオーバー判定
+        let winner_opt = if !matches!(self.screen, ScreenState::Title) {
+            snapshot.winner
+        } else {
+            None
+        };
+        if let Some(winner) = winner_opt {
+            let is_victory =
+                snapshot.phase == engine::domain::model::game_state::GamePhase::GameClear;
+            let is_game_over = is_victory
+                || snapshot.phase == engine::domain::model::game_state::GamePhase::GameOver;
+            if is_game_over {
+                self.screen = ScreenState::GameOver { winner, is_victory };
+            }
+        }
 
         // 手番の国と表示されている国がズレないように強制同期
         match (&self.current_kuni, &self.screen) {
@@ -138,29 +221,41 @@ impl App {
             on_draw(terminal);
 
             // プレイヤーの手番でない場合は自動進行
-            if self.selected_daimyo_id.is_some() && !self.is_player_turn() {
-                match &self.screen {
+            let is_player_turn = self.is_player_turn();
+            let is_player_in_war = self
+                .selected_daimyo_id
+                .map(|pid| {
+                    self.active_battles.iter().any(|b| {
+                        BattleParticipationService::is_player_participating(
+                            b,
+                            &pid,
+                            &self.all_kunis,
+                        )
+                    })
+                })
+                .unwrap_or(false);
+
+            if self.selected_daimyo_id.is_some() && !is_player_turn && !is_player_in_war {
+                // 進行可能なサブ状態かチェック
+                let can_progress = matches!(
+                    self.screen,
                     ScreenState::Domestic {
                         sub_state: DomesticSubState::Normal,
                         ..
-                    } => {
-                        // 1ステップ進める
-                        self.turn_progression_usecase.progress().await?;
-                        // CPUの行動を見せるために少し待機
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
-                    }
-                    ScreenState::War {
+                    } | ScreenState::War {
                         sub_state: crate::screen::WarSubState::Normal,
                         ..
-                    } => {
-                        // 1ステップ進める
-                        self.turn_progression_usecase.progress().await?;
-                        // CPUの行動を見せるために少し待機
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                        continue;
                     }
-                    _ => {}
+                );
+
+                if can_progress {
+                    // 1ステップ進める
+                    self.turn_progression_usecase
+                        .progress(self.selected_daimyo_id)
+                        .await?;
+                    // CPUの行動を見せるために少し待機
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
                 }
             }
 

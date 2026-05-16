@@ -15,4 +15,6 @@ pub trait KuniRepository: Send + Sync {
     async fn save(&self, kuni: &Kuni) -> Result<(), DomainError>;
     /// すべての国を取得します
     async fn find_all(&self) -> Result<Vec<Kuni>, DomainError>;
+    /// すべての国情報を削除します
+    async fn clear(&self) -> Result<(), DomainError>;
 }

@@ -43,6 +43,8 @@ async fn main() -> anyhow::Result<()> {
         game_state_repo.clone(),
         event_dispatcher.clone(),
         action_log_repo.clone(),
+        battle_repo.clone(),
+        neighbor_repo.clone(),
     ));
 
     let domestic_usecase = Arc::new(DomesticUseCase::new(
@@ -59,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         battle_repo.clone(),
         action_log_repo.clone(),
         game_state_repo.clone(),
+        daimyo_repo.clone(),
         turn_progression_usecase.clone(),
     ));
 
@@ -68,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
         game_state_repo.clone(),
         neighbor_repo.clone(),
         action_log_repo.clone(),
+        battle_repo.clone(),
     ));
 
     let info_usecase = Arc::new(InfoUseCase::new(

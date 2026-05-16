@@ -2,7 +2,7 @@ use crate::domain::model::value_objects::{Amount, KuniId, Rate};
 use serde::{Deserialize, Serialize};
 
 /// 戦闘時の策
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Tactic {
     /// 通常
     Normal,
@@ -121,6 +121,15 @@ pub struct WarStatus {
 }
 
 impl WarStatus {
+    pub fn new(attacker: ArmyStatus, defender: ArmyStatus) -> Self {
+        Self {
+            attacker,
+            defender,
+            winner: None,
+            advantage: BattleAdvantage::Even,
+        }
+    }
+
     pub fn attacker_id(&self) -> KuniId {
         self.attacker.kuni_id
     }

@@ -108,6 +108,8 @@ pub enum WarLogEvent {
         tactic: Tactic,
     },
     Damage {
+        attacker_id: DaimyoId,
+        defender_id: DaimyoId,
         attacker_tactic: Tactic,
         defender_tactic: Tactic,
         attacker_damage: Amount,

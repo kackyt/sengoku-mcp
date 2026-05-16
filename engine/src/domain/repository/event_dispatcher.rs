@@ -13,4 +13,6 @@ pub trait EventDispatcher: Send + Sync {
         }
         Ok(())
     }
+    /// 未処理のイベントをすべて削除します
+    async fn clear(&self) -> Result<(), DomainError>;
 }
