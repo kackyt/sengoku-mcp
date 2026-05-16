@@ -164,21 +164,28 @@ impl TurnProgressionUseCase {
         &self,
         player_daimyo_id: Option<DaimyoId>,
     ) -> Result<(), anyhow::Error> {
+        let mut progressed = false;
         loop {
             let state = match self.game_state_repo.get().await? {
                 Some(s) => s,
                 None => {
                     self.progress(player_daimyo_id).await?;
+                    progressed = true;
                     continue;
                 }
             };
 
             if state.phase() != GamePhase::Domestic {
-                return Ok(());
+                if progressed {
+                    return Ok(());
+                } else {
+                    return Err(anyhow::anyhow!("現在は内政フェーズではありません。適切なコマンド（合戦コマンドなど）を実行してください。"));
+                }
             }
 
             if state.is_turn_completed() {
                 self.finish_turn(state, player_daimyo_id).await?;
+                progressed = true;
                 continue;
             }
 
@@ -191,10 +198,18 @@ impl TurnProgressionUseCase {
                 .await?
                 .ok_or_else(|| anyhow::anyhow!("国が見つかりません: {:?}", kuni_id))?;
             if player_daimyo_id.is_some_and(|id| id == kuni.daimyo_id) {
-                return Ok(());
+                if progressed {
+                    return Ok(());
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "現在はあなたの手番（{}）です。アクションを実行してください。",
+                        kuni.name.0
+                    ));
+                }
             }
 
             self.progress(player_daimyo_id).await?;
+            progressed = true;
         }
     }
 

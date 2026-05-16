@@ -448,4 +448,41 @@ mod tests {
         let current_kuni_id = state.current_kuni_id().unwrap();
         assert_eq!(current_kuni_id, kuni1.id);
     }
+
+    #[tokio::test]
+    async fn test_progress_until_player_turn_error_if_already_player_turn() {
+        let kuni_repo = Arc::new(MockKuniRepository::new());
+        let daimyo_repo = Arc::new(MockDaimyoRepository::new());
+        let state_repo = Arc::new(MockGameStateRepository::new());
+        let event_dispatcher = Arc::new(MockEventDispatcher::new());
+
+        let daimyo1 = create_test_daimyo(1, "プレイヤー");
+        daimyo_repo.save(&daimyo1).await.unwrap();
+        let kuni1 = create_test_kuni(1, daimyo1.id);
+        kuni_repo.setup(kuni1.clone()).await;
+
+        let usecase = TurnProgressionUseCase::new(
+            kuni_repo,
+            daimyo_repo,
+            state_repo.clone(),
+            event_dispatcher,
+            Arc::new(MockActionLogRepository),
+            Arc::new(MockBattleRepository),
+            Arc::new(MockNeighborRepository),
+        );
+
+        // プレイヤーの手番の状態をセット
+        let initial_state = GameState::new(
+            TurnNumber::new(1),
+            vec![kuni1.id],
+            ActionOrderIndex::new(0),
+        )
+        .unwrap();
+        state_repo.save(&initial_state).await.unwrap();
+
+        // 実行: すでにプレイヤーの手番なのでエラーになるはず
+        let result = usecase.progress_until_player_turn(Some(daimyo1.id)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("現在はあなたの手番"));
+    }
 }
