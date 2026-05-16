@@ -165,11 +165,13 @@ impl TurnProgressionUseCase {
         player_daimyo_id: Option<DaimyoId>,
     ) -> Result<(), anyhow::Error> {
         loop {
-            let state = self
-                .game_state_repo
-                .get()
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
+            let state = match self.game_state_repo.get().await? {
+                Some(s) => s,
+                None => {
+                    self.progress(player_daimyo_id).await?;
+                    continue;
+                }
+            };
 
             if state.phase() != GamePhase::Domestic {
                 return Ok(());

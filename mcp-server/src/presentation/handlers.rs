@@ -213,12 +213,13 @@ impl McpHandlers {
 
         for k in &status.kunis {
             result.push_str(&format!(
-                "- {} (ID: {}): 金={}, 米={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
+                "- {} (ID: {}): 金={}, 米={}, 兵={}, 人口={}, 石高={}, 町={}, 忠誠={}\n",
                 k.name,
                 k.id.0,
                 k.kin.value(),
                 k.kome.value(),
                 k.hei.value(),
+                k.jinko.value(),
                 k.kokudaka.value(),
                 k.machi.value(),
                 k.tyu
@@ -253,15 +254,16 @@ impl McpHandlers {
         let mut result = String::from("他国の情報一覧:\n");
         for c in info.countries {
             result.push_str(&format!(
-                "- {} (領主: {}): 金={}, 米={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
+                "- {} (領主: {}): 金={}, 米={}, 兵={}, 人口={}, 石高={}, 町={}, 忠誠={}\n",
                 c.kuni_name,
                 c.daimyo_name,
                 c.kin.value(),
                 c.kome.value(),
                 c.hei.value(),
+                c.jinko.value(),
                 c.kokudaka.value(),
                 c.towns.value(),
-                c.tyu
+                c.tyu,
             ));
         }
         Ok(result)
@@ -454,17 +456,11 @@ impl McpHandlers {
         let tactic_enum = self.parse_tactic(tactic, true)?;
         let player_id = self.check_kuni_ownership(id).await?;
 
-        self.battle_usecase
+        let next_status = self
+            .battle_usecase
             .execute_battle_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
-
-        let next_status = self
-            .battle_usecase
-            .get_active_war(id)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
             "合戦ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -494,17 +490,11 @@ impl McpHandlers {
         let tactic_enum = self.parse_tactic(tactic, false)?;
         let player_id = self.check_kuni_ownership(id).await?;
 
-        self.battle_usecase
+        let next_status = self
+            .battle_usecase
             .execute_defense_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
-
-        let next_status = self
-            .battle_usecase
-            .get_active_war(id)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
             "防衛ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",

@@ -74,6 +74,7 @@ impl InfoUseCase {
                 kome: kuni.resource.kome.to_display(),
                 kin: kuni.resource.kin.to_display(),
                 hei: kuni.resource.hei.to_display(),
+                jinko: kuni.resource.jinko.to_display(),
                 kokudaka: kuni.stats.kokudaka.to_display(),
                 towns: kuni.stats.machi.to_display(),
                 tyu: kuni.stats.tyu.value(),
