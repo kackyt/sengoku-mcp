@@ -337,6 +337,11 @@ def recommend(data: dict) -> list[Action]:
     """全ての自国に対してアクションをレコメンドする"""
     strategy = data.get("strategy", "balanced")
     season = data.get("season", 0)
+    valid_strategies = {"balanced", "military", "domestic"}
+    if strategy not in valid_strategies:
+        raise ValueError(f"strategy は {sorted(valid_strategies)} のいずれかで指定してください: {strategy}")
+    if not isinstance(season, int) or not (0 <= season < len(SEASON_NAMES)):
+        raise ValueError(f"season は 0-{len(SEASON_NAMES) - 1} の整数で指定してください: {season}")
     neighbor_map: dict[str, list[int]] = data.get("neighbor_map", {})
 
     my_countries = [

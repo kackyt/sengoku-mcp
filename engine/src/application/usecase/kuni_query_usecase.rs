@@ -199,16 +199,23 @@ impl KuniQueryUseCase {
     ) -> anyhow::Result<crate::application::dto::player_status_dto::PlayerStatusDTO> {
         let kunis = self.kuni_repo.find_by_daimyo_id(player_id).await?;
         let battles = self.battle_repo.find_all().await?;
+        let all_kunis = self.kuni_repo.find_all().await?;
         let state = match self.game_state_repo.get().await? {
             Some(state) => state,
-            None => crate::domain::model::game_state::GameState::new(
-                crate::domain::model::value_objects::TurnNumber::new(1),
-                vec![],
-                crate::domain::model::value_objects::ActionOrderIndex::new(0),
-            )?,
+            None => {
+                let order: Vec<KuniId> = all_kunis.iter().map(|k| k.id).collect();
+                if order.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "国が存在しないため初期 GameState を生成できません"
+                    ));
+                }
+                crate::domain::model::game_state::GameState::new(
+                    crate::domain::model::value_objects::TurnNumber::new(1),
+                    order,
+                    crate::domain::model::value_objects::ActionOrderIndex::new(0),
+                )?
+            }
         };
-
-        let all_kunis = self.kuni_repo.find_all().await?;
         let kuni_names: HashMap<KuniId, String> =
             all_kunis.iter().map(|k| (k.id, k.name.0.clone())).collect();
 
