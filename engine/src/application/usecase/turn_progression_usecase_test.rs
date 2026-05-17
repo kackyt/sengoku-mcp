@@ -472,17 +472,16 @@ mod tests {
         );
 
         // プレイヤーの手番の状態をセット
-        let initial_state = GameState::new(
-            TurnNumber::new(1),
-            vec![kuni1.id],
-            ActionOrderIndex::new(0),
-        )
-        .unwrap();
+        let initial_state =
+            GameState::new(TurnNumber::new(1), vec![kuni1.id], ActionOrderIndex::new(0)).unwrap();
         state_repo.save(&initial_state).await.unwrap();
 
         // 実行: すでにプレイヤーの手番なのでエラーになるはず
         let result = usecase.progress_until_player_turn(Some(daimyo1.id)).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("現在はあなたの手番"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("現在はあなたの手番"));
     }
 }

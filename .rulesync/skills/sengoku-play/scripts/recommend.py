@@ -266,7 +266,7 @@ def get_recommended_amount(k: Country, command: str) -> int:
     elif command == "domestic_give_charity":
         # 忠誠度を70まで上げるのに必要な米量で上限
         needed_tyu = max(0, 70 - k.tyu)
-        needed_kome = max(1, needed_tyu * 4 // 3)
+        needed_kome = 0 if needed_tyu == 0 else max(1, needed_tyu * 4 // 3)
         amt = min(k.kome // 2, needed_kome, 100)
     else:
         amt = 0
@@ -397,7 +397,7 @@ def recommend(data: dict) -> list[Action]:
             elif cmd == "domestic_build_town":
                 reason = f"町 {k.machi} → 金収入強化（勾配 {slope:.1f}）"
             elif cmd == "domestic_rice_sell":
-                reason = f"余剰米を金に換換（勾配 {slope:.1f}）"
+                reason = f"余剰米を金に交換（勾配 {slope:.1f}）"
             elif cmd == "domestic_rice_buy":
                 reason = f"米不足を補填（勾配 {slope:.1f}）"
             elif cmd == "domestic_give_charity":
@@ -461,6 +461,9 @@ def main():
 
     strategy = data.get("strategy", "balanced")
     season = data.get("season", 0)
+    if not isinstance(season, int) or not (0 <= season < len(SEASON_NAMES)):
+        print(f"Error: season は 0-3 の整数で指定してください: {season}", file=sys.stderr)
+        sys.exit(2)
     turn = data.get("turn", 1)
     my_count = len(data.get("my_countries", []))
     enemy_count = len(data.get("enemy_countries", []))

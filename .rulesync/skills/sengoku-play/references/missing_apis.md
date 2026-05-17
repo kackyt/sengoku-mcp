@@ -1,10 +1,11 @@
-# 不足しているMCP API一覧
+# 実装済みMCP APIメモ
 
-このファイルには、sengoku-play スキルの操作に必要だが現時点でMCPサーバーに実装されていないAPIをまとめます。
+このファイルには、以前は不足していたが、現在はMCPサーバーに実装された追加APIを参考用にまとめます。
+このリストは当該PR時点での実装状態を示すメモです。
 
-## 現在不足しているAPI
+## 実装済みAPI
 
-### 1. `get_game_status` - ゲーム状態の取得
+### 1. 実装済み: `get_game_status` - ゲーム状態の取得
 
 **必要な理由:** 現在の `get_my_status` は自分の領地情報しか返さない。ゲームフェーズ（Domestic/Battle/GameOver）、勝者情報、ターンの季節情報を取得するAPIが必要。
 
@@ -39,7 +40,7 @@ pub async fn get_game_status(&self) -> Result<String, String> {
 }
 ```
 
-### 2. `get_battle_status` - 進行中の合戦状態の取得
+### 2. 実装済み: `get_battle_status` - 進行中の合戦状態の取得
 
 **必要な理由:** 合戦フェーズ中に現在の兵数・士気・優勢/劣勢状況を確認するAPIが必要。`get_my_status` は合戦状態（WarStatus）の詳細を返さない。
 
@@ -90,7 +91,7 @@ pub async fn get_battle_status(&self) -> Result<String, String> {
 }
 ```
 
-### 3. `get_neighbor_info` - 隣接国情報の取得
+### 3. 実装済み: `get_neighbor_info` - 隣接国情報の取得
 
 **必要な理由:** 合戦や輸送の判断のために、指定した国の隣接国（IDと大名名）を一覧表示するAPIが必要。現状は内部的に `KuniQueryUseCase::get_neighbors` が実装されているが、MCPツールとして公開されていない。
 
@@ -131,7 +132,7 @@ pub async fn get_neighbor_info(
 }
 ```
 
-## 実装手順
+## 当時想定されていた実装手順
 
 1. `handlers.rs` の `McpHandlers` impl ブロックに上記メソッドを追加
 2. 必要に応じて `KuniIdParams` などのパラメータ構造体を追加

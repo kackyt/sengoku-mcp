@@ -11,7 +11,7 @@ description: >-
 
 ## ゲームの基本フロー
 
-```
+```text
 1. 大名選択     → list_daimyos → select_daimyo
 2. 作戦確認     → プレイヤーの作戦タイプを確認（初回のみ）
 3. ターン開始   → get_my_status で状況確認 → progress_turn でCPUを動かす (progress_turnはプレーヤーに聞くことなく自動で実行する)
@@ -29,7 +29,7 @@ description: >-
 
 プレイヤーに作戦タイプを質問し、以降の全ターンで使用します。
 
-```
+```text
 「どのような作戦で進めますか？
   1. 武力重視（軍備・征服を優先）
   2. 内政重視（石高・金収入を優先）
@@ -48,7 +48,7 @@ description: >-
 
 毎ターン、以下の情報をユーザーに報告します。
 
-```
+```text
 === 第N ターン（季節） ===
 【イベント】
 - 季節イベント（金収入・米収穫・洪水・疫病など）
@@ -105,7 +105,7 @@ description: >-
 
 #### 合戦ターンの進行
 
-```
+```text
 loop:
   1. battle_execute_turn または battle_execute_defense_turn を実行
   2. 残兵数と状況を報告
@@ -119,7 +119,7 @@ loop:
 
 ### ステップ1: 状況把握
 
-```
+```text
 get_my_status → 自国の状態取得
 ```
 
@@ -164,7 +164,7 @@ python <recommend_path> <input_json_file>
 
 recommend.py の出力を以下の形式でユーザーに提示してから実行します:
 
-```
+```text
 【国ごとの推奨アクション】（作戦: XX、季節: XX）
 
 〇〇国 (ID:X):

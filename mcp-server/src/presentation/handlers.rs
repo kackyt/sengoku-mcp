@@ -587,15 +587,7 @@ impl McpHandlers {
             .unwrap_or_else(|| "なし".to_string());
 
         let turn = snapshot.current_turn.unwrap_or(0);
-        // ターン番号から季節を算出 (0: 春, 1: 夏, 2: 秋, 3: 冬)
-        let season_idx = engine::domain::model::value_objects::TurnNumber::new(turn).season();
-        let season_name = match season_idx {
-            0 => "春",
-            1 => "夏",
-            2 => "秋",
-            3 => "冬",
-            _ => "不明",
-        };
+        let season_name = snapshot.season_name;
 
         Ok(format!(
             "フェーズ: {}\nターン: {}\n季節: {}\n勝者: {}",
