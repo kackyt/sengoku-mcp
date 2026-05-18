@@ -120,10 +120,12 @@ def turns_until_season(current_season: int, target_season: int) -> int:
 # 「1単位あたり期待勾配 (slope)」の計算
 # CPU の calculate_expected_slope に相当する
 # ---------------------------------------------------------------
-def calculate_slopes(k: Country, season: int, strategy: str) -> dict[str, float]:
+def calculate_slopes(
+    k: Country, season: int, strategy: str
+) -> tuple[dict[str, float], dict[str, float]]:
     """
     strategy を DaimyoPersonality のバイアスに対応させ、
-    各リソース・アクションの勾配を計算する。
+    各リソース・アクションの勾配とデバッグ内訳を返す。
     """
     # --- personality バイアス (strategy → CPUの personality.xxx_bias() 相当) ---
     if strategy == "military":
@@ -368,6 +370,7 @@ def recommend(data: dict) -> list[Action]:
             kokudaka=c.get("kokudaka", 0),
             machi=c.get("towns", 0),
             tyu=c.get("tyu", 70),
+            jinko=c.get("jinko", 0),
             is_mine=False,
             daimyo_name=c.get("daimyo_name", ""),
         )
@@ -466,6 +469,13 @@ def main():
 
     strategy = data.get("strategy", "balanced")
     season = data.get("season", 0)
+    valid_strategies = {"balanced", "military", "domestic"}
+    if strategy not in valid_strategies:
+        print(
+            f"Error: strategy は {sorted(valid_strategies)} のいずれかで指定してください: {strategy}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     if not isinstance(season, int) or not (0 <= season < len(SEASON_NAMES)):
         print(f"Error: season は 0-3 の整数で指定してください: {season}", file=sys.stderr)
         sys.exit(2)
