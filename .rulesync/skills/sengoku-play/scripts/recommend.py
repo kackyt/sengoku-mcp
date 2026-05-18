@@ -306,12 +306,12 @@ def evaluate_attack_opportunity(
     if k.hei < 20:
         return None
 
-    # military は攻撃倍率を下げる（1.2倍で攻撃推奨）
+    # military は攻撃倍率を下げる(1.2倍で攻撃推奨)
     required_ratio = 1.5 if strategy == "balanced" else 1.2
 
     best = None
     for enemy in neighbor_enemies:
-        ratio = k.hei / max(enemy.hei, 1)
+        ratio = hei_send / max(enemy.hei, 1)
         if ratio < required_ratio:
             continue
 
@@ -324,7 +324,7 @@ def evaluate_attack_opportunity(
 
         reason = (
             f"{enemy.name} への侵攻を推奨 "
-            f"（敵兵{enemy.hei}、自軍{k.hei}、兵力比{ratio:.1f}倍）"
+            f"(敵兵{enemy.hei}、出陣兵{hei_send}、兵力比{ratio:.1f}倍)"
         )
         if best is None or score > best[0]:
             best = (score, enemy.id, hei_send, kome_send, reason)
@@ -380,7 +380,7 @@ def recommend(data: dict) -> list[Action]:
     actions: list[Action] = []
 
     for k in my_countries:
-        neighbor_ids = neighbor_map.get(str(k.id), [])
+        neighbor_ids = neighbor_map.get(str(k.id), neighbor_map.get(k.id, []))
 
         # 勾配計算
         slopes, debug_slopes = calculate_slopes(k, season, strategy)
