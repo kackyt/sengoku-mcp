@@ -6,6 +6,7 @@ use crate::presentation::handlers::McpHandlers;
 use engine::application::usecase::battle_usecase::BattleUseCase;
 use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
 use engine::application::usecase::domestic_usecase::DomesticUseCase;
+use engine::application::usecase::game_lifecycle_usecase::GameLifecycleUseCase;
 use engine::application::usecase::info_usecase::InfoUseCase;
 use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
@@ -30,11 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let battle_repo = Arc::new(InMemoryBattleRepository::new());
     let action_log_repo = Arc::new(InMemoryActionLogRepository::new());
 
-    // マスターデータのロード
-    let bundle = MasterDataLoader::load()?;
-    kuni_repo.init_with_data(bundle.kunis).await;
-    daimyo_repo.init_with_data(bundle.daimyos).await;
-    neighbor_repo.init_with_data(bundle.adjacency_map);
+    let master_data_repo = Arc::new(MasterDataLoader);
 
     // ユースケースの構築
     let turn_progression_usecase = Arc::new(TurnProgressionUseCase::new(
@@ -83,8 +80,23 @@ async fn main() -> anyhow::Result<()> {
 
     let daimyo_query_usecase = Arc::new(DaimyoQueryUseCase::new(daimyo_repo.clone()));
 
+    let game_lifecycle_usecase = Arc::new(GameLifecycleUseCase::new(
+        kuni_repo.clone(),
+        daimyo_repo.clone(),
+        game_state_repo.clone(),
+        action_log_repo.clone(),
+        battle_repo.clone(),
+        neighbor_repo.clone(),
+        event_dispatcher.clone(),
+        master_data_repo,
+    ));
+
+    // 起動時にマスターデータで初期化（select_daimyo でも同様にリセットされる）
+    game_lifecycle_usecase.reset_game().await?;
+
     let handlers = McpHandlers::new(
         turn_progression_usecase,
+        game_lifecycle_usecase,
         domestic_usecase,
         battle_usecase,
         kuni_query_usecase,

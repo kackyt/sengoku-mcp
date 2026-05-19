@@ -16,6 +16,7 @@ use std::sync::Arc;
 pub struct UiSnapshot {
     pub all_daimyos: Vec<Daimyo>,
     pub current_turn: Option<u32>,
+    pub season_name: String,
     pub current_kuni: Option<Kuni>,
     pub current_daimyo: Option<Daimyo>,
     pub attacker_kuni: Option<Kuni>,
@@ -73,6 +74,7 @@ impl KuniQueryUseCase {
         let mut snapshot = UiSnapshot {
             all_daimyos,
             kuni_names,
+            season_name: "不明".to_string(),
             domestic_logs: self
                 .action_log_repo
                 .find_visible(ActionLogCategory::Domestic, 100)?,
@@ -87,6 +89,14 @@ impl KuniQueryUseCase {
         // 現在の手番情報を取得（これを優先する）
         if let Some(state) = self.game_state_repo.get().await? {
             snapshot.current_turn = Some(state.current_turn().value());
+            let season_idx = state.current_turn().season();
+            snapshot.season_name = match season_idx {
+                0 => "春".to_string(),
+                1 => "夏".to_string(),
+                2 => "秋".to_string(),
+                3 => "冬".to_string(),
+                _ => "不明".to_string(),
+            };
             snapshot.phase = state.phase();
             snapshot.winner = state.winner();
             if let Some(kuni_id) = state.current_kuni_id() {
@@ -189,13 +199,23 @@ impl KuniQueryUseCase {
     ) -> anyhow::Result<crate::application::dto::player_status_dto::PlayerStatusDTO> {
         let kunis = self.kuni_repo.find_by_daimyo_id(player_id).await?;
         let battles = self.battle_repo.find_all().await?;
-        let state = self
-            .game_state_repo
-            .get()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("GameStateが見つかりません"))?;
-
         let all_kunis = self.kuni_repo.find_all().await?;
+        let state = match self.game_state_repo.get().await? {
+            Some(state) => state,
+            None => {
+                let order: Vec<KuniId> = all_kunis.iter().map(|k| k.id).collect();
+                if order.is_empty() {
+                    return Err(anyhow::anyhow!(
+                        "国が存在しないため初期 GameState を生成できません"
+                    ));
+                }
+                crate::domain::model::game_state::GameState::new(
+                    crate::domain::model::value_objects::TurnNumber::new(1),
+                    order,
+                    crate::domain::model::value_objects::ActionOrderIndex::new(0),
+                )?
+            }
+        };
         let kuni_names: HashMap<KuniId, String> =
             all_kunis.iter().map(|k| (k.id, k.name.0.clone())).collect();
 
@@ -246,6 +266,7 @@ impl KuniQueryUseCase {
                     kin: k.resource.kin.to_display(),
                     kome: k.resource.kome.to_display(),
                     hei: k.resource.hei.to_display(),
+                    jinko: k.resource.jinko.to_display(),
                     kokudaka: k.stats.kokudaka.to_display(),
                     machi: k.stats.machi.to_display(),
                     tyu: k.stats.tyu.value(),

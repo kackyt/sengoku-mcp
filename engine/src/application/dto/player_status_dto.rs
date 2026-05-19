@@ -15,6 +15,7 @@ pub struct KuniStatusDTO {
     pub kin: DisplayAmount,
     pub kome: DisplayAmount,
     pub hei: DisplayAmount,
+    pub jinko: DisplayAmount,
     pub kokudaka: DisplayAmount,
     pub machi: DisplayAmount,
     pub tyu: u32,
