@@ -1,6 +1,7 @@
 use engine::application::usecase::battle_usecase::BattleUseCase;
 use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
 use engine::application::usecase::domestic_usecase::DomesticUseCase;
+use engine::application::usecase::game_lifecycle_usecase::GameLifecycleUseCase;
 use engine::application::usecase::info_usecase::InfoUseCase;
 use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
@@ -21,6 +22,7 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct McpHandlers {
     turn_progression_usecase: Arc<TurnProgressionUseCase>,
+    game_lifecycle_usecase: Arc<GameLifecycleUseCase>,
     domestic_usecase: Arc<DomesticUseCase>,
     battle_usecase: Arc<BattleUseCase>,
     kuni_query_usecase: Arc<KuniQueryUseCase>,
@@ -104,6 +106,7 @@ pub struct KuniIdParams {
 impl McpHandlers {
     pub fn new(
         turn_progression_usecase: Arc<TurnProgressionUseCase>,
+        game_lifecycle_usecase: Arc<GameLifecycleUseCase>,
         domestic_usecase: Arc<DomesticUseCase>,
         battle_usecase: Arc<BattleUseCase>,
         kuni_query_usecase: Arc<KuniQueryUseCase>,
@@ -112,6 +115,7 @@ impl McpHandlers {
     ) -> Self {
         Self {
             turn_progression_usecase,
+            game_lifecycle_usecase,
             domestic_usecase,
             battle_usecase,
             kuni_query_usecase,
@@ -189,9 +193,24 @@ impl McpHandlers {
             .map_err(|e| e.to_string())?;
 
         if let Some(d) = daimyo {
+            // 滅亡後の再選択などで前回の GameState が残らないよう、新規ゲームとして初期化する
+            self.game_lifecycle_usecase
+                .reset_game()
+                .await
+                .map_err(|e| e.to_string())?;
+
             let mut lock = self.selected_daimyo_id.lock().await;
             *lock = Some(id);
-            Ok(format!("大名「{}」を選択しました。", d.name))
+
+            self.turn_progression_usecase
+                .progress(Some(id))
+                .await
+                .map_err(|e| e.to_string())?;
+
+            Ok(format!(
+                "大名「{}」を選択しました。ゲームを初期状態から開始します。",
+                d.name
+            ))
         } else {
             Err(format!("ID: {} の大名が見つかりません。", daimyo_id))
         }
