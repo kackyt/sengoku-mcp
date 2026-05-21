@@ -175,9 +175,9 @@ impl CpuActionDecisionService {
             "Recruit" => {
                 let current_jinko = kuni.resource.jinko.to_display().value();
                 let current_hei = kuni.resource.hei.to_display().value();
-                // resource.rs の制約: self.jinko >= jinko + self.hei
-                // つまり 徴募数(人) <= 現在の人口 - 現在の兵数
-                let max_by_jinko = current_jinko.saturating_sub(current_hei);
+                // resource.rs の制約: self.jinko - jinko >= jinko + self.hei
+                // つまり 徴募数(人) * 2 <= 現在の人口 - 現在の兵数
+                let max_by_jinko = current_jinko.saturating_sub(current_hei) / 2;
                 // 1人雇用につき0.5金かかるため、金単位を「雇用可能人数」に換算: kin * 2
                 // 例: 金100 -> 最大200人雇用可能。これにより max_by_jinko と単位が揃う。
                 let max_kin = kuni.resource.kin.to_display().value() * 2;

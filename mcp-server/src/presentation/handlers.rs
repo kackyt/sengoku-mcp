@@ -1,9 +1,11 @@
 use engine::application::usecase::battle_usecase::BattleUseCase;
 use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
 use engine::application::usecase::domestic_usecase::DomesticUseCase;
+use engine::application::usecase::game_lifecycle_usecase::GameLifecycleUseCase;
 use engine::application::usecase::info_usecase::InfoUseCase;
 use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
+#[cfg(debug_assertions)]
 use engine::domain::model::action_log::*;
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
@@ -20,6 +22,7 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct McpHandlers {
     turn_progression_usecase: Arc<TurnProgressionUseCase>,
+    game_lifecycle_usecase: Arc<GameLifecycleUseCase>,
     domestic_usecase: Arc<DomesticUseCase>,
     battle_usecase: Arc<BattleUseCase>,
     kuni_query_usecase: Arc<KuniQueryUseCase>,
@@ -94,9 +97,16 @@ pub struct AutoActionParams {
     pub kuni_id: u32,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct KuniIdParams {
+    /// 対象の国ID
+    pub kuni_id: u32,
+}
+
 impl McpHandlers {
     pub fn new(
         turn_progression_usecase: Arc<TurnProgressionUseCase>,
+        game_lifecycle_usecase: Arc<GameLifecycleUseCase>,
         domestic_usecase: Arc<DomesticUseCase>,
         battle_usecase: Arc<BattleUseCase>,
         kuni_query_usecase: Arc<KuniQueryUseCase>,
@@ -105,6 +115,7 @@ impl McpHandlers {
     ) -> Self {
         Self {
             turn_progression_usecase,
+            game_lifecycle_usecase,
             domestic_usecase,
             battle_usecase,
             kuni_query_usecase,
@@ -182,9 +193,24 @@ impl McpHandlers {
             .map_err(|e| e.to_string())?;
 
         if let Some(d) = daimyo {
+            // 滅亡後の再選択などで前回の GameState が残らないよう、新規ゲームとして初期化する
+            self.game_lifecycle_usecase
+                .reset_game()
+                .await
+                .map_err(|e| e.to_string())?;
+
             let mut lock = self.selected_daimyo_id.lock().await;
             *lock = Some(id);
-            Ok(format!("大名「{}」を選択しました。", d.name))
+
+            self.turn_progression_usecase
+                .progress(Some(id))
+                .await
+                .map_err(|e| e.to_string())?;
+
+            Ok(format!(
+                "大名「{}」を選択しました。ゲームを初期状態から開始します。",
+                d.name
+            ))
         } else {
             Err(format!("ID: {} の大名が見つかりません。", daimyo_id))
         }
@@ -206,12 +232,13 @@ impl McpHandlers {
 
         for k in &status.kunis {
             result.push_str(&format!(
-                "- {} (ID: {}): 金={}, 米={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
+                "- {} (ID: {}): 金={}, 米={}, 兵={}, 人口={}, 石高={}, 町={}, 忠誠={}\n",
                 k.name,
                 k.id.0,
                 k.kin.value(),
                 k.kome.value(),
                 k.hei.value(),
+                k.jinko.value(),
                 k.kokudaka.value(),
                 k.machi.value(),
                 k.tyu
@@ -246,15 +273,16 @@ impl McpHandlers {
         let mut result = String::from("他国の情報一覧:\n");
         for c in info.countries {
             result.push_str(&format!(
-                "- {} (領主: {}): 金={}, 米={}, 兵={}, 石高={}, 町={}, 忠誠={}\n",
+                "- {} (領主: {}): 金={}, 米={}, 兵={}, 人口={}, 石高={}, 町={}, 忠誠={}\n",
                 c.kuni_name,
                 c.daimyo_name,
                 c.kin.value(),
                 c.kome.value(),
                 c.hei.value(),
+                c.jinko.value(),
                 c.kokudaka.value(),
                 c.towns.value(),
-                c.tyu
+                c.tyu,
             ));
         }
         Ok(result)
@@ -447,17 +475,11 @@ impl McpHandlers {
         let tactic_enum = self.parse_tactic(tactic, true)?;
         let player_id = self.check_kuni_ownership(id).await?;
 
-        self.battle_usecase
+        let next_status = self
+            .battle_usecase
             .execute_battle_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
-
-        let next_status = self
-            .battle_usecase
-            .get_active_war(id)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
             "合戦ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -487,17 +509,11 @@ impl McpHandlers {
         let tactic_enum = self.parse_tactic(tactic, false)?;
         let player_id = self.check_kuni_ownership(id).await?;
 
-        self.battle_usecase
+        let next_status = self
+            .battle_usecase
             .execute_defense_turn(Some(player_id), id, tactic_enum)
             .await
             .map_err(|e| e.to_string())?;
-
-        let next_status = self
-            .battle_usecase
-            .get_active_war(id)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "合戦情報が見つかりません".to_string())?;
 
         let mut result = format!(
             "防衛ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -573,47 +589,152 @@ impl McpHandlers {
         Ok(format!("国ID: {} の自動行動を実行しました。", kuni_id))
     }
 
-    /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します
-    #[cfg(debug_assertions)]
-    #[tool(description = "デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。")]
-    pub async fn get_internal_logs(&self) -> Result<String, String> {
-        let logs = self
+    /// ゲーム全体の状態（フェーズ・ターン・季節・勝者）を取得します
+    #[tool(description = "ゲーム全体の状態（フェーズ・ターン・季節・勝者）を取得します")]
+    pub async fn get_game_status(&self) -> Result<String, String> {
+        let snapshot = self
             .kuni_query_usecase
-            .get_all_logs_internal(ActionLogCategory::Domestic)
+            .get_ui_snapshot(None, None, None)
+            .await
             .map_err(|e| e.to_string())?;
 
-        let mut result = String::from("内部ログ（デバッグ用）:\n");
-        for log in logs {
-            let visibility_str = match log.visibility {
-                ActionLogVisibility::Public => "Public",
-                ActionLogVisibility::Player => "Player",
-                ActionLogVisibility::Internal => "Internal",
-            };
+        let phase_str = format!("{:?}", snapshot.phase);
+        let winner_str = snapshot
+            .winner
+            .and_then(|id| snapshot.all_daimyos.iter().find(|d| d.id == id))
+            .map(|d| d.name.0.clone())
+            .unwrap_or_else(|| "なし".to_string());
 
-            let event_str = match &log.event {
-                ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
-                    daimyo_id,
-                    action_msg,
-                    reasoning,
-                }) => {
-                    format!(
-                        "AI行動 [大名ID:{:?}] {}. 理由: {}",
-                        daimyo_id,
-                        action_msg,
-                        reasoning.as_deref().unwrap_or("なし")
-                    )
-                }
-                _ => format!("{:?}", log.event),
-            };
+        let turn = snapshot.current_turn.unwrap_or(0);
+        let season_name = snapshot.season_name;
+
+        Ok(format!(
+            "フェーズ: {}\nターン: {}\n季節: {}\n勝者: {}",
+            phase_str, turn, season_name, winner_str
+        ))
+    }
+
+    /// 進行中の合戦の状態（兵数・士気・優劣）を取得します
+    #[tool(description = "進行中の合戦の状態（兵数・士気・優劣）を取得します")]
+    pub async fn get_battle_status(&self) -> Result<String, String> {
+        let snapshot = self
+            .kuni_query_usecase
+            .get_ui_snapshot(None, None, None)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if snapshot.active_battles.is_empty() {
+            return Ok("現在進行中の合戦はありません。".to_string());
+        }
+
+        let mut result = String::from("進行中の合戦:\n");
+        for battle in &snapshot.active_battles {
+            let attacker_name = snapshot
+                .kuni_names
+                .get(&battle.attacker.kuni_id)
+                .cloned()
+                .unwrap_or_else(|| "不明".to_string());
+            let defender_name = snapshot
+                .kuni_names
+                .get(&battle.defender.kuni_id)
+                .cloned()
+                .unwrap_or_else(|| "不明".to_string());
 
             result.push_str(&format!(
-                "- [ターン{}] [{}] {}\n",
-                log.turn.value(),
-                visibility_str,
-                event_str
+                "攻撃: {} (ID:{}) vs 防衛: {} (ID:{})\n",
+                attacker_name, battle.attacker.kuni_id.0, defender_name, battle.defender.kuni_id.0
             ));
+            result.push_str(&format!(
+                "  攻撃側: 兵={}, 米={}, 士気={}\n",
+                battle.attacker.hei.to_display().value(),
+                battle.attacker.kome.to_display().value(),
+                battle.attacker.morale.value()
+            ));
+            result.push_str(&format!(
+                "  防衛側: 兵={}, 米={}, 士気={}\n",
+                battle.defender.hei.to_display().value(),
+                battle.defender.kome.to_display().value(),
+                battle.defender.morale.value()
+            ));
+            result.push_str(&format!("  優劣: {:?}\n", battle.advantage));
         }
         Ok(result)
+    }
+
+    /// 指定した国の隣接国一覧を取得します
+    #[tool(description = "指定した国の隣接国（攻撃・輸送可能な国）の一覧を取得します")]
+    pub async fn get_neighbor_info(
+        &self,
+        Parameters(KuniIdParams { kuni_id }): Parameters<KuniIdParams>,
+    ) -> Result<String, String> {
+        let id = KuniId::new(kuni_id);
+        let player_id = self.get_player_id().await?;
+        let neighbors = self
+            .kuni_query_usecase
+            .get_neighbors(&id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mut result = format!("国ID {} の隣接国:\n", kuni_id);
+        for n in &neighbors {
+            let relation = if n.daimyo_id == player_id {
+                "味方"
+            } else {
+                "敵"
+            };
+            result.push_str(&format!("- {} (ID: {}) [{}]\n", n.name.0, n.id.0, relation));
+        }
+        Ok(result)
+    }
+
+    /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。
+    #[tool(description = "デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。")]
+    pub async fn get_internal_logs(&self) -> Result<String, String> {
+        #[cfg(not(debug_assertions))]
+        {
+            Ok("内部ログはデバッグビルドでのみ利用可能です。".to_string())
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            let logs = self
+                .kuni_query_usecase
+                .get_all_logs_internal(ActionLogCategory::Domestic)
+                .map_err(|e| e.to_string())?;
+
+            let mut result = String::from("内部ログ（デバッグ用）:\n");
+            for log in logs {
+                let visibility_str = match log.visibility {
+                    ActionLogVisibility::Public => "Public",
+                    ActionLogVisibility::Player => "Player",
+                    ActionLogVisibility::Internal => "Internal",
+                };
+
+                let event_str = match &log.event {
+                    ActionLogEvent::Domestic(DomesticLogEvent::CpuAction {
+                        daimyo_id,
+                        action_msg,
+                        reasoning,
+                    }) => {
+                        format!(
+                            "AI行動 [大名ID:{:?}] {}. 理由: {}",
+                            daimyo_id,
+                            action_msg,
+                            reasoning.as_deref().unwrap_or("なし")
+                        )
+                    }
+                    _ => format!("{:?}", log.event),
+                };
+
+                result.push_str(&format!(
+                    "- [ターン{}] [{}] {}\n",
+                    log.turn.value(),
+                    visibility_str,
+                    event_str
+                ));
+            }
+            Ok(result)
+        }
     }
 }
 

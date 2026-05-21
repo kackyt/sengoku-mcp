@@ -16,6 +16,7 @@ pub struct CountryInfoDTO {
     pub kome: DisplayAmount,
     pub kin: DisplayAmount,
     pub hei: DisplayAmount,
+    pub jinko: DisplayAmount,
     pub kokudaka: DisplayAmount,
     pub towns: DisplayAmount,
     pub tyu: u32,
