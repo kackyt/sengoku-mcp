@@ -1,13 +1,17 @@
 {
   "targets": [
-    "antigravity"
+    "antigravity-ide",
+    "antigravity-cli",
+    "claudecode",
+    "cursor"
   ],
   "features": [
     "rules",
     "ignore",
     "commands",
     "skills",
-    "subagents"
+    "subagents",
+    "mcp"
   ],
   "baseDirs": [
     "."

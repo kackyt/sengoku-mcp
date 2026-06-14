@@ -1,0 +1,18 @@
+{
+  "$schema": "https://github.com/dyoshikawa/rulesync/releases/latest/download/mcp-schema.json",
+  "mcpServers": {
+    "sengoku-mcp": {
+      "type": "stdio",
+      "command": "cargo",
+      "args": [
+        "run",
+        "--release",
+        "--manifest-path",
+        "$HOME/sengoku-mcp/Cargo.toml",
+        "-p",
+        "mcp-server"
+      ],
+      "env": {}
+    }
+  }
+}
