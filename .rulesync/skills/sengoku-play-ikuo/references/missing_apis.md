@@ -30,11 +30,11 @@ pub async fn get_game_status(&self) -> Result<String, String> {
         .unwrap_or_else(|| "なし".to_string());
 
     let turn = snapshot.current_turn.unwrap_or(0);
-    // TurnNumber::season() を使って季節を取得
-    let season = TurnNumber::new(turn).season();
+    // snapshot.season_name を使って季節を取得
+    let season = snapshot.season_name;
 
     Ok(format!(
-        "フェーズ: {}\nターン: {}\n季節: {:?}\n勝者: {}",
+        "フェーズ: {}\nターン: {}\n季節: {}\n勝者: {}",
         phase_str, turn, season, winner_str
     ))
 }
@@ -93,7 +93,7 @@ pub async fn get_battle_status(&self) -> Result<String, String> {
 
 ### 3. 実装済み: `get_neighbor_info` - 隣接国情報の取得
 
-**必要な理由:** 合戦や輸送の判断のために、指定した国の隣接国（IDと大名名）を一覧表示するAPIが必要。現状は内部的に `KuniQueryUseCase::get_neighbors` が実装されているが、MCPツールとして公開されていない。
+**必要な理由:** 合戦や輸送の判断のために、指定した国の隣接国（IDと大名名）を一覧表示するAPIが必要。現状は内部的に `KuniQueryUseCase::get_neighbors` が実装されている。
 
 **実装場所:** `mcp-server/src/presentation/handlers.rs`
 

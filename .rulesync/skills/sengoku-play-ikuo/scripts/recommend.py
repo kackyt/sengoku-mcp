@@ -47,7 +47,7 @@ input JSON の構造:
 
 import json
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -78,7 +78,8 @@ class Country:
         # 人口が未指定の場合は兵数の3倍または300の大きい方で推定
         if self.jinko <= 0:
             self.jinko = max(self.hei * 3, 300)
-            print(f"Warning: Population (jinko) for {self.name} was not provided. Estimated as {self.jinko}.", file=sys.stderr)
+            if self.is_mine:
+                print(f"Warning: Population (jinko) for {self.name} was not provided. Estimated as {self.jinko}.", file=sys.stderr)
 
 
 @dataclass
@@ -344,7 +345,7 @@ def recommend(data: dict) -> list[Action]:
         raise ValueError(f"strategy は {sorted(valid_strategies)} のいずれかで指定してください: {strategy}")
     if not isinstance(season, int) or not (0 <= season < len(SEASON_NAMES)):
         raise ValueError(f"season は 0-{len(SEASON_NAMES) - 1} の整数で指定してください: {season}")
-    neighbor_map: dict[str, list[int]] = data.get("neighbor_map", {})
+    neighbor_map: dict[str, list[int]] = data.get("neighbor_map") or {}
 
     my_countries = [
         Country(
@@ -358,7 +359,7 @@ def recommend(data: dict) -> list[Action]:
             tyu=c.get("tyu", 80),
             jinko=c.get("jinko", 0),
         )
-        for c in data.get("my_countries", [])
+        for c in (data.get("my_countries") or [])
     ]
     enemy_countries = [
         Country(
@@ -374,7 +375,7 @@ def recommend(data: dict) -> list[Action]:
             is_mine=False,
             daimyo_name=c.get("daimyo_name", ""),
         )
-        for c in data.get("enemy_countries", [])
+        for c in (data.get("enemy_countries") or [])
     ]
 
     actions: list[Action] = []
@@ -461,11 +462,21 @@ def main():
         sys.exit(1)
 
     src = sys.argv[1]
-    if src == "-":
-        data = json.load(sys.stdin)
-    else:
-        with open(src, encoding="utf-8") as f:
-            data = json.load(f)
+    try:
+        if src == "-":
+            data = json.load(sys.stdin)
+        else:
+            with open(src, encoding="utf-8") as f:
+                data = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: 入力ファイルが見つかりません: {src}", file=sys.stderr)
+        sys.exit(2)
+    except json.JSONDecodeError as e:
+        print(f"Error: JSON の解析に失敗しました: {e}", file=sys.stderr)
+        sys.exit(2)
+    except Exception as e:
+        print(f"Error: データの読み込みに失敗しました: {e}", file=sys.stderr)
+        sys.exit(2)
 
     strategy = data.get("strategy", "balanced")
     season = data.get("season", 0)
@@ -490,7 +501,11 @@ def main():
         print("  ※ 他国情報なし。get_other_countries_info を実行すると精度が向上します。")
     print()
 
-    actions = recommend(data)
+    try:
+        actions = recommend(data)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(2)
     if not actions:
         print("現在推奨できるアクションはありません（リソース不足または目標達成済み）。")
         return
