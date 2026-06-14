@@ -12,6 +12,6 @@
   "packageManager": "pnpm@10.19.0",
   "devDependencies": {
     "@fission-ai/openspec": "^1.2.0",
-    "rulesync": "^7.18.2"
+    "rulesync": "^8.28.1"
   }
 }
