@@ -1,9 +1,10 @@
+mod application;
 mod presentation;
 
 extern crate rmcp;
 
+use crate::application::SessionManager;
 use crate::presentation::handlers::McpHandlers;
-use crate::presentation::session_manager::SessionManager;
 use chrono::Duration;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::SessionPersistenceManager;

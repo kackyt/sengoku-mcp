@@ -1,10 +1,11 @@
 use chrono::{Duration, Utc};
+use engine::domain::model::value_objects::SessionId;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::{SessionData, SessionPersistenceManager};
+use mcp_server::application::SessionManager;
 use mcp_server::presentation::handlers::{
     DomesticParams, McpHandlers, SelectDaimyoParams, SessionParams,
 };
-use mcp_server::presentation::session_manager::SessionManager;
 use rmcp::handler::server::wrapper::Parameters;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -164,12 +165,28 @@ async fn test_cleanup_expired_sessions() {
     let session_manager = Arc::new(SessionManager::new(persistence.clone(), master_data));
 
     // 1. 8日前のセッションを作成してファイル保存
-    let mut old_data = SessionData::new("old_session", None, None, vec![], vec![], vec![], vec![]);
+    let mut old_data = SessionData::new(
+        SessionId::new("old_session"),
+        None,
+        None,
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     old_data.last_accessed_at = Utc::now() - Duration::days(8);
     persistence.save(&old_data).unwrap();
 
     // 2. 現在のセッションを作成
-    let new_data = SessionData::new("new_session", None, None, vec![], vec![], vec![], vec![]);
+    let new_data = SessionData::new(
+        SessionId::new("new_session"),
+        None,
+        None,
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+    );
     persistence.save(&new_data).unwrap();
 
     // 3. クリーンアップ実行 (7日経過)
@@ -180,6 +197,88 @@ async fn test_cleanup_expired_sessions() {
     assert_eq!(cleaned, 1);
 
     // 4. old_sessionは削除され、new_sessionは残る
-    assert!(persistence.load("old_session").unwrap().is_none());
-    assert!(persistence.load("new_session").unwrap().is_some());
+    assert!(persistence
+        .load(&SessionId::new("old_session"))
+        .unwrap()
+        .is_none());
+    assert!(persistence
+        .load(&SessionId::new("new_session"))
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
+async fn test_path_traversal_safety() {
+    let dir = tempdir().unwrap();
+    let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
+    let master_data = Arc::new(MasterDataLoader);
+    let session_manager = Arc::new(SessionManager::new(persistence.clone(), master_data));
+    let handlers = McpHandlers::new(session_manager);
+
+    // パストラバーサル文字を含むセッションID
+    let malicious_id = "../../etc/passwd_test";
+
+    // 大名選択
+    let res = handlers
+        .select_daimyo(Parameters(SelectDaimyoParams {
+            daimyo_id: 7,
+            session_id: Some(malicious_id.to_string()),
+        }))
+        .await;
+    assert!(res.is_ok());
+
+    // 保存先ディレクトリ外にファイルが作られていないこと（storage_dir内にサニタイズされたファイル名で作成されること）
+    let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+    assert_eq!(entries.len(), 1);
+    let filename = entries[0]
+        .as_ref()
+        .unwrap()
+        .file_name()
+        .into_string()
+        .unwrap();
+    assert!(!filename.contains('/'));
+    assert!(!filename.contains('\\'));
+    assert!(filename.ends_with(".json"));
+}
+
+#[tokio::test]
+async fn test_concurrent_sessions() {
+    let dir = tempdir().unwrap();
+    let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
+    let master_data = Arc::new(MasterDataLoader);
+    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let handlers = Arc::new(McpHandlers::new(session_manager));
+
+    let mut handles = Vec::new();
+
+    // 5つの異なるセッションから同時に大名選択とステータス取得を実行
+    for i in 1..=5 {
+        let handlers_clone = handlers.clone();
+        let handle = tokio::spawn(async move {
+            let session_id = format!("concurrent_user_{}", i);
+            // 大名選択（大名ID 1〜5）
+            handlers_clone
+                .select_daimyo(Parameters(SelectDaimyoParams {
+                    daimyo_id: i,
+                    session_id: Some(session_id.clone()),
+                }))
+                .await
+                .unwrap();
+
+            // ステータス取得
+            let status = handlers_clone
+                .get_my_status(Parameters(SessionParams {
+                    session_id: Some(session_id),
+                }))
+                .await
+                .unwrap();
+
+            assert!(!status.is_empty());
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await.unwrap();
+    }
 }

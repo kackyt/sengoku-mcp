@@ -1,4 +1,4 @@
-use crate::presentation::session_manager::{GameContext, SessionManager};
+use crate::application::{GameContext, SessionManager};
 use engine::domain::model::action_log::*;
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
@@ -10,6 +10,20 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
+
+/// エラーメッセージを文字列に変換するヘルパートレイト (DRY向上)
+trait ToStringErr<T> {
+    fn to_str_err(self) -> Result<T, String>;
+}
+
+impl<T, E: std::fmt::Display> ToStringErr<T> for Result<T, E> {
+    fn to_str_err(self) -> Result<T, String> {
+        self.map_err(|e| e.to_string())
+    }
+}
+
+/// デフォルトのセッションID定数
+const DEFAULT_SESSION_ID: &str = "default";
 
 #[derive(Clone)]
 pub struct McpHandlers {
@@ -120,11 +134,12 @@ pub struct KuniIdParams {
     pub session_id: Option<String>,
 }
 
-fn resolve_session_id(session_id: Option<String>) -> String {
+fn resolve_session_id(session_id: Option<String>) -> SessionId {
     session_id
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "default".to_string())
+        .map(SessionId::new)
+        .unwrap_or_else(|| SessionId::new(DEFAULT_SESSION_ID))
 }
 
 impl McpHandlers {
@@ -138,13 +153,13 @@ impl McpHandlers {
     async fn get_context(
         &self,
         session_id: Option<String>,
-    ) -> Result<(String, Arc<GameContext>), String> {
+    ) -> Result<(SessionId, Arc<GameContext>), String> {
         let key = resolve_session_id(session_id);
         let ctx = self
             .session_manager
             .get_or_create(&key)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
         Ok((key, ctx))
     }
 
@@ -167,7 +182,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_kunis_by_daimyo(&player_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         if !kunis.iter().any(|k| k.id == kuni_id) {
             return Err(format!(
@@ -183,7 +198,7 @@ impl McpHandlers {
             tactic,
             is_attacker,
         )
-        .map_err(|e| e.to_string())
+        .to_str_err()
     }
 }
 
@@ -196,11 +211,7 @@ impl McpHandlers {
         Parameters(SessionParams { session_id }): Parameters<SessionParams>,
     ) -> Result<String, String> {
         let (_, ctx) = self.get_context(session_id).await?;
-        let daimyos = ctx
-            .daimyo_query_usecase
-            .list()
-            .await
-            .map_err(|e| e.to_string())?;
+        let daimyos = ctx.daimyo_query_usecase.list().await.to_str_err()?;
 
         let mut result = String::from("選択可能な大名一覧:\n");
         for d in daimyos {
@@ -220,18 +231,11 @@ impl McpHandlers {
     ) -> Result<String, String> {
         let (key, ctx) = self.get_context(session_id).await?;
         let id = DaimyoId::new(daimyo_id);
-        let daimyo = ctx
-            .daimyo_query_usecase
-            .find(id)
-            .await
-            .map_err(|e| e.to_string())?;
+        let daimyo = ctx.daimyo_query_usecase.find(id).await.to_str_err()?;
 
         if let Some(d) = daimyo {
             // 滅亡後の再選択などで前回の GameState が残らないよう、新規ゲームとして初期化する
-            ctx.game_lifecycle_usecase
-                .reset_game()
-                .await
-                .map_err(|e| e.to_string())?;
+            ctx.game_lifecycle_usecase.reset_game().await.to_str_err()?;
 
             {
                 let mut lock = ctx.selected_daimyo_id.lock().await;
@@ -241,13 +245,10 @@ impl McpHandlers {
             ctx.turn_progression_usecase
                 .progress(Some(id))
                 .await
-                .map_err(|e| e.to_string())?;
+                .to_str_err()?;
 
             // 状態保存
-            self.session_manager
-                .save_session(&key)
-                .await
-                .map_err(|e| e.to_string())?;
+            self.session_manager.save_session(&key).await.to_str_err()?;
 
             Ok(format!(
                 "大名「{}」を選択しました。ゲームを初期状態から開始します。",
@@ -270,7 +271,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_player_status(&player_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         let mut result = format!("=== 第 {} ターン ===\n", status.current_turn);
         result.push_str(&format!("現在の手番: {}\n\n", status.current_daimyo_name));
@@ -318,13 +319,10 @@ impl McpHandlers {
             .info_usecase
             .get_other_countries_info(Some(player_id), player_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         // コマンド実行権を消費したため保存
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         let mut result = String::from("他国の情報一覧:\n");
         for c in info.countries {
@@ -361,12 +359,9 @@ impl McpHandlers {
             .domestic_usecase
             .sell_rice(Some(player_id), id, DisplayAmount::new(amount))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("米を売却しました。得られた金: {}", gain.value()))
     }
@@ -388,12 +383,9 @@ impl McpHandlers {
             .domestic_usecase
             .buy_rice(Some(player_id), id, DisplayAmount::new(amount))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("米を購入しました。得られた米: {}", gain.value()))
     }
@@ -414,12 +406,9 @@ impl McpHandlers {
         ctx.domestic_usecase
             .recruit(Some(player_id), id, DisplayAmount::new(amount))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("兵を {} 人徴募しました。", amount))
     }
@@ -441,12 +430,9 @@ impl McpHandlers {
             .domestic_usecase
             .develop_land(Some(player_id), id, DisplayAmount::new(amount))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("開墾を行いました。上昇した石高: {}", gain.value()))
     }
@@ -468,12 +454,9 @@ impl McpHandlers {
             .domestic_usecase
             .build_town(Some(player_id), id, DisplayAmount::new(amount))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("町作りを行いました。発展度: {}", gain.value()))
     }
@@ -495,12 +478,9 @@ impl McpHandlers {
             .domestic_usecase
             .give_charity(Some(player_id), id, DisplayAmount::new(amount))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("施しを行いました。上昇した忠誠度: {}", gain))
     }
@@ -528,7 +508,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_kunis_by_daimyo(&player_id)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
         if !kunis.iter().any(|k| k.id == to_id) {
             return Err(format!(
                 "輸送先の国ID: {} はあなたの領地ではありません。",
@@ -546,12 +526,9 @@ impl McpHandlers {
                 DisplayAmount::new(kome),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok("資源を輸送しました。".to_string())
     }
@@ -583,12 +560,9 @@ impl McpHandlers {
                 DisplayAmount::new(kome),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!(
             "合戦を開始しました。攻撃側兵数: {}, 防御側兵数: {}",
@@ -618,12 +592,9 @@ impl McpHandlers {
             .battle_usecase
             .execute_battle_turn(Some(player_id), id, tactic_enum)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         let mut result = format!(
             "合戦ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -659,12 +630,9 @@ impl McpHandlers {
             .battle_usecase
             .execute_defense_turn(Some(player_id), id, tactic_enum)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         let mut result = format!(
             "防衛ターン実行完了。残存兵数 - 攻: {}, 防: {}\n",
@@ -690,7 +658,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_ui_snapshot(None, None, None)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         let mut result = String::from("直近の行動ログ:\n");
         for log in snapshot.domestic_logs {
@@ -713,12 +681,9 @@ impl McpHandlers {
         ctx.turn_progression_usecase
             .progress_until_player_turn(Some(player_id))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok("ゲームの進行処理を実行しました。".to_string())
     }
@@ -743,21 +708,18 @@ impl McpHandlers {
             .turn_progression_usecase
             .get_state()
             .await
-            .map_err(|e| e.to_string())?
+            .to_str_err()?
             .ok_or_else(|| "GameStateが見つかりません".to_string())?;
 
-        state.check_turn(id).map_err(|e| e.to_string())?;
+        state.check_turn(id).to_str_err()?;
 
         // 自動行動の実行と手番進行 (原子的な実行)
         ctx.turn_progression_usecase
             .execute_cpu_action_and_advance(id, Some(player_id))
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
-        self.session_manager
-            .save_session(&key)
-            .await
-            .map_err(|e| e.to_string())?;
+        self.session_manager.save_session(&key).await.to_str_err()?;
 
         Ok(format!("国ID: {} の自動行動を実行しました。", kuni_id))
     }
@@ -773,7 +735,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_ui_snapshot(None, None, None)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         let phase_str = format!("{:?}", snapshot.phase);
         let winner_str = snapshot
@@ -802,7 +764,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_ui_snapshot(None, None, None)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         if snapshot.active_battles.is_empty() {
             return Ok("現在進行中の合戦はありません。".to_string());
@@ -858,7 +820,7 @@ impl McpHandlers {
             .kuni_query_usecase
             .get_neighbors(&id)
             .await
-            .map_err(|e| e.to_string())?;
+            .to_str_err()?;
 
         let mut result = format!("国ID {} の隣接国:\n", kuni_id);
         for n in &neighbors {
@@ -890,7 +852,7 @@ impl McpHandlers {
             let logs = ctx
                 .kuni_query_usecase
                 .get_all_logs_internal(ActionLogCategory::Domestic)
-                .map_err(|e| e.to_string())?;
+                .to_str_err()?;
 
             let mut result = String::from("内部ログ（デバッグ用）:\n");
             for log in logs {

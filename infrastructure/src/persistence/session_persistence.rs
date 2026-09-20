@@ -1,66 +1,19 @@
 use chrono::{DateTime, Duration, Utc};
-use engine::domain::model::action_log::ActionLogEntry;
-use engine::domain::model::battle::WarStatus;
-use engine::domain::model::daimyo::Daimyo;
-use engine::domain::model::game_state::GameState;
-use engine::domain::model::kuni::Kuni;
-use engine::domain::model::value_objects::DaimyoId;
-use serde::{Deserialize, Serialize};
+use engine::domain::error::DomainError;
+pub use engine::domain::model::session::SessionData;
+use engine::domain::model::value_objects::SessionId;
+use engine::domain::repository::session_repository::SessionRepository;
 use std::fs;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
-/// 永続化対象のセッションデータ
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionData {
-    /// セッションの一意識別子
-    pub session_id: String,
-    /// 作成日時 (UTC)
-    pub created_at: DateTime<Utc>,
-    /// 最終アクセス日時 (UTC)
-    pub last_accessed_at: DateTime<Utc>,
-    /// 選択中の大名ID
-    pub selected_daimyo_id: Option<DaimyoId>,
-    /// ゲーム進行状態
-    pub game_state: Option<GameState>,
-    /// 全領地データ
-    pub kunis: Vec<Kuni>,
-    /// 全大名データ
-    pub daimyos: Vec<Daimyo>,
-    /// 進行中の合戦データ
-    pub battles: Vec<WarStatus>,
-    /// 行動ログ
-    pub action_logs: Vec<ActionLogEntry>,
-}
-
-impl SessionData {
-    /// 新規セッションデータを初期化します
-    pub fn new(
-        session_id: impl Into<String>,
-        selected_daimyo_id: Option<DaimyoId>,
-        game_state: Option<GameState>,
-        kunis: Vec<Kuni>,
-        daimyos: Vec<Daimyo>,
-        battles: Vec<WarStatus>,
-        action_logs: Vec<ActionLogEntry>,
-    ) -> Self {
-        let now = Utc::now();
-        Self {
-            session_id: session_id.into(),
-            created_at: now,
-            last_accessed_at: now,
-            selected_daimyo_id,
-            game_state,
-            kunis,
-            daimyos,
-            battles,
-            action_logs,
-        }
-    }
-
-    /// アクセス日時を現在時刻に更新します
-    pub fn touch(&mut self) {
-        self.last_accessed_at = Utc::now();
-    }
+/// セッション永続化処理に関する型安全なカスタムエラー
+#[derive(Debug, Error)]
+pub enum SessionPersistenceError {
+    #[error("セッションファイルのI/Oエラー: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("セッションデータのJSON変換エラー: {0}")]
+    SerializationError(#[from] serde_json::Error),
 }
 
 /// セッションファイルの永続化・クリーンアップを管理するマネージャー
@@ -94,10 +47,10 @@ impl SessionPersistenceManager {
         Ok(())
     }
 
-    /// セッションIDから安全なファイルパスを取得します
-    fn session_file_path(&self, session_id: &str) -> PathBuf {
-        // ディレクトリトラバーサル防止のため、ファイル名として安全な文字のみ残す
+    /// セッションIDから安全なファイルパスを取得します（ディレクトリトラバーサル防止）
+    fn session_file_path(&self, session_id: &SessionId) -> PathBuf {
         let safe_name: String = session_id
+            .value()
             .chars()
             .map(|c| {
                 if c.is_alphanumeric() || c == '_' || c == '-' {
@@ -111,7 +64,7 @@ impl SessionPersistenceManager {
     }
 
     /// セッションデータをファイルにアトミック保存します
-    pub fn save(&self, data: &SessionData) -> Result<(), anyhow::Error> {
+    pub fn save(&self, data: &SessionData) -> Result<(), SessionPersistenceError> {
         self.ensure_dir()?;
         let target_path = self.session_file_path(&data.session_id);
         let tmp_path = target_path.with_extension("tmp");
@@ -124,7 +77,10 @@ impl SessionPersistenceManager {
     }
 
     /// セッションデータをファイルから読み込みます
-    pub fn load(&self, session_id: &str) -> Result<Option<SessionData>, anyhow::Error> {
+    pub fn load(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Option<SessionData>, SessionPersistenceError> {
         let path = self.session_file_path(session_id);
         if !path.exists() {
             return Ok(None);
@@ -136,7 +92,7 @@ impl SessionPersistenceManager {
     }
 
     /// セッションファイルを削除します
-    pub fn delete(&self, session_id: &str) -> Result<bool, anyhow::Error> {
+    pub fn delete(&self, session_id: &SessionId) -> Result<bool, SessionPersistenceError> {
         let path = self.session_file_path(session_id);
         if path.exists() {
             fs::remove_file(path)?;
@@ -147,8 +103,7 @@ impl SessionPersistenceManager {
     }
 
     /// 期限切れ（最終アクセスからttl以上経過）したセッションファイルを削除します
-    /// 削除したファイル数を返します
-    pub fn cleanup_expired(&self, ttl: Duration) -> Result<usize, anyhow::Error> {
+    pub fn cleanup_expired(&self, ttl: Duration) -> Result<usize, SessionPersistenceError> {
         if !self.storage_dir.exists() {
             return Ok(0);
         }
@@ -161,14 +116,10 @@ impl SessionPersistenceManager {
             let path = entry.path();
 
             if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
-                // セッションファイルを読み込んで判定
                 let should_delete = match fs::read_to_string(&path) {
                     Ok(content) => match serde_json::from_str::<SessionData>(&content) {
                         Ok(data) => (now - data.last_accessed_at) > ttl,
-                        Err(_) => {
-                            // JSON破損ファイルの場合、ファイルのmtimeで判定
-                            Self::is_file_expired(&path, ttl, now)
-                        }
+                        Err(_) => Self::is_file_expired(&path, ttl, now),
                     },
                     Err(_) => Self::is_file_expired(&path, ttl, now),
                 };
@@ -201,18 +152,43 @@ impl Default for SessionPersistenceManager {
     }
 }
 
+#[async_trait::async_trait]
+impl SessionRepository for SessionPersistenceManager {
+    async fn save(&self, data: &SessionData) -> Result<(), DomainError> {
+        self.save(data)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn load(&self, session_id: &SessionId) -> Result<Option<SessionData>, DomainError> {
+        self.load(session_id)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn delete(&self, session_id: &SessionId) -> Result<bool, DomainError> {
+        self.delete(session_id)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn cleanup_expired(&self, ttl: Duration) -> Result<usize, DomainError> {
+        self.cleanup_expired(ttl)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::domain::model::value_objects::DaimyoId;
     use tempfile::tempdir;
 
     #[test]
     fn test_save_load_delete() {
         let dir = tempdir().unwrap();
         let manager = SessionPersistenceManager::new(dir.path());
+        let session_id = SessionId::new("test_user");
 
         let session = SessionData::new(
-            "test_user",
+            session_id.clone(),
             Some(DaimyoId::new(1)),
             None,
             vec![],
@@ -225,13 +201,13 @@ mod tests {
         manager.save(&session).unwrap();
 
         // 読み込み
-        let loaded = manager.load("test_user").unwrap().unwrap();
-        assert_eq!(loaded.session_id, "test_user");
+        let loaded = manager.load(&session_id).unwrap().unwrap();
+        assert_eq!(loaded.session_id, session_id);
         assert_eq!(loaded.selected_daimyo_id, Some(DaimyoId::new(1)));
 
         // 削除
-        assert!(manager.delete("test_user").unwrap());
-        assert!(manager.load("test_user").unwrap().is_none());
+        assert!(manager.delete(&session_id).unwrap());
+        assert!(manager.load(&session_id).unwrap().is_none());
     }
 
     #[test]
@@ -239,13 +215,28 @@ mod tests {
         let dir = tempdir().unwrap();
         let manager = SessionPersistenceManager::new(dir.path());
 
-        let mut old_session =
-            SessionData::new("old_user", None, None, vec![], vec![], vec![], vec![]);
+        let mut old_session = SessionData::new(
+            SessionId::new("old_user"),
+            None,
+            None,
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
         // 8日前に設定
         old_session.last_accessed_at = Utc::now() - Duration::days(8);
         manager.save(&old_session).unwrap();
 
-        let new_session = SessionData::new("new_user", None, None, vec![], vec![], vec![], vec![]);
+        let new_session = SessionData::new(
+            SessionId::new("new_user"),
+            None,
+            None,
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
         manager.save(&new_session).unwrap();
 
         // 7日経過したものをクリーンアップ
@@ -253,7 +244,7 @@ mod tests {
         assert_eq!(deleted, 1);
 
         // old_user は消え、new_user は残っている
-        assert!(manager.load("old_user").unwrap().is_none());
-        assert!(manager.load("new_user").unwrap().is_some());
+        assert!(manager.load(&SessionId::new("old_user")).unwrap().is_none());
+        assert!(manager.load(&SessionId::new("new_user")).unwrap().is_some());
     }
 }
