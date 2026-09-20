@@ -1,11 +1,12 @@
 use crate::domain::model::{daimyo_personality::DaimyoPersonality, value_objects::DaimyoId};
+use serde::{Deserialize, Serialize};
 
 /// 大名の名前を表す型
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DaimyoName(pub String);
 
 /// 大名を表すドメインモデル
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Daimyo {
     /// 大名ID
     pub id: DaimyoId,

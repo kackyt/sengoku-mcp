@@ -1,11 +1,4 @@
-use engine::application::usecase::battle_usecase::BattleUseCase;
-use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
-use engine::application::usecase::domestic_usecase::DomesticUseCase;
-use engine::application::usecase::game_lifecycle_usecase::GameLifecycleUseCase;
-use engine::application::usecase::info_usecase::InfoUseCase;
-use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
-use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
-#[cfg(debug_assertions)]
+use crate::presentation::session_manager::{GameContext, SessionManager};
 use engine::domain::model::action_log::*;
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
@@ -17,39 +10,46 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct McpHandlers {
-    turn_progression_usecase: Arc<TurnProgressionUseCase>,
-    game_lifecycle_usecase: Arc<GameLifecycleUseCase>,
-    domestic_usecase: Arc<DomesticUseCase>,
-    battle_usecase: Arc<BattleUseCase>,
-    kuni_query_usecase: Arc<KuniQueryUseCase>,
-    info_usecase: Arc<InfoUseCase>,
-    daimyo_query_usecase: Arc<DaimyoQueryUseCase>,
-    selected_daimyo_id: Arc<Mutex<Option<DaimyoId>>>,
+    session_manager: Arc<SessionManager>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 // --- Parameter Structs ---
 
-#[derive(Deserialize, JsonSchema)]
+/// セッションIDのみを受け取るパラメータ構造体
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
+pub struct SessionParams {
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct SelectDaimyoParams {
     /// 選択する大名のID
     pub daimyo_id: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct DomesticParams {
     /// 対象となる国のID
     pub kuni_id: u32,
     /// 実行する量（金、米、兵など）
     pub amount: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct TransportParams {
     /// 送り元の国ID
     pub from_kuni_id: u32,
@@ -61,9 +61,12 @@ pub struct TransportParams {
     pub hei: u32,
     /// 輸送する米の量
     pub kome: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct StartWarParams {
     /// 攻撃側の国ID
     pub attacker_kuni_id: u32,
@@ -73,71 +76,94 @@ pub struct StartWarParams {
     pub hei: u32,
     /// 持参させる米の量
     pub kome: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct ExecuteBattleTurnParams {
     /// 攻撃側の国ID
     pub attacker_kuni_id: u32,
     /// 選択する戦術 (1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞, 5: 退却)
     pub tactic: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct ExecuteDefenseTurnParams {
     /// 防御側の国ID
     pub defender_kuni_id: u32,
     /// 選択する戦術 (1: 通常, 2: 奇襲, 3: 火計, 4: 鼓舞)
     pub tactic: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct AutoActionParams {
     /// 対象となる国のID
     pub kuni_id: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct KuniIdParams {
     /// 対象の国ID
     pub kuni_id: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
+}
+
+fn resolve_session_id(session_id: Option<String>) -> String {
+    session_id
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "default".to_string())
 }
 
 impl McpHandlers {
-    pub fn new(
-        turn_progression_usecase: Arc<TurnProgressionUseCase>,
-        game_lifecycle_usecase: Arc<GameLifecycleUseCase>,
-        domestic_usecase: Arc<DomesticUseCase>,
-        battle_usecase: Arc<BattleUseCase>,
-        kuni_query_usecase: Arc<KuniQueryUseCase>,
-        info_usecase: Arc<InfoUseCase>,
-        daimyo_query_usecase: Arc<DaimyoQueryUseCase>,
-    ) -> Self {
+    pub fn new(session_manager: Arc<SessionManager>) -> Self {
         Self {
-            turn_progression_usecase,
-            game_lifecycle_usecase,
-            domestic_usecase,
-            battle_usecase,
-            kuni_query_usecase,
-            info_usecase,
-            daimyo_query_usecase,
-            selected_daimyo_id: Arc::new(Mutex::new(None)),
+            session_manager,
             tool_router: Self::tool_router(),
         }
     }
 
-    async fn get_player_id(&self) -> Result<DaimyoId, String> {
-        let lock = self.selected_daimyo_id.lock().await;
+    async fn get_context(
+        &self,
+        session_id: Option<String>,
+    ) -> Result<(String, Arc<GameContext>), String> {
+        let key = resolve_session_id(session_id);
+        let ctx = self
+            .session_manager
+            .get_or_create(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok((key, ctx))
+    }
+
+    async fn get_player_id(&self, ctx: &GameContext) -> Result<DaimyoId, String> {
+        let lock = ctx.selected_daimyo_id.lock().await;
         lock.ok_or_else(|| {
             "大名が選択されていません。先に select_daimyo を実行してください。".to_string()
         })
     }
 
-    async fn check_kuni_ownership(&self, kuni_id: KuniId) -> Result<DaimyoId, String> {
-        let player_id = self.get_player_id().await?;
+    async fn check_kuni_ownership(
+        &self,
+        ctx: &GameContext,
+        kuni_id: KuniId,
+    ) -> Result<DaimyoId, String> {
+        let player_id = self.get_player_id(ctx).await?;
 
         // 選択された国の情報を探す
-        let kunis = self
+        let kunis = ctx
             .kuni_query_usecase
             .get_kunis_by_daimyo(&player_id)
             .await
@@ -165,8 +191,12 @@ impl McpHandlers {
 impl McpHandlers {
     /// 選択可能な大名の一覧を取得します
     #[tool(description = "選択可能な大名の一覧を取得します")]
-    pub async fn list_daimyos(&self) -> Result<String, String> {
-        let daimyos = self
+    pub async fn list_daimyos(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (_, ctx) = self.get_context(session_id).await?;
+        let daimyos = ctx
             .daimyo_query_usecase
             .list()
             .await
@@ -183,10 +213,14 @@ impl McpHandlers {
     #[tool(description = "操作対象となる大名を選択します")]
     pub async fn select_daimyo(
         &self,
-        Parameters(SelectDaimyoParams { daimyo_id }): Parameters<SelectDaimyoParams>,
+        Parameters(SelectDaimyoParams {
+            daimyo_id,
+            session_id,
+        }): Parameters<SelectDaimyoParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = DaimyoId::new(daimyo_id);
-        let daimyo = self
+        let daimyo = ctx
             .daimyo_query_usecase
             .find(id)
             .await
@@ -194,16 +228,24 @@ impl McpHandlers {
 
         if let Some(d) = daimyo {
             // 滅亡後の再選択などで前回の GameState が残らないよう、新規ゲームとして初期化する
-            self.game_lifecycle_usecase
+            ctx.game_lifecycle_usecase
                 .reset_game()
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let mut lock = self.selected_daimyo_id.lock().await;
-            *lock = Some(id);
+            {
+                let mut lock = ctx.selected_daimyo_id.lock().await;
+                *lock = Some(id);
+            }
 
-            self.turn_progression_usecase
+            ctx.turn_progression_usecase
                 .progress(Some(id))
+                .await
+                .map_err(|e| e.to_string())?;
+
+            // 状態保存
+            self.session_manager
+                .save_session(&key)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -218,9 +260,13 @@ impl McpHandlers {
 
     /// 現在の自分の状況（領地、資源、手番）を取得します
     #[tool(description = "現在の自分の状況（領地、資源、手番）を取得します")]
-    pub async fn get_my_status(&self) -> Result<String, String> {
-        let player_id = self.get_player_id().await?;
-        let status = self
+    pub async fn get_my_status(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (_, ctx) = self.get_context(session_id).await?;
+        let player_id = self.get_player_id(&ctx).await?;
+        let status = ctx
             .kuni_query_usecase
             .get_player_status(&player_id)
             .await
@@ -262,11 +308,21 @@ impl McpHandlers {
 
     /// 他国の情報を一覧で取得します
     #[tool(description = "他国の情報を一覧で取得します。実行にはコマンド実行権を1消費します。")]
-    pub async fn get_other_countries_info(&self) -> Result<String, String> {
-        let player_id = self.get_player_id().await?;
-        let info = self
+    pub async fn get_other_countries_info(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
+        let player_id = self.get_player_id(&ctx).await?;
+        let info = ctx
             .info_usecase
             .get_other_countries_info(Some(player_id), player_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // コマンド実行権を消費したため保存
+        self.session_manager
+            .save_session(&key)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -292,15 +348,26 @@ impl McpHandlers {
     #[tool(description = "指定した国の米を売却して金を得ます")]
     pub async fn domestic_rice_sell(
         &self,
-        Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
+        Parameters(DomesticParams {
+            kuni_id,
+            amount,
+            session_id,
+        }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
-        let gain = self
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
+        let gain = ctx
             .domestic_usecase
             .sell_rice(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok(format!("米を売却しました。得られた金: {}", gain.value()))
     }
 
@@ -308,15 +375,26 @@ impl McpHandlers {
     #[tool(description = "指定した国で金を払って米を購入します")]
     pub async fn domestic_rice_buy(
         &self,
-        Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
+        Parameters(DomesticParams {
+            kuni_id,
+            amount,
+            session_id,
+        }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
-        let gain = self
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
+        let gain = ctx
             .domestic_usecase
             .buy_rice(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok(format!("米を購入しました。得られた米: {}", gain.value()))
     }
 
@@ -324,14 +402,25 @@ impl McpHandlers {
     #[tool(description = "指定した国で兵を徴募します。金が必要です。")]
     pub async fn domestic_recruit(
         &self,
-        Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
+        Parameters(DomesticParams {
+            kuni_id,
+            amount,
+            session_id,
+        }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
-        self.domestic_usecase
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
+        ctx.domestic_usecase
             .recruit(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok(format!("兵を {} 人徴募しました。", amount))
     }
 
@@ -339,15 +428,26 @@ impl McpHandlers {
     #[tool(description = "指定した国で開墾を行い石高を上げます。金が必要です。")]
     pub async fn domestic_develop_land(
         &self,
-        Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
+        Parameters(DomesticParams {
+            kuni_id,
+            amount,
+            session_id,
+        }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
-        let gain = self
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
+        let gain = ctx
             .domestic_usecase
             .develop_land(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok(format!("開墾を行いました。上昇した石高: {}", gain.value()))
     }
 
@@ -355,15 +455,26 @@ impl McpHandlers {
     #[tool(description = "指定した国で町作りを行い、毎ターンの金収入を増やします。")]
     pub async fn domestic_build_town(
         &self,
-        Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
+        Parameters(DomesticParams {
+            kuni_id,
+            amount,
+            session_id,
+        }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
-        let gain = self
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
+        let gain = ctx
             .domestic_usecase
             .build_town(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok(format!("町作りを行いました。発展度: {}", gain.value()))
     }
 
@@ -371,15 +482,26 @@ impl McpHandlers {
     #[tool(description = "指定した国の民に施しを行い、忠誠度を上げます。")]
     pub async fn domestic_give_charity(
         &self,
-        Parameters(DomesticParams { kuni_id, amount }): Parameters<DomesticParams>,
+        Parameters(DomesticParams {
+            kuni_id,
+            amount,
+            session_id,
+        }): Parameters<DomesticParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
-        let gain = self
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
+        let gain = ctx
             .domestic_usecase
             .give_charity(Some(player_id), id, DisplayAmount::new(amount))
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok(format!("施しを行いました。上昇した忠誠度: {}", gain))
     }
 
@@ -393,14 +515,16 @@ impl McpHandlers {
             kin,
             hei,
             kome,
+            session_id,
         }): Parameters<TransportParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let from_id = KuniId::new(from_kuni_id);
         let to_id = KuniId::new(to_kuni_id);
-        let player_id = self.check_kuni_ownership(from_id).await?;
+        let player_id = self.check_kuni_ownership(&ctx, from_id).await?;
 
         // 輸送先も自分の領地かチェック
-        let kunis = self
+        let kunis = ctx
             .kuni_query_usecase
             .get_kunis_by_daimyo(&player_id)
             .await
@@ -412,7 +536,7 @@ impl McpHandlers {
             ));
         }
 
-        self.domestic_usecase
+        ctx.domestic_usecase
             .transport(
                 Some(player_id),
                 from_id,
@@ -423,6 +547,12 @@ impl McpHandlers {
             )
             .await
             .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
+            .await
+            .map_err(|e| e.to_string())?;
+
         Ok("資源を輸送しました。".to_string())
     }
 
@@ -435,13 +565,15 @@ impl McpHandlers {
             defender_kuni_id,
             hei,
             kome,
+            session_id,
         }): Parameters<StartWarParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let attacker_id = KuniId::new(attacker_kuni_id);
         let defender_id = KuniId::new(defender_kuni_id);
-        let player_id = self.check_kuni_ownership(attacker_id).await?;
+        let player_id = self.check_kuni_ownership(&ctx, attacker_id).await?;
 
-        let status = self
+        let status = ctx
             .battle_usecase
             .start_war(
                 Some(player_id),
@@ -450,6 +582,11 @@ impl McpHandlers {
                 DisplayAmount::new(hei),
                 DisplayAmount::new(kome),
             )
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -469,15 +606,22 @@ impl McpHandlers {
         Parameters(ExecuteBattleTurnParams {
             attacker_kuni_id,
             tactic,
+            session_id,
         }): Parameters<ExecuteBattleTurnParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(attacker_kuni_id);
         let tactic_enum = self.parse_tactic(tactic, true)?;
-        let player_id = self.check_kuni_ownership(id).await?;
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
 
-        let next_status = self
+        let next_status = ctx
             .battle_usecase
             .execute_battle_turn(Some(player_id), id, tactic_enum)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -503,15 +647,22 @@ impl McpHandlers {
         Parameters(ExecuteDefenseTurnParams {
             defender_kuni_id,
             tactic,
+            session_id,
         }): Parameters<ExecuteDefenseTurnParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(defender_kuni_id);
         let tactic_enum = self.parse_tactic(tactic, false)?;
-        let player_id = self.check_kuni_ownership(id).await?;
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
 
-        let next_status = self
+        let next_status = ctx
             .battle_usecase
             .execute_defense_turn(Some(player_id), id, tactic_enum)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -530,8 +681,12 @@ impl McpHandlers {
 
     /// 直近の行動ログを取得します
     #[tool(description = "直近の行動ログを取得します。")]
-    pub async fn get_recent_logs(&self) -> Result<String, String> {
-        let snapshot = self
+    pub async fn get_recent_logs(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (_, ctx) = self.get_context(session_id).await?;
+        let snapshot = ctx
             .kuni_query_usecase
             .get_ui_snapshot(None, None, None)
             .await
@@ -548,11 +703,20 @@ impl McpHandlers {
     #[tool(
         description = "ゲームの進行処理を実行します。選択中の大名の手番になるか、1ターン終了するまで進みます。"
     )]
-    pub async fn progress_turn(&self) -> Result<String, String> {
-        let player_id = self.get_player_id().await?;
+    pub async fn progress_turn(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
+        let player_id = self.get_player_id(&ctx).await?;
 
-        self.turn_progression_usecase
+        ctx.turn_progression_usecase
             .progress_until_player_turn(Some(player_id))
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -565,13 +729,17 @@ impl McpHandlers {
     )]
     pub async fn domestic_auto_action(
         &self,
-        Parameters(AutoActionParams { kuni_id }): Parameters<AutoActionParams>,
+        Parameters(AutoActionParams {
+            kuni_id,
+            session_id,
+        }): Parameters<AutoActionParams>,
     ) -> Result<String, String> {
+        let (key, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.check_kuni_ownership(id).await?;
+        let player_id = self.check_kuni_ownership(&ctx, id).await?;
 
         // 手番チェック
-        let state = self
+        let state = ctx
             .turn_progression_usecase
             .get_state()
             .await
@@ -581,8 +749,13 @@ impl McpHandlers {
         state.check_turn(id).map_err(|e| e.to_string())?;
 
         // 自動行動の実行と手番進行 (原子的な実行)
-        self.turn_progression_usecase
+        ctx.turn_progression_usecase
             .execute_cpu_action_and_advance(id, Some(player_id))
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.session_manager
+            .save_session(&key)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -591,8 +764,12 @@ impl McpHandlers {
 
     /// ゲーム全体の状態（フェーズ・ターン・季節・勝者）を取得します
     #[tool(description = "ゲーム全体の状態（フェーズ・ターン・季節・勝者）を取得します")]
-    pub async fn get_game_status(&self) -> Result<String, String> {
-        let snapshot = self
+    pub async fn get_game_status(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (_, ctx) = self.get_context(session_id).await?;
+        let snapshot = ctx
             .kuni_query_usecase
             .get_ui_snapshot(None, None, None)
             .await
@@ -616,8 +793,12 @@ impl McpHandlers {
 
     /// 進行中の合戦の状態（兵数・士気・優劣）を取得します
     #[tool(description = "進行中の合戦の状態（兵数・士気・優劣）を取得します")]
-    pub async fn get_battle_status(&self) -> Result<String, String> {
-        let snapshot = self
+    pub async fn get_battle_status(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
+        let (_, ctx) = self.get_context(session_id).await?;
+        let snapshot = ctx
             .kuni_query_usecase
             .get_ui_snapshot(None, None, None)
             .await
@@ -665,11 +846,15 @@ impl McpHandlers {
     #[tool(description = "指定した国の隣接国（攻撃・輸送可能な国）の一覧を取得します")]
     pub async fn get_neighbor_info(
         &self,
-        Parameters(KuniIdParams { kuni_id }): Parameters<KuniIdParams>,
+        Parameters(KuniIdParams {
+            kuni_id,
+            session_id,
+        }): Parameters<KuniIdParams>,
     ) -> Result<String, String> {
+        let (_, ctx) = self.get_context(session_id).await?;
         let id = KuniId::new(kuni_id);
-        let player_id = self.get_player_id().await?;
-        let neighbors = self
+        let player_id = self.get_player_id(&ctx).await?;
+        let neighbors = ctx
             .kuni_query_usecase
             .get_neighbors(&id)
             .await
@@ -689,15 +874,20 @@ impl McpHandlers {
 
     /// デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。
     #[tool(description = "デバッグ用の内部ログ（AIの思考プロセス含む）を取得します。")]
-    pub async fn get_internal_logs(&self) -> Result<String, String> {
+    pub async fn get_internal_logs(
+        &self,
+        Parameters(SessionParams { session_id }): Parameters<SessionParams>,
+    ) -> Result<String, String> {
         #[cfg(not(debug_assertions))]
         {
+            let _ = session_id;
             Ok("内部ログはデバッグビルドでのみ利用可能です。".to_string())
         }
 
         #[cfg(debug_assertions)]
         {
-            let logs = self
+            let (_, ctx) = self.get_context(session_id).await?;
+            let logs = ctx
                 .kuni_query_usecase
                 .get_all_logs_internal(ActionLogCategory::Domestic)
                 .map_err(|e| e.to_string())?;

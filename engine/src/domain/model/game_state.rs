@@ -1,8 +1,9 @@
 use crate::domain::error::DomainError;
 use crate::domain::model::value_objects::{ActionOrderIndex, DaimyoId, KuniId, TurnNumber};
+use serde::{Deserialize, Serialize};
 
 /// ゲームの進行フェーズ
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum GamePhase {
     /// 内政フェーズ
     #[default]
@@ -16,7 +17,7 @@ pub enum GamePhase {
 }
 
 /// ゲームの進行状態全体を表すドメインモデル
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GameState {
     /// 現在のターン（季節）
     current_turn: TurnNumber,
