@@ -1,4 +1,5 @@
 use crate::application::{GameContext, SessionManager};
+#[cfg(debug_assertions)]
 use engine::domain::model::action_log::*;
 use engine::domain::model::battle::Tactic;
 use engine::domain::model::value_objects::*;
