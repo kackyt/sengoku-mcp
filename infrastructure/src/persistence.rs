@@ -1,4 +1,5 @@
 pub mod in_memory_action_log_repository;
+pub mod session_persistence;
 pub mod simulation;
 use engine::domain::error::DomainError;
 use engine::domain::model::battle::WarStatus;
@@ -14,6 +15,7 @@ use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::repository::kuni_repository::KuniRepository;
 use engine::domain::repository::neighbor_repository::NeighborRepository;
 pub use in_memory_action_log_repository::InMemoryActionLogRepository;
+pub use session_persistence::{SessionData, SessionPersistenceError, SessionPersistenceManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

@@ -1,108 +1,43 @@
+mod application;
 mod presentation;
 
 extern crate rmcp;
 
+use crate::application::SessionManager;
 use crate::presentation::handlers::McpHandlers;
-use engine::application::usecase::battle_usecase::BattleUseCase;
-use engine::application::usecase::daimyo_query_usecase::DaimyoQueryUseCase;
-use engine::application::usecase::domestic_usecase::DomesticUseCase;
-use engine::application::usecase::game_lifecycle_usecase::GameLifecycleUseCase;
-use engine::application::usecase::info_usecase::InfoUseCase;
-use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
-use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
+use chrono::Duration;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::{
-    InMemoryActionLogRepository, InMemoryBattleRepository, InMemoryDaimyoRepository,
-    InMemoryEventDispatcher, InMemoryGameStateRepository, InMemoryKuniRepository,
-    InMemoryNeighborRepository,
-};
+use infrastructure::persistence::SessionPersistenceManager;
 use rmcp::ServiceExt;
 use std::sync::Arc;
 use tokio::io::{stdin, stdout};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // リポジトリの構築
-    let kuni_repo = Arc::new(InMemoryKuniRepository::new());
-    let daimyo_repo = Arc::new(InMemoryDaimyoRepository::new());
-    let game_state_repo = Arc::new(InMemoryGameStateRepository::new());
-    let event_dispatcher = Arc::new(InMemoryEventDispatcher::new());
-    let neighbor_repo = Arc::new(InMemoryNeighborRepository::new());
-    let battle_repo = Arc::new(InMemoryBattleRepository::new());
-    let action_log_repo = Arc::new(InMemoryActionLogRepository::new());
+    // マスターデータのローダー初期化
+    let master_data = Arc::new(MasterDataLoader);
 
-    let master_data_repo = Arc::new(MasterDataLoader);
+    // セッション永続化マネージャー初期化（デフォルト: data/sessions/ または環境変数）
+    let persistence = Arc::new(SessionPersistenceManager::default());
 
-    // ユースケースの構築
-    let turn_progression_usecase = Arc::new(TurnProgressionUseCase::new(
-        kuni_repo.clone(),
-        daimyo_repo.clone(),
-        game_state_repo.clone(),
-        event_dispatcher.clone(),
-        action_log_repo.clone(),
-        battle_repo.clone(),
-        neighbor_repo.clone(),
-    ));
+    // 起動時に7日以上経過した期限切れセッションをクリーンアップ
+    let expired_ttl = Duration::days(7);
+    if let Ok(cleaned) = persistence.cleanup_expired(expired_ttl) {
+        if cleaned > 0 {
+            eprintln!("[Sengoku-MCP] Cleaned up {} expired session(s)", cleaned);
+        }
+    }
 
-    let domestic_usecase = Arc::new(DomesticUseCase::new(
-        kuni_repo.clone(),
-        neighbor_repo.clone(),
-        action_log_repo.clone(),
-        game_state_repo.clone(),
-        turn_progression_usecase.clone(),
-    ));
+    // セッションマネージャーの構築
+    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
 
-    let battle_usecase = Arc::new(BattleUseCase::new(
-        kuni_repo.clone(),
-        neighbor_repo.clone(),
-        battle_repo.clone(),
-        action_log_repo.clone(),
-        game_state_repo.clone(),
-        daimyo_repo.clone(),
-        turn_progression_usecase.clone(),
-    ));
+    // バックグラウンドで定期クリーンアップタスク（1時間間隔、7日経過で削除）を開始
+    session_manager
+        .clone()
+        .start_cleanup_task(std::time::Duration::from_secs(3600), expired_ttl);
 
-    let kuni_query_usecase = Arc::new(KuniQueryUseCase::new(
-        kuni_repo.clone(),
-        daimyo_repo.clone(),
-        game_state_repo.clone(),
-        neighbor_repo.clone(),
-        action_log_repo.clone(),
-        battle_repo.clone(),
-    ));
-
-    let info_usecase = Arc::new(InfoUseCase::new(
-        kuni_repo.clone(),
-        daimyo_repo.clone(),
-        game_state_repo.clone(),
-        turn_progression_usecase.clone(),
-    ));
-
-    let daimyo_query_usecase = Arc::new(DaimyoQueryUseCase::new(daimyo_repo.clone()));
-
-    let game_lifecycle_usecase = Arc::new(GameLifecycleUseCase::new(
-        kuni_repo.clone(),
-        daimyo_repo.clone(),
-        game_state_repo.clone(),
-        action_log_repo.clone(),
-        battle_repo.clone(),
-        neighbor_repo.clone(),
-        event_dispatcher.clone(),
-        master_data_repo,
-    ));
-
-    // 起動時にマスターデータで初期化（select_daimyo でも同様にリセットされる）
-    game_lifecycle_usecase.reset_game().await?;
-
-    let handlers = McpHandlers::new(
-        turn_progression_usecase,
-        game_lifecycle_usecase,
-        domestic_usecase,
-        battle_usecase,
-        kuni_query_usecase,
-        info_usecase,
-        daimyo_query_usecase,
-    );
+    // MCPハンドラーの初期化
+    let handlers = McpHandlers::new(session_manager);
 
     // Build the transport (stdio)
     let transport = (stdin(), stdout());

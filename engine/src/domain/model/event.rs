@@ -1,7 +1,8 @@
 use crate::domain::model::value_objects::{Amount, DaimyoId, EventMessage, KuniId, TurnNumber};
+use serde::{Deserialize, Serialize};
 
 /// ゲーム進行に関するイベント
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameEvent {
     /// 新しいターンが開始された
     TurnStarted { turn: TurnNumber },
@@ -26,7 +27,7 @@ pub enum GameEvent {
 }
 
 /// 季節イベントの種別を表す列挙型
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SeasonalEventType {
     /// 疫病（通年、1/40確率）
     Plague,
@@ -44,7 +45,7 @@ pub enum SeasonalEventType {
 
 /// 季節イベント発生時の効果を保持する構造体
 /// UI層への通知やログ記録に使用する
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeasonalEventEffect {
     /// 影響を受けた国のID
     pub kuni_id: KuniId,

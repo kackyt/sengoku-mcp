@@ -6,4 +6,5 @@ pub mod event;
 pub mod game_state;
 pub mod kuni;
 pub mod resource;
+pub mod session;
 pub mod value_objects;
