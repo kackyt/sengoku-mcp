@@ -5,6 +5,10 @@ use chrono::Duration;
 
 /// セッションの永続化およびライフサイクル管理を行うリポジトリのインターフェース
 #[async_trait::async_trait]
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait が Future と重複する must_use 属性を自動生成するため"
+)]
 pub trait SessionRepository: Send + Sync {
     /// セッションデータを保存します
     async fn save(&self, data: &SessionData) -> Result<(), DomainError>;

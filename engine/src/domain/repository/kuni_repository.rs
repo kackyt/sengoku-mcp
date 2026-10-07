@@ -6,6 +6,10 @@ use crate::domain::model::{
 
 /// 国情報を管理するリポジトリのインターフェース
 #[async_trait::async_trait]
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait が Future と重複する must_use 属性を自動生成するため"
+)]
 pub trait KuniRepository: Send + Sync {
     /// IDで国を検索します
     async fn find_by_id(&self, id: &KuniId) -> Result<Option<Kuni>, DomainError>;

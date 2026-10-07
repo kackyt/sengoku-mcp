@@ -3,6 +3,10 @@ use crate::domain::model::{daimyo::Daimyo, value_objects::DaimyoId};
 
 /// 大名情報を管理するリポジトリのインターフェース
 #[async_trait::async_trait]
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait が Future と重複する must_use 属性を自動生成するため"
+)]
 pub trait DaimyoRepository: Send + Sync {
     /// IDで大名を検索します
     async fn find_by_id(&self, id: &DaimyoId) -> Result<Option<Daimyo>, DomainError>;

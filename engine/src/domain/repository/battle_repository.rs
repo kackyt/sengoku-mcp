@@ -5,6 +5,10 @@ use async_trait::async_trait;
 
 /// 合戦状態（バトルの状態）を永続化するためのリポジトリ
 #[async_trait]
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait が Future と重複する must_use 属性を自動生成するため"
+)]
 pub trait BattleRepository: Send + Sync {
     /// 攻撃側の国IDをキーとして合戦状態を保存します
     async fn save(&self, status: &WarStatus) -> Result<(), DomainError>;
