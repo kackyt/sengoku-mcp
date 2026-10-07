@@ -330,3 +330,35 @@ impl EventMessage {
         &self.0
     }
 }
+
+/// セッションの一意識別子を表す値オブジェクト
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub String);
+
+impl SessionId {
+    pub fn new(val: impl Into<String>) -> Self {
+        Self(val.into())
+    }
+
+    pub fn value(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for SessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for SessionId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl From<String> for SessionId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}

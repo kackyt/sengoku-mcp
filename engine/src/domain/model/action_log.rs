@@ -3,21 +3,22 @@ use crate::domain::model::event::SeasonalEventType;
 use crate::domain::model::value_objects::{
     Amount, DaimyoId, DisplayAmount, KuniName, Rate, TurnNumber,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ActionLogCategory {
     Domestic,
     War,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionLogVisibility {
     Public,
     Player,
     Internal,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DomesticLogEvent {
     RiceSold {
         kuni_name: KuniName,
@@ -102,7 +103,7 @@ pub enum DomesticLogEvent {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WarLogEvent {
     CpuDefenderTactic {
         tactic: Tactic,
@@ -134,13 +135,13 @@ pub enum WarLogEvent {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActionLogEvent {
     Domestic(DomesticLogEvent),
     War(WarLogEvent),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionLogEntry {
     pub visibility: ActionLogVisibility,
     pub turn: TurnNumber,

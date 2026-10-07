@@ -3,6 +3,10 @@ use crate::domain::model::event::GameEvent;
 
 /// ドメインイベントを外部システムに通知するディスパッチャのインターフェース
 #[async_trait::async_trait]
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait が Future と重複する must_use 属性を自動生成するため"
+)]
 pub trait EventDispatcher: Send + Sync {
     /// イベントを送信します
     async fn dispatch(&self, event: GameEvent) -> Result<(), DomainError>;

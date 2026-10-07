@@ -1,7 +1,8 @@
 use crate::domain::model::value_objects::{Amount, Rate};
+use serde::{Deserialize, Serialize};
 
 /// 国の資源（金、兵、米、人口）を管理する構造体
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Resource {
     /// 所持金
     pub kin: Amount,
@@ -129,7 +130,7 @@ mod tests {
 }
 
 /// 国の開発状況（石高、町、忠誠度）を管理する構造体
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DevelopmentStats {
     /// 石高（農業生産力）
     pub kokudaka: Amount,

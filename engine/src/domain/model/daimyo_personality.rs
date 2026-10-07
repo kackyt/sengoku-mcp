@@ -1,7 +1,8 @@
 use crate::domain::error::DomainError;
+use serde::{Deserialize, Serialize};
 
 /// 大名の行動傾向を定義する性格パラメータ
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DaimyoPersonality {
     /// 農業志向 (高いほど開墾・収穫重視)
     agriculture_bias: f64,

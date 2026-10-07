@@ -5,9 +5,10 @@ use crate::domain::model::value_objects::{
     Amount, DaimyoId, DisplayAmount, IninFlag, KuniId, KuniName, Rate,
 };
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 /// 割合減少の対象リソースを指定するセレクタ
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResourceSelector {
     /// 人口
     Jinko,
@@ -24,7 +25,7 @@ pub enum ResourceSelector {
 }
 
 /// 国を表すドメインモデル
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Kuni {
     /// 国ID
     pub id: KuniId,

@@ -341,6 +341,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "rand",
  "serde",
  "thiserror",
@@ -580,12 +581,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "clap",
  "csv",
  "engine",
  "rand",
  "rand_chacha",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
@@ -697,12 +700,14 @@ name = "mcp-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "engine",
  "infrastructure",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

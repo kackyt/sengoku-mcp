@@ -3,6 +3,10 @@ use crate::domain::model::game_state::GameState;
 
 /// ゲーム状態を管理するリポジトリのインターフェース
 #[async_trait::async_trait]
+#[allow(
+    clippy::double_must_use,
+    reason = "async_trait が Future と重複する must_use 属性を自動生成するため"
+)]
 pub trait GameStateRepository: Send + Sync {
     /// 現在のゲーム状態を取得します
     async fn get(&self) -> Result<Option<GameState>, DomainError>;
