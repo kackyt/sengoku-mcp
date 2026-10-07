@@ -135,6 +135,7 @@ pub struct KuniIdParams {
     pub session_id: Option<String>,
 }
 
+/// セッションIDの前後の空白を除去し、未指定や空文字の場合はデフォルト値を返します。
 fn resolve_session_id(session_id: Option<String>) -> SessionId {
     session_id
         .map(|s| s.trim().to_string())
@@ -151,6 +152,7 @@ impl McpHandlers {
         }
     }
 
+    /// セッションIDを解決し、対応するゲームコンテキストを取得または作成します。
     async fn get_context(
         &self,
         session_id: Option<String>,
@@ -164,13 +166,15 @@ impl McpHandlers {
         Ok((key, ctx))
     }
 
+    /// 選択済みの大名IDを取得し、未選択の場合は操作案内を含むエラーを返します。
     async fn get_player_id(&self, ctx: &GameContext) -> Result<DaimyoId, String> {
         let lock = ctx.selected_daimyo_id.lock().await;
-        lock.ok_or_else(|| {
+        (*lock).ok_or_else(|| {
             "大名が選択されていません。先に select_daimyo を実行してください。".to_string()
         })
     }
 
+    /// 対象の国が選択中の大名の領地であることを確認します。
     async fn check_kuni_ownership(
         &self,
         ctx: &GameContext,
@@ -194,6 +198,7 @@ impl McpHandlers {
         Ok(player_id)
     }
 
+    /// 戦術番号を攻撃側・防御側それぞれの使用可能な戦術へ変換します。
     fn parse_tactic(&self, tactic: u32, is_attacker: bool) -> Result<Tactic, String> {
         engine::domain::service::tactic_validation_service::TacticValidationService::parse_tactic(
             tactic,

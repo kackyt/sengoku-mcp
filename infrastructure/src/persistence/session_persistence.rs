@@ -70,8 +70,13 @@ impl SessionPersistenceManager {
         let tmp_path = target_path.with_extension("tmp");
 
         let json = serde_json::to_string_pretty(data)?;
-        fs::write(&tmp_path, json)?;
-        fs::rename(&tmp_path, &target_path)?;
+        if let Err(error) =
+            fs::write(&tmp_path, json).and_then(|()| fs::rename(&tmp_path, &target_path))
+        {
+            // 保存失敗時は一時ファイルを可能な限り削除し、元のI/Oエラーを返します。
+            let _ = fs::remove_file(&tmp_path);
+            return Err(SessionPersistenceError::IoError(error));
+        }
 
         Ok(())
     }
@@ -199,6 +204,10 @@ mod tests {
 
         // 保存
         manager.save(&session).unwrap();
+        assert!(!manager
+            .session_file_path(&session_id)
+            .with_extension("tmp")
+            .exists());
 
         // 読み込み
         let loaded = manager.load(&session_id).unwrap().unwrap();
@@ -208,6 +217,68 @@ mod tests {
         // 削除
         assert!(manager.delete(&session_id).unwrap());
         assert!(manager.load(&session_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_save_removes_temporary_file_when_rename_fails() {
+        let dir = tempdir().unwrap();
+        let manager = SessionPersistenceManager::new(dir.path());
+        let session = SessionData::new(
+            SessionId::new("rename_failure"),
+            None,
+            None,
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
+        let target_path = manager.session_file_path(&session.session_id);
+        let tmp_path = target_path.with_extension("tmp");
+
+        // 保存先をディレクトリにして、書き込み後のリネームを確実に失敗させます。
+        fs::create_dir(&target_path).unwrap();
+        let marker_path = target_path.join("keep.txt");
+        fs::write(&marker_path, "keep").unwrap();
+
+        assert!(matches!(
+            manager.save(&session),
+            Err(SessionPersistenceError::IoError(_))
+        ));
+        assert!(!tmp_path.exists());
+        assert_eq!(fs::read_to_string(&marker_path).unwrap(), "keep");
+    }
+
+    #[test]
+    fn test_save_returns_write_error_without_removing_directory() {
+        let dir = tempdir().unwrap();
+        let manager = SessionPersistenceManager::new(dir.path());
+        let session = SessionData::new(
+            SessionId::new("write_failure"),
+            None,
+            None,
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        );
+        let target_path = manager.session_file_path(&session.session_id);
+        let tmp_path = target_path.with_extension("tmp");
+
+        // 一時ファイルのパスをディレクトリにして書き込みを失敗させます。
+        // クリーンアップできなくても、元の書き込みエラーと既存データを保持します。
+        fs::create_dir(&tmp_path).unwrap();
+        let marker_path = tmp_path.join("keep.txt");
+        fs::write(&marker_path, "keep").unwrap();
+        let expected_error = fs::write(&tmp_path, "test").unwrap_err().kind();
+
+        match manager.save(&session) {
+            Err(SessionPersistenceError::IoError(error)) => {
+                assert_eq!(error.kind(), expected_error);
+            }
+            result => panic!("書き込みのI/Oエラーを期待しました: {result:?}"),
+        }
+        assert!(!target_path.exists());
+        assert_eq!(fs::read_to_string(&marker_path).unwrap(), "keep");
     }
 
     #[test]
