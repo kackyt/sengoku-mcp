@@ -29,6 +29,14 @@ const DEFAULT_SESSION_ID: &str = "default";
 /// 閲覧URLテンプレート内でトークンに置換されるプレースホルダー
 pub const VIEW_TOKEN_PLACEHOLDER: &str = "{token}";
 
+/// ツール結果に付与する閲覧URLの見出し
+const VIEW_URL_LABEL: &str = "📺 ブラウザで自国の状況を見る: ";
+
+/// MCPクライアント（LLM）へ伝えるサーバーの利用方針
+const SERVER_INSTRUCTIONS: &str =
+    "ツール結果に「📺 ブラウザで自国の状況を見る」のURLが含まれている場合は、\
+プレイヤーにそのURLをそのまま伝えてください。";
+
 /// 閲覧URLテンプレートのデフォルト値（ローカルで起動した api-server の閲覧API）
 pub const DEFAULT_VIEW_URL_TEMPLATE: &str = "http://localhost:8080/api/views/{token}/status";
 
@@ -176,6 +184,30 @@ impl McpHandlers {
         self
     }
 
+    /// セッションの閲覧URLを取得します（`regenerate` 指定時は再発行）
+    async fn view_url(&self, key: &SessionId, regenerate: bool) -> Result<String, String> {
+        let token = self
+            .session_manager
+            .issue_view_token(key, regenerate)
+            .await
+            .to_str_err()?;
+        Ok(self
+            .view_url_template
+            .replace(VIEW_TOKEN_PLACEHOLDER, token.value()))
+    }
+
+    /// ツール結果の末尾に閲覧URLを付与します
+    ///
+    /// LLMがURL取得用のツールを選ばなくても、プレイヤーがブラウザで状況を確認できるよう
+    /// サーバー側で自動的に付与します。URL取得に失敗してもツール本来の結果は返します。
+    async fn append_view_url(&self, key: &SessionId, mut result: String) -> String {
+        match self.view_url(key, false).await {
+            Ok(url) => result.push_str(&format!("\n\n{}{}", VIEW_URL_LABEL, url)),
+            Err(e) => eprintln!("[Sengoku-MCP] 閲覧URLの取得に失敗しました: {}", e),
+        }
+        result
+    }
+
     /// セッションIDを解決し、対応するゲームコンテキストを取得または作成します。
     async fn get_context(
         &self,
@@ -280,10 +312,13 @@ impl McpHandlers {
             // 状態保存
             self.session_manager.save_session(&key).await.to_str_err()?;
 
-            Ok(format!(
+            let message = format!(
                 "大名「{}」を選択しました。ゲームを初期状態から開始します。",
                 d.name
-            ))
+            );
+            let mut message = self.append_view_url(&key, message).await;
+            message.push_str("\n（このURLをプレイヤーにそのまま伝えてください）");
+            Ok(message)
         } else {
             Err(format!("ID: {} の大名が見つかりません。", daimyo_id))
         }
@@ -295,7 +330,7 @@ impl McpHandlers {
         &self,
         Parameters(SessionParams { session_id }): Parameters<SessionParams>,
     ) -> Result<String, String> {
-        let (_, ctx) = self.get_context(session_id).await?;
+        let (key, ctx) = self.get_context(session_id).await?;
         let player_id = self.get_player_id(&ctx).await?;
         let status = ctx
             .kuni_query_usecase
@@ -334,7 +369,7 @@ impl McpHandlers {
             result.push_str("直ちに battle_execute_defense_turn で防衛戦術を指示してください。\n");
         }
 
-        Ok(result)
+        Ok(self.append_view_url(&key, result).await)
     }
 
     /// 他国の情報を一覧で取得します
@@ -699,7 +734,7 @@ impl McpHandlers {
 
     /// 自国の状況をWebで閲覧するためのURLを発行します
     #[tool(
-        description = "自国の状況をWebアプリ（ブラウザ）で閲覧するためのURLを取得します。URLには推測困難な閲覧トークンが含まれ、セッションIDは含まれません。regenerate=true で再発行すると以前のURLは無効になります。"
+        description = "自国の状況をWebアプリ（ブラウザ）で閲覧するためのURLを取得します。URLは select_daimyo や get_my_status の結果にも自動で含まれます。regenerate=true で再発行すると以前のURLは無効になります（URLが漏れた場合に使用）。"
     )]
     pub async fn get_status_view_url(
         &self,
@@ -709,14 +744,7 @@ impl McpHandlers {
         }): Parameters<ViewUrlParams>,
     ) -> Result<String, String> {
         let key = resolve_session_id(session_id);
-        let token = self
-            .session_manager
-            .issue_view_token(&key, regenerate)
-            .await
-            .to_str_err()?;
-        let url = self
-            .view_url_template
-            .replace(VIEW_TOKEN_PLACEHOLDER, token.value());
+        let url = self.view_url(&key, regenerate).await?;
         Ok(format!(
             "自国の状況は次のURLで閲覧できます（URLを知っている人は誰でも閲覧できます）:\n{}",
             url
@@ -952,6 +980,7 @@ impl ServerHandler for McpHandlers {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = Implementation::new("sengoku-mcp-server", env!("CARGO_PKG_VERSION"));
+        info.instructions = Some(SERVER_INSTRUCTIONS.to_string());
         info
     }
 }

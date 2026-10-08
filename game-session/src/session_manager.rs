@@ -56,21 +56,51 @@ impl SessionManager {
         }
 
         let ctx = if let Some(data) = self.persistence.load(session_id).await? {
+            let has_view_token = data.view_token.is_some();
             let ctx = Arc::new(
                 GameContextFactory::create_from_data(data, self.master_data.clone()).await?,
             );
             ctx.touch().await;
+            if !has_view_token {
+                // 閲覧トークン導入前に保存されたセッションには、ここで発行して保存する
+                self.attach_new_view_token(&ctx, session_id).await?;
+                self.persist(&ctx, session_id).await?;
+            }
             ctx
         } else {
-            // 3. 新規作成
+            // 3. 新規作成（Webアプリから閲覧できるよう、閲覧トークンも同時に発行する）
             let ctx = Arc::new(GameContextFactory::create_initial(self.master_data.clone()).await?);
-            let session_data = ctx.export_session_data(session_id).await?;
-            self.persistence.save(&session_data).await?;
+            self.attach_new_view_token(&ctx, session_id).await?;
+            self.persist(&ctx, session_id).await?;
             ctx
         };
 
         write_guard.insert(session_id.clone(), ctx.clone());
         Ok(ctx)
+    }
+
+    /// コンテキストの現在状態をストレージに保存します
+    async fn persist(
+        &self,
+        ctx: &GameContext,
+        session_id: &SessionId,
+    ) -> Result<(), anyhow::Error> {
+        let data = ctx.export_session_data(session_id).await?;
+        self.persistence.save(&data).await?;
+        Ok(())
+    }
+
+    /// 新しい閲覧トークンを発行して対応表に登録し、コンテキストに設定します（保存は呼び出し側で行う）
+    async fn attach_new_view_token(
+        &self,
+        ctx: &GameContext,
+        session_id: &SessionId,
+    ) -> Result<ViewToken, anyhow::Error> {
+        let token = ViewToken::generate();
+        // 対応表を先に保存し、セッション側から参照される時点で必ず逆引きできるようにする
+        self.view_tokens.register(&token, session_id).await?;
+        *ctx.view_token.lock().await = Some(token.clone());
+        Ok(token)
     }
 
     /// セッションの現在状態をストレージに保存します
@@ -81,37 +111,33 @@ impl SessionManager {
         };
 
         if let Some(ctx) = ctx {
-            let data = ctx.export_session_data(session_id).await?;
-            self.persistence.save(&data).await?;
+            self.persist(&ctx, session_id).await?;
         }
         Ok(())
     }
 
-    /// セッションの閲覧トークンを取得します。未発行または `regenerate` 指定時は新規発行します。
+    /// セッションの閲覧トークンを取得します。`regenerate` 指定時は再発行します。
     ///
-    /// 再発行した場合、以前のトークンは失効します。
+    /// 閲覧トークンはセッション作成時に自動発行されます。再発行した場合、以前のトークンは失効します。
     pub async fn issue_view_token(
         &self,
         session_id: &SessionId,
         regenerate: bool,
     ) -> Result<ViewToken, anyhow::Error> {
         let ctx = self.get_or_create(session_id).await?;
-        // 同一セッションで同時に発行されないよう、発行処理中はトークンのロックを保持する
-        let mut current = ctx.view_token.lock().await;
-        if let (Some(token), false) = (current.as_ref(), regenerate) {
-            return Ok(token.clone());
+        let current = ctx.view_token.lock().await.clone();
+        match (current, regenerate) {
+            (Some(token), false) => Ok(token),
+            (old_token, _) => {
+                // 1. 新トークンを登録・保存してから、2. 旧トークンを失効させる
+                let new_token = self.attach_new_view_token(&ctx, session_id).await?;
+                self.persist(&ctx, session_id).await?;
+                if let Some(old) = old_token {
+                    self.view_tokens.revoke(&old).await?;
+                }
+                Ok(new_token)
+            }
         }
-
-        // 1. 新しいトークンの対応表を先に保存し、2. セッション側に反映してから、3. 旧トークンを失効させる
-        let new_token = ViewToken::generate();
-        self.view_tokens.register(&new_token, session_id).await?;
-        let old_token = current.replace(new_token.clone());
-        drop(current);
-        self.save_session(session_id).await?;
-        if let Some(old) = old_token {
-            self.view_tokens.revoke(&old).await?;
-        }
-        Ok(new_token)
     }
 
     /// 期限切れのセッションをメモリおよびストレージから削除します

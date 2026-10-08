@@ -246,14 +246,14 @@ async fn test_path_traversal_safety() {
     assert!(res.is_ok());
 
     // 保存先ディレクトリ外にファイルが作られていないこと（storage_dir内にサニタイズされたファイル名で作成されること）
-    let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
-    assert_eq!(entries.len(), 1);
-    let filename = entries[0]
-        .as_ref()
+    // ※ 閲覧トークンの対応表は storage_dir 内の view_tokens/ サブディレクトリに保存される
+    let entries: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
-        .file_name()
-        .into_string()
-        .unwrap();
+        .map(|e| e.unwrap())
+        .filter(|e| e.file_type().unwrap().is_file())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    let filename = entries[0].file_name().into_string().unwrap();
     assert!(!filename.contains('/'));
     assert!(!filename.contains('\\'));
     assert!(filename.ends_with(".json"));

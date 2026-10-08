@@ -192,7 +192,7 @@ cargo run --release -p mcp-server
 | 状況把握 | `get_game_status` | フェーズ・ターン・季節・勝者を取得 |
 | 状況把握 | `get_other_countries_info` | 他国の情報を取得（コマンド権を1消費） |
 | 状況把握 | `get_neighbor_info` | 指定国の隣接国（攻撃・輸送先候補）を取得 |
-| 状況把握 | `get_status_view_url` | 自国の状況をWebで見るためのURL（閲覧トークン付き）を発行。`regenerate=true` で再発行（旧URLは無効化） |
+| 状況把握 | `get_status_view_url` | 閲覧URLを取得（通常は `select_daimyo` / `get_my_status` の結果に自動で付く）。`regenerate=true` で再発行（旧URLは無効化） |
 | 内政 | `domestic_rice_sell` / `domestic_rice_buy` | 米売り / 米買い |
 | 内政 | `domestic_recruit` | 兵の徴募 |
 | 内政 | `domestic_develop_land` | 開墾（石高アップ） |
@@ -284,13 +284,16 @@ HTTPサーバーです。リクエストのたびに保存先から最新の状�
 セッションIDはMCP内部で扱う値（Chat ID 等）なので、WebアプリはセッションIDを知らない前提で
 **閲覧トークン**を使います。
 
-1. プレイヤーが LLM に「状況をブラウザで見たい」と頼むと、LLM が MCPツール `get_status_view_url` を呼び出します。
-2. MCPサーバーは推測困難なトークン（128bit乱数）を発行し、`トークン → セッションID` の対応を保存先に記録して、
-   トークン入りURLを返します。URLにセッションIDは含まれません。
-3. Webアプリはそのトークンで `GET /api/views/{token}/status` を呼び出します。
+1. セッション作成時に、MCPサーバーが推測困難なトークン（128bit乱数）を自動発行し、
+   `トークン → セッションID` の対応を保存先に記録します。
+2. `select_daimyo`（ゲーム開始）と `get_my_status` の結果の末尾に、サーバーが自動で
+   `📺 ブラウザで自国の状況を見る: <URL>` を付けます。LLMはURL取得用のツールを選ぶ必要がなく、
+   結果をそのままプレイヤーへ伝えるだけです（サーバーの instructions でも伝えるよう指示しています）。
+3. Webアプリはそのトークンで `GET /api/views/{token}/status` を呼び出します。URLにセッションIDは含まれません。
 
 トークンはセッションごとに1つで、セッションと一緒に永続化されます（MCPサーバーを再起動しても同じURL）。
-URLが漏れた場合は `regenerate=true` で再発行すると、以前のURLは 404 になります。
+トークン導入前に保存されたセッションには、次回読み込み時に発行されます。
+URLが漏れた場合は `get_status_view_url` を `regenerate=true` で呼ぶと再発行され、以前のURLは 404 になります。
 
 MCPツールが返すURLは `SENGOKU_VIEW_URL_TEMPLATE`（MCPサーバー側の環境変数）で変更できます。
 `{token}` がトークンに置換されます。

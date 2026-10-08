@@ -219,17 +219,26 @@ async fn test_view_url_flow() {
     let (handlers, router) = build_servers(file_storage(&dir));
     let session_id = "chat-12345";
 
-    handlers
+    // MCP: 大名を選択すると、LLMがツールを選ばなくても結果に閲覧URLが自動で付く
+    let message = handlers
         .select_daimyo(Parameters(SelectDaimyoParams {
             daimyo_id: 7,
             session_id: Some(session_id.to_string()),
         }))
         .await
         .unwrap();
-
-    // MCP: 閲覧URLを発行（再取得しても同じURL）
-    let path = issue_view_path(&handlers, session_id, false).await;
+    let url = message
+        .split_whitespace()
+        .find(|w| w.starts_with("http://"))
+        .expect("大名選択の結果に閲覧URLが含まれること");
+    let path = url
+        .strip_prefix("http://localhost:8080")
+        .unwrap()
+        .to_string();
     assert!(path.starts_with("/api/views/") && path.ends_with("/status"));
+    assert!(!url.contains(session_id));
+
+    // 明示的な取得ツールでも同じURLが返る
     assert_eq!(issue_view_path(&handlers, session_id, false).await, path);
 
     // REST: セッションIDを知らなくてもトークンだけで自国の状況を取得できる
