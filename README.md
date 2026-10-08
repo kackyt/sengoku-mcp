@@ -243,6 +243,8 @@ AIがMCPツールを自律的に呼び出し、状況分析からコマンド実
 
 ## セッションの保存先（ファイル / Google Cloud Storage）
 
+> mcp-server・api-server・web を連携させる手順と、すべての環境変数の一覧は [docs/integration.md](docs/integration.md) を参照してください。
+
 ゲーム状態はセッションごとに JSON として保存されます。MCPサーバーは操作のたびに保存し、
 REST APIサーバーは同じ保存先を読み込むことで状態を共有します。保存先は環境変数で切り替えます。
 

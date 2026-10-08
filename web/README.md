@@ -5,6 +5,8 @@ sengoku-mcp の「自国の状況・年と季節・勢力図」を表示する�
 
 ## 使い方
 
+mcp-server・api-server との連携手順と環境変数の一覧は [docs/integration.md](../docs/integration.md) を参照してください。
+
 ```bash
 # 1. API サーバーを起動（MCP サーバーと同じ保存先を指定する）
 cargo run -p api-server
