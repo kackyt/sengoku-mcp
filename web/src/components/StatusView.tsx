@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import type { KuniStatus, MyStatus } from "../api/client";
 import { daimyoColor } from "../daimyoColors";
+import { turnToDate } from "../gameDate";
 import { buildTerritories, countByOwner } from "../territory";
 import { MapPanel } from "./MapPanel";
 
 const numberFormat = new Intl.NumberFormat("ja-JP");
+const fmt = (n: number) => numberFormat.format(n);
 
 /** 自領の資源を合計する（表示用の集計のみ） */
 function sumBy(kunis: KuniStatus[], key: "hei" | "kin" | "kome"): number {
@@ -19,14 +21,30 @@ interface LegendEntry {
   mine: boolean;
 }
 
+/** 自領カードに並べる項目（1文字の見出しと値） */
+const KUNI_STATS: ReadonlyArray<{ key: keyof KuniStatus; label: string; title: string }> = [
+  { key: "hei", label: "兵", title: "兵" },
+  { key: "kin", label: "金", title: "金" },
+  { key: "kome", label: "米", title: "米" },
+  { key: "jinko", label: "人", title: "人口" },
+  { key: "kokudaka", label: "石", title: "石高" },
+  { key: "machi", label: "町", title: "町" },
+];
+
 interface Props {
   status: MyStatus;
 }
 
-/** 自国の状況・ターン数・勢力図を表示する（説明文は置かず、色と数字で示す） */
+/**
+ * 自国の状況・年と季節・勢力図を表示する
+ *
+ * ブラウザの横半分ほどのサイドバーで使う想定。上部の1行に大名・年月・合計を詰め、
+ * 地図は画面の高さに合わせ、自領は小さなカードで地図の横（狭い場合は下）に並べる。
+ */
 export function StatusView({ status }: Props) {
   const [highlightedOwnerId, setHighlightedOwnerId] = useState<number | null>(null);
   const territories = useMemo(() => buildTerritories(status), [status]);
+  const { year, season } = turnToDate(status.turn);
 
   const legend = useMemo<LegendEntry[]>(() => {
     const counts = countByOwner(territories.values());
@@ -41,7 +59,7 @@ export function StatusView({ status }: Props) {
       .sort((a, b) => Number(b.mine) - Number(a.mine) || b.count - a.count || a.id - b.id);
   }, [territories, status.daimyo.id]);
 
-  const kpis = [
+  const totals = [
     { label: "領地", value: status.my_kunis.length },
     { label: "兵", value: sumBy(status.my_kunis, "hei") },
     { label: "金", value: sumBy(status.my_kunis, "kin") },
@@ -50,93 +68,84 @@ export function StatusView({ status }: Props) {
 
   return (
     <main className="status">
-      <header className="status-header">
-        <p className="eyebrow">
+      <header className="topbar">
+        <span className="daimyo">
           <span
             className="swatch"
             style={{ background: daimyoColor(status.daimyo.id) }}
             aria-hidden="true"
           />
           {status.daimyo.name}
-        </p>
-        <h1 className="hero">
-          第<span className="hero-number">{status.turn}</span>ターン
+        </span>
+        <h1 className="date" aria-label={`${year}年${season}`}>
+          {year}
+          <small>年</small>
+          {season}
         </h1>
+        <dl className="totals">
+          {totals.map((t) => (
+            <div key={t.label}>
+              <dt>{t.label}</dt>
+              <dd>{fmt(t.value)}</dd>
+            </div>
+          ))}
+        </dl>
       </header>
 
-      <section className="kpis" aria-label="自国の合計">
-        {kpis.map((kpi) => (
-          <div className="kpi" key={kpi.label}>
-            <span className="kpi-label">{kpi.label}</span>
-            <span className="kpi-value">{numberFormat.format(kpi.value)}</span>
-          </div>
-        ))}
-      </section>
-
-      <div className="layout">
-        <section className="card map-card" aria-label="勢力図">
+      <div className="content">
+        <section className="map-card" aria-label="勢力図">
           <MapPanel
             territories={territories}
             highlightedOwnerId={highlightedOwnerId}
             onHighlightOwner={setHighlightedOwnerId}
+            overlay={
+              <ul className="legend" aria-label="大名">
+                {legend.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className={
+                      [entry.mine ? "mine" : "", entry.id === highlightedOwnerId ? "highlighted" : ""]
+                        .join(" ")
+                        .trim() || undefined
+                    }
+                    onPointerEnter={() => setHighlightedOwnerId(entry.id)}
+                    onPointerLeave={() => setHighlightedOwnerId(null)}
+                  >
+                    <span
+                      className="swatch"
+                      style={{ background: daimyoColor(entry.id) }}
+                      aria-hidden="true"
+                    />
+                    {entry.name}
+                    <span className="legend-count">{entry.count}</span>
+                  </li>
+                ))}
+              </ul>
+            }
           />
-          <ul className="legend" aria-label="大名">
-            {legend.map((entry) => (
-              <li
-                key={entry.id}
-                className={[
-                  entry.mine ? "mine" : "",
-                  entry.id === highlightedOwnerId ? "highlighted" : "",
-                ]
-                  .join(" ")
-                  .trim() || undefined}
-                onPointerEnter={() => setHighlightedOwnerId(entry.id)}
-                onPointerLeave={() => setHighlightedOwnerId(null)}
-              >
-                <span
-                  className="swatch"
-                  style={{ background: daimyoColor(entry.id) }}
-                  aria-hidden="true"
-                />
-                {entry.name}
-                <span className="legend-count">{entry.count}</span>
-              </li>
-            ))}
-          </ul>
         </section>
 
-        <section className="card" aria-label="自領">
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th scope="col">国</th>
-                  <th scope="col">兵</th>
-                  <th scope="col">金</th>
-                  <th scope="col">米</th>
-                  <th scope="col">人口</th>
-                  <th scope="col">石高</th>
-                  <th scope="col">町</th>
-                  <th scope="col">忠誠</th>
-                </tr>
-              </thead>
-              <tbody>
-                {status.my_kunis.map((k) => (
-                  <tr key={k.id}>
-                    <th scope="row">{k.name}</th>
-                    <td>{numberFormat.format(k.hei)}</td>
-                    <td>{numberFormat.format(k.kin)}</td>
-                    <td>{numberFormat.format(k.kome)}</td>
-                    <td>{numberFormat.format(k.jinko)}</td>
-                    <td>{numberFormat.format(k.kokudaka)}</td>
-                    <td>{numberFormat.format(k.machi)}</td>
-                    <td>{k.tyu}</td>
-                  </tr>
+        <ul className="kuni-cards" aria-label="自領">
+          {status.my_kunis.map((k) => (
+            <li key={k.id} className="kuni-card">
+              <div className="kuni-card-head">
+                <strong>{k.name}</strong>
+                <span title="忠誠">
+                  <small>忠</small>
+                  {k.tyu}
+                </span>
+              </div>
+              <dl>
+                {KUNI_STATS.map((stat) => (
+                  <div key={stat.key} title={stat.title}>
+                    <dt>{stat.label}</dt>
+                    <dd>{fmt(k[stat.key] as number)}</dd>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+              </dl>
+            </li>
+          ))}
+        </ul>
       </div>
     </main>
   );

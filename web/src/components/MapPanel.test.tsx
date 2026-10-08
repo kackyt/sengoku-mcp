@@ -64,9 +64,9 @@ describe("MapPanel", () => {
   });
 
   it("画面の高さが低いと地図は高さで縮むため、実際の表示幅で判定する", () => {
-    // 幅 600px でも高さ 600px の画面では、縦長の地図は約 410px 幅でしか表示できない
+    // 幅 600px でも高さ 540px の画面では、縦長の地図は約 420px 幅でしか表示できない
     expect(effectiveMapWidth(600, 1000)).toBe(600);
-    expect(effectiveMapWidth(600, 600)).toBeLessThan(460);
+    expect(effectiveMapWidth(600, 540)).toBeLessThan(460);
   });
 });
 

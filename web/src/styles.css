@@ -179,97 +179,188 @@ button.secondary {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- 状況画面 --- */
+/* --- 状況画面（サイドバー想定：ブラウザの横半分ほど） --- */
 
 .status {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1rem 16px 2rem;
+  /* 上部バーと余白の高さ。地図の高さの上限は「画面の高さ - この値」（MapPanel.tsx の CHROME_HEIGHT と揃える） */
+  --chrome-height: 64px;
+  container-type: inline-size;
+  padding: 8px 12px 12px;
   display: grid;
-  gap: 1rem;
+  gap: 8px;
 }
 
-.status-header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.eyebrow {
-  margin: 0;
+.topbar {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 1.25rem;
+  gap: 4px 14px;
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+
+.daimyo {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-weight: 700;
+  font-size: 1.05rem;
 }
 
-.eyebrow .swatch {
-  width: 1rem;
-  height: 1rem;
+.daimyo .swatch {
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
-.hero {
-  font-size: 1.25rem;
+.date {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.date small {
+  font-size: 0.75em;
   font-weight: 600;
+  margin: 0 0.15em;
 }
 
-.hero-number {
-  font-size: 2.75rem;
+/* 合計（領地・兵・金・米）：見出しは小さく、値を太く */
+.totals {
+  margin: 0 0 0 auto;
+  display: flex;
+  gap: 12px;
+}
+
+.totals div {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.totals dt {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.totals dd {
+  margin: 0;
   font-weight: 700;
-  margin: 0 0.1em;
+  font-variant-numeric: tabular-nums;
 }
 
-.kpis {
+/*
+ * 地図と自領カード
+ * - 狭い場合：地図の下に自領カードを横スクロールの1行で並べ、その分だけ地図の高さを詰める
+ * - 横に余裕がある場合：地図の右に自領カードを縦に並べる
+ * --map-reserve は地図の高さの上限から差し引く高さ（MapPanel.tsx でも参照する）
+ */
+.content {
+  --map-reserve: 100px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.kpi {
+.kuni-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 2px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.kuni-cards .kuni-card {
+  flex: 0 0 200px;
+}
+
+@container (min-width: 760px) {
+  .content {
+    --map-reserve: 0px;
+    grid-template-columns: minmax(0, 1fr) 232px;
+    align-items: start;
+  }
+
+  .kuni-cards {
+    flex-direction: column;
+    overflow-x: visible;
+    overflow-y: auto;
+    max-height: calc(100dvh - var(--chrome-height));
+  }
+
+  .kuni-cards .kuni-card {
+    flex: none;
+  }
+}
+
+.kuni-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.kuni-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.kuni-card-head small,
+.kuni-card dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-right: 2px;
+}
+
+.kuni-card-head span {
+  font-variant-numeric: tabular-nums;
+}
+
+.kuni-card dl {
+  margin: 2px 0 0;
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 8px;
+  font-size: 0.9rem;
 }
 
-.kpi-label {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
+.kuni-card dl div {
+  display: flex;
+  align-items: baseline;
 }
 
-.kpi-value {
-  font-size: 1.6rem;
-  font-weight: 700;
+.kuni-card dd {
+  margin: 0 0 0 auto;
+  font-variant-numeric: tabular-nums;
 }
 
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-/* 凡例：大名の色と領地数（自国を先頭に太字） */
+/* 凡例：地図右下の海の上に重ねる（大名の色と領地数。自国を先頭に太字） */
 .legend {
   list-style: none;
-  margin: 0.75rem 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  justify-content: flex-end;
+  gap: 3px;
 }
 
 .legend li {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.55rem;
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.legend .swatch {
+  width: 0.65rem;
+  height: 0.65rem;
 }
 
 .legend li.mine {
@@ -278,7 +369,7 @@ button.secondary {
 }
 
 .legend li.highlighted {
-  background: var(--page);
+  border-color: var(--text-primary);
 }
 
 .legend-count {
@@ -294,11 +385,20 @@ button.secondary {
   border-radius: 8px;
 }
 
+.map-card {
+  min-width: 0;
+}
+
+/* 切り替えボタン（左上）と凡例（右下）を地図の上に重ねるための基準 */
+.map-panel {
+  position: relative;
+}
+
 .map svg {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 78vh;
+  max-height: calc(100dvh - var(--chrome-height, 64px) - var(--map-reserve, 0px));
 }
 
 /*
@@ -409,9 +509,25 @@ button.secondary {
 /* --- 表示切り替え・接続図 --- */
 
 .view-switch {
+  position: absolute;
+  top: 6px;
+  left: 6px;
   display: flex;
-  gap: 0.25rem;
-  margin-bottom: 0.5rem;
+  gap: 2px;
+}
+
+.view-switch button {
+  background: var(--surface);
+  padding: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.map-overlay {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  /* 右下の海の上に収まる幅に抑える */
+  max-width: min(46%, 280px);
 }
 
 .view-switch button[aria-pressed="true"] {
@@ -423,14 +539,13 @@ button.secondary {
 .schematic {
   background: var(--sea);
   border-radius: 8px;
-  padding: 0.5rem;
 }
 
 .schematic svg {
   display: block;
   width: 100%;
-  max-width: 420px;
   height: auto;
+  max-height: calc(100dvh - var(--chrome-height, 64px) - var(--map-reserve, 0px));
   margin: 0 auto;
 }
 
@@ -493,55 +608,20 @@ button.secondary {
   stroke-width: 3;
 }
 
+/* 選択中の国の支配大名：接続図の左上（切り替えボタンの下）の空き領域に重ねる */
 .schematic-detail {
-  margin: 0.5rem 0 0;
+  position: absolute;
+  top: 40px;
+  left: 6px;
+  margin: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-}
-
-/* --- 表 --- */
-
-.table-scroll {
-  overflow-x: auto;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-th,
-td {
-  padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid var(--gridline);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-thead th {
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-th[scope="row"],
-thead th:first-child {
-  text-align: left;
-}
-
-/* --- 狭い画面（スマートフォン） --- */
-
-@media (max-width: 860px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  gap: 0.35rem;
+  padding: 0.1rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
 }
 
 /* とても狭い画面では余白を詰め、図をできるだけ大きく表示する */
@@ -550,7 +630,7 @@ thead th:first-child {
     padding: 0.75rem;
   }
 
-  .schematic {
-    padding: 0.25rem;
+  .totals {
+    margin-left: 0;
   }
 }

@@ -48,12 +48,19 @@ describe("App", () => {
     expect(window.location.search).toBe(`?token=${TOKEN}`);
   });
 
-  it("ターン数・自領の状況・大名ごとに色分けした勢力図を表示する", async () => {
+  it("年と季節・自領の状況・大名ごとに色分けした勢力図を表示する", async () => {
     window.history.replaceState(null, "", `/?token=${TOKEN}`);
     mockFetch({ [`GET /api/views/${TOKEN}/status`]: () => jsonResponse(200, sampleStatus) });
     const { container } = render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "第3ターン" })).toBeInTheDocument();
+    // 第3ターン＝1560年秋
+    expect(await screen.findByRole("heading", { name: "1560年秋" })).toBeInTheDocument();
+    // 自領は国ごとの小さなカードで表示する
+    const cards = within(screen.getByRole("list", { name: "自領" }));
+    expect(cards.getAllByRole("listitem").map((li) => li.querySelector("strong")?.textContent)).toEqual([
+      "三河",
+      "尾張",
+    ]);
 
     // 地図: 12国を支配大名の色で塗る（上杉の越州・甲信は同じ色、織田の三河・尾張は織田の色）
     const fillOf = (kuniId: number) =>
