@@ -8,7 +8,7 @@ use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
 use engine::domain::model::action_log::ActionLogCategory;
 use engine::domain::model::session::SessionData;
-use engine::domain::model::value_objects::{DaimyoId, SessionId};
+use engine::domain::model::value_objects::{DaimyoId, SessionId, ViewToken};
 use engine::domain::repository::action_log_repository::ActionLogRepository;
 use engine::domain::repository::battle_repository::BattleRepository;
 use engine::domain::repository::daimyo_repository::DaimyoRepository;
@@ -67,6 +67,8 @@ pub struct GameContext {
 
     pub selected_daimyo_id: Arc<Mutex<Option<DaimyoId>>>,
     pub last_accessed_at: Arc<Mutex<DateTime<Utc>>>,
+    /// 外部クライアント向けに発行済みの閲覧トークン
+    pub view_token: Arc<Mutex<Option<ViewToken>>>,
 }
 
 impl fmt::Debug for GameContext {
@@ -74,6 +76,7 @@ impl fmt::Debug for GameContext {
         f.debug_struct("GameContext")
             .field("selected_daimyo_id", &"<Mutex<Option<DaimyoId>>>")
             .field("last_accessed_at", &"<Mutex<DateTime<Utc>>>")
+            .field("view_token", &"<Mutex<Option<ViewToken>>>")
             .finish()
     }
 }
@@ -109,6 +112,7 @@ impl GameContext {
             action_logs,
         );
         data.last_accessed_at = *self.last_accessed_at.lock().await;
+        data.view_token = self.view_token.lock().await.clone();
         Ok(data)
     }
 }
@@ -221,6 +225,7 @@ impl GameContextFactory {
             daimyo_query_usecase: usecases.daimyo_query,
             selected_daimyo_id: Arc::new(Mutex::new(None)),
             last_accessed_at: Arc::new(Mutex::new(Utc::now())),
+            view_token: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -283,6 +288,7 @@ impl GameContextFactory {
             daimyo_query_usecase: usecases.daimyo_query,
             selected_daimyo_id: Arc::new(Mutex::new(data.selected_daimyo_id)),
             last_accessed_at: Arc::new(Mutex::new(data.last_accessed_at)),
+            view_token: Arc::new(Mutex::new(data.view_token)),
         })
     }
 }

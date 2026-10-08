@@ -2,16 +2,21 @@ use crate::application::dto::{
     DaimyoDto, DefenseAlertDto, GameProgressDto, KuniStatusDto, MyStatusDto, ResourceTotalsDto,
 };
 use engine::application::dto::player_status_dto::KuniStatusDTO;
-use engine::domain::model::value_objects::{DisplayAmount, SessionId};
+use engine::domain::model::value_objects::{DisplayAmount, SessionId, ViewToken};
 use engine::domain::repository::session_repository::SessionRepository;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use game_session::GameContextFactory;
 use infrastructure::master_data::MasterDataLoader;
+use infrastructure::persistence::SessionStorage;
 use std::sync::Arc;
 use thiserror::Error;
 
 /// 自国の状況照会で発生するエラー
 #[derive(Debug, Error)]
 pub enum StatusQueryError {
+    /// 閲覧トークンが不正な形式、未発行、または失効済み
+    #[error("閲覧URLが無効です（再発行された可能性があります）")]
+    ViewTokenNotFound,
     /// 指定されたセッションがストレージに存在しない
     #[error("セッション '{0}' が見つかりません")]
     SessionNotFound(SessionId),
@@ -30,14 +35,40 @@ pub enum StatusQueryError {
 /// セッションの新規作成や保存は行いません。
 pub struct StatusQueryService {
     repository: Arc<dyn SessionRepository>,
+    view_tokens: Arc<dyn ViewTokenRepository>,
     master_data: Arc<MasterDataLoader>,
 }
 
 impl StatusQueryService {
-    pub fn new(repository: Arc<dyn SessionRepository>, master_data: Arc<MasterDataLoader>) -> Self {
+    pub fn new(storage: SessionStorage, master_data: Arc<MasterDataLoader>) -> Self {
         Self {
-            repository,
+            repository: storage.sessions,
+            view_tokens: storage.view_tokens,
             master_data,
+        }
+    }
+
+    /// 閲覧トークンから対応するセッションの自国の状況を取得します
+    ///
+    /// WebアプリはセッションIDを知らなくても、MCPの `get_status_view_url` で発行された
+    /// URL（トークン）だけで状況を取得できます。
+    pub async fn get_my_status_by_token(
+        &self,
+        token: &str,
+    ) -> Result<MyStatusDto, StatusQueryError> {
+        // 形式外のトークンは保存先へ問い合わせずに拒否する
+        let token = ViewToken::parse(token).ok_or(StatusQueryError::ViewTokenNotFound)?;
+        let session_id = self
+            .view_tokens
+            .find_session_id(&token)
+            .await
+            .map_err(anyhow::Error::from)?
+            .ok_or(StatusQueryError::ViewTokenNotFound)?;
+
+        // セッション期限切れ等で本体が消えている場合もトークン無効として扱い、セッションIDは返さない
+        match self.get_my_status(&session_id).await {
+            Err(StatusQueryError::SessionNotFound(_)) => Err(StatusQueryError::ViewTokenNotFound),
+            other => other,
         }
     }
 
@@ -82,7 +113,6 @@ impl StatusQueryService {
             .map(|d| d.name.0.clone());
 
         Ok(MyStatusDto {
-            session_id: session_id.value().to_string(),
             last_accessed_at,
             daimyo: DaimyoDto {
                 id: daimyo.id,

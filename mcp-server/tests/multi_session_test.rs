@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use engine::domain::model::value_objects::SessionId;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::{SessionData, SessionPersistenceManager};
+use infrastructure::persistence::{SessionData, SessionPersistenceManager, SessionStorage};
 use mcp_server::application::SessionManager;
 use mcp_server::presentation::handlers::{
     DomesticParams, McpHandlers, SelectDaimyoParams, SessionParams,
@@ -15,7 +15,10 @@ async fn test_backward_compatibility_default_session() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
     let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = Arc::new(SessionManager::new(
+        SessionStorage::from_backend(persistence),
+        master_data,
+    ));
     let handlers = McpHandlers::new(session_manager);
 
     // 1. session_id: None で大名一覧取得
@@ -48,7 +51,10 @@ async fn test_multi_session_isolation() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
     let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = Arc::new(SessionManager::new(
+        SessionStorage::from_backend(persistence),
+        master_data,
+    ));
     let handlers = McpHandlers::new(session_manager);
 
     // セッションA (織田 ID: 7)
@@ -109,7 +115,10 @@ async fn test_session_persistence_and_restoration() {
     {
         let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
         let master_data = Arc::new(MasterDataLoader);
-        let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+        let session_manager = Arc::new(SessionManager::new(
+            SessionStorage::from_backend(persistence),
+            master_data,
+        ));
         let handlers = McpHandlers::new(session_manager);
 
         handlers
@@ -143,7 +152,10 @@ async fn test_session_persistence_and_restoration() {
     {
         let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
         let master_data = Arc::new(MasterDataLoader);
-        let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+        let session_manager = Arc::new(SessionManager::new(
+            SessionStorage::from_backend(persistence),
+            master_data,
+        ));
         let handlers = McpHandlers::new(session_manager);
 
         // 状態が復元され、織田が選択された状態であること
@@ -162,7 +174,10 @@ async fn test_cleanup_expired_sessions() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
     let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence.clone(), master_data));
+    let session_manager = Arc::new(SessionManager::new(
+        SessionStorage::from_backend(persistence.clone()),
+        master_data,
+    ));
 
     // 1. 8日前のセッションを作成してファイル保存
     let mut old_data = SessionData::new(
@@ -212,7 +227,10 @@ async fn test_path_traversal_safety() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
     let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence.clone(), master_data));
+    let session_manager = Arc::new(SessionManager::new(
+        SessionStorage::from_backend(persistence.clone()),
+        master_data,
+    ));
     let handlers = McpHandlers::new(session_manager);
 
     // パストラバーサル文字を含むセッションID
@@ -246,7 +264,10 @@ async fn test_concurrent_sessions() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
     let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = Arc::new(SessionManager::new(
+        SessionStorage::from_backend(persistence),
+        master_data,
+    ));
     let handlers = Arc::new(McpHandlers::new(session_manager));
 
     let mut handles = Vec::new();

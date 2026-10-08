@@ -21,9 +21,8 @@ fn resolve_listen_addr() -> String {
 async fn main() -> anyhow::Result<()> {
     // MCPサーバーと共通の環境変数（SENGOKU_STORAGE 等）から保存先を解決する
     let storage = SessionStorageConfig::from_env()?;
-    let repository = storage.build()?;
     let service = Arc::new(StatusQueryService::new(
-        repository,
+        storage.build()?,
         Arc::new(MasterDataLoader),
     ));
 

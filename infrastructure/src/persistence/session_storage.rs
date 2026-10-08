@@ -3,6 +3,7 @@ use crate::persistence::object_store_session_repository::{
 };
 use crate::persistence::session_persistence::SessionPersistenceManager;
 use engine::domain::repository::session_repository::SessionRepository;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
@@ -25,6 +26,28 @@ pub enum SessionStorageError {
     MissingBucket,
     #[error(transparent)]
     ObjectStore(#[from] ObjectStoreSessionError),
+}
+
+/// 同一の保存先を参照するリポジトリ群
+#[derive(Clone)]
+pub struct SessionStorage {
+    /// セッションデータのリポジトリ
+    pub sessions: Arc<dyn SessionRepository>,
+    /// 閲覧トークン（トークン → セッションID）のリポジトリ
+    pub view_tokens: Arc<dyn ViewTokenRepository>,
+}
+
+impl SessionStorage {
+    /// 両方のリポジトリを実装する保存先からリポジトリ群を構築します
+    pub fn from_backend<B>(backend: Arc<B>) -> Self
+    where
+        B: SessionRepository + ViewTokenRepository + 'static,
+    {
+        Self {
+            sessions: backend.clone(),
+            view_tokens: backend,
+        }
+    }
 }
 
 /// セッションデータの保存先設定
@@ -72,13 +95,15 @@ impl SessionStorageConfig {
         }
     }
 
-    /// 設定に対応するセッションリポジトリを構築します
-    pub fn build(&self) -> Result<Arc<dyn SessionRepository>, SessionStorageError> {
+    /// 設定に対応するリポジトリ群を構築します
+    pub fn build(&self) -> Result<SessionStorage, SessionStorageError> {
         match self {
-            Self::File { dir } => Ok(Arc::new(SessionPersistenceManager::new(dir.clone()))),
-            Self::Gcs { bucket, prefix } => {
-                Ok(Arc::new(ObjectStoreSessionRepository::gcs(bucket, prefix)?))
-            }
+            Self::File { dir } => Ok(SessionStorage::from_backend(Arc::new(
+                SessionPersistenceManager::new(dir.clone()),
+            ))),
+            Self::Gcs { bucket, prefix } => Ok(SessionStorage::from_backend(Arc::new(
+                ObjectStoreSessionRepository::gcs(bucket, prefix)?,
+            ))),
         }
     }
 

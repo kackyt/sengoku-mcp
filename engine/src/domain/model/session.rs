@@ -3,7 +3,7 @@ use crate::domain::model::battle::WarStatus;
 use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::game_state::GameState;
 use crate::domain::model::kuni::Kuni;
-use crate::domain::model::value_objects::{DaimyoId, SessionId};
+use crate::domain::model::value_objects::{DaimyoId, SessionId, ViewToken};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +28,9 @@ pub struct SessionData {
     pub battles: Vec<WarStatus>,
     /// 行動ログ
     pub action_logs: Vec<ActionLogEntry>,
+    /// 外部クライアント向けに発行済みの閲覧トークン（未発行の場合は `None`）
+    #[serde(default)]
+    pub view_token: Option<ViewToken>,
 }
 
 impl SessionData {
@@ -52,6 +55,7 @@ impl SessionData {
             daimyos,
             battles,
             action_logs,
+            view_token: None,
         }
     }
 

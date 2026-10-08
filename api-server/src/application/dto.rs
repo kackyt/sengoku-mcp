@@ -4,8 +4,6 @@ use serde::Serialize;
 /// 自国の状況（REST API のレスポンス本体）
 #[derive(Debug, Clone, Serialize)]
 pub struct MyStatusDto {
-    /// セッションID
-    pub session_id: String,
     /// セッションの最終更新日時（MCP側で最後に保存された時刻）
     pub last_accessed_at: DateTime<Utc>,
     /// プレイヤーが選択している大名

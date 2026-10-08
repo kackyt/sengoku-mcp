@@ -192,6 +192,7 @@ cargo run --release -p mcp-server
 | 状況把握 | `get_game_status` | フェーズ・ターン・季節・勝者を取得 |
 | 状況把握 | `get_other_countries_info` | 他国の情報を取得（コマンド権を1消費） |
 | 状況把握 | `get_neighbor_info` | 指定国の隣接国（攻撃・輸送先候補）を取得 |
+| 状況把握 | `get_status_view_url` | 自国の状況をWebで見るためのURL（閲覧トークン付き）を発行。`regenerate=true` で再発行（旧URLは無効化） |
 | 内政 | `domestic_rice_sell` / `domestic_rice_buy` | 米売り / 米買い |
 | 内政 | `domestic_recruit` | 兵の徴募 |
 | 内政 | `domestic_develop_land` | 開墾（石高アップ） |
@@ -251,6 +252,7 @@ REST APIサーバーは同じ保存先を読み込むことで状態を共有し
 | `SENGOKU_GCS_PREFIX` | `gcs` のオブジェクトキーのプレフィックス | `sessions` |
 
 `gcs` の場合、`gs://<バケット>/<プレフィックス>/<セッションID>.json` に保存されます。
+閲覧トークンの対応表は同じ保存先の `view_tokens/<トークン>.json` に保存されます（期限切れクリーンアップの対象外）。
 認証情報は次の順で解決されます。
 
 - `GOOGLE_SERVICE_ACCOUNT`（サービスアカウントキーのファイルパス）または
@@ -277,6 +279,30 @@ MCPクライアントから起動する場合は、`.mcp.json` の `env` に同�
 `api-server` は MCPサーバーと同じ保存先を読み込み、自国の状況を JSON で返す読み取り専用の
 HTTPサーバーです。リクエストのたびに保存先から最新の状態を読み込むため、MCPで進めた内容が即座に反映されます。
 
+### Webアプリからの参照方法（閲覧トークン）
+
+セッションIDはMCP内部で扱う値（Chat ID 等）なので、WebアプリはセッションIDを知らない前提で
+**閲覧トークン**を使います。
+
+1. プレイヤーが LLM に「状況をブラウザで見たい」と頼むと、LLM が MCPツール `get_status_view_url` を呼び出します。
+2. MCPサーバーは推測困難なトークン（128bit乱数）を発行し、`トークン → セッションID` の対応を保存先に記録して、
+   トークン入りURLを返します。URLにセッションIDは含まれません。
+3. Webアプリはそのトークンで `GET /api/views/{token}/status` を呼び出します。
+
+トークンはセッションごとに1つで、セッションと一緒に永続化されます（MCPサーバーを再起動しても同じURL）。
+URLが漏れた場合は `regenerate=true` で再発行すると、以前のURLは 404 になります。
+
+MCPツールが返すURLは `SENGOKU_VIEW_URL_TEMPLATE`（MCPサーバー側の環境変数）で変更できます。
+`{token}` がトークンに置換されます。
+
+```bash
+# デフォルト: http://localhost:8080/api/views/{token}/status
+# 例: Webアプリのページを返す（Webアプリは token クエリを使って REST API を呼ぶ）
+SENGOKU_VIEW_URL_TEMPLATE='https://sengoku.example.com/status?token={token}'
+```
+
+### エンドポイント
+
 ```bash
 # MCPサーバーと同じ保存先設定で起動（待ち受け: SENGOKU_API_ADDR > PORT > 0.0.0.0:8080）
 SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p api-server
@@ -285,14 +311,14 @@ SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p 
 | メソッド / パス | 説明 |
 | --- | --- |
 | `GET /health` | ヘルスチェック（`ok`） |
+| `GET /api/views/{token}/status` | 閲覧トークンに対応するセッションの自国の状況（Webアプリ向け） |
 | `GET /api/status` | `default` セッション（MCPで `session_id` 省略時）の自国の状況 |
-| `GET /api/sessions/{session_id}/status` | 指定セッションの自国の状況 |
+| `GET /api/sessions/{session_id}/status` | 指定セッションの自国の状況（セッションIDを知っているクライアント・デバッグ向け） |
 
 レスポンス例:
 
 ```json
 {
-  "session_id": "default",
   "last_accessed_at": "2026-10-08T12:34:56Z",
   "daimyo": { "id": 7, "name": "織田" },
   "game": {
@@ -310,11 +336,14 @@ SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p 
 
 | ステータス | `code` | 意味 |
 | --- | --- | --- |
+| 404 | `view_not_found` | 閲覧トークンが不正・未発行・再発行で失効済み、またはセッションが期限切れ |
 | 404 | `session_not_found` | セッションが保存先に存在しない |
 | 409 | `daimyo_not_selected` | セッションはあるが大名が未選択 |
 | 500 | `internal_error` | 保存先へのアクセス失敗など（詳細はサーバーログ） |
 
-> **Note**: 認証機能はありません。インターネットに公開する場合は Cloud Run の IAM 認証などで保護してください。
+> **Note**: 閲覧トークンのURLは「URLを知っている人なら誰でも見られる」共有リンクです。
+> `/api/status` と `/api/sessions/{session_id}/status` はセッションIDだけで参照できるため、
+> インターネットに公開する場合はこれらを Cloud Run の IAM 認証やリバースプロキシで制限してください。
 
 ---
 

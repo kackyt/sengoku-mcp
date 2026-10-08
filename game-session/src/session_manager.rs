@@ -1,8 +1,10 @@
 use crate::game_context::{GameContext, GameContextFactory};
 use chrono::{Duration, Utc};
-use engine::domain::model::value_objects::SessionId;
+use engine::domain::model::value_objects::{SessionId, ViewToken};
 use engine::domain::repository::session_repository::SessionRepository;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use infrastructure::master_data::MasterDataLoader;
+use infrastructure::persistence::SessionStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -12,20 +14,19 @@ use tokio::sync::RwLock;
 pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<SessionId, Arc<GameContext>>>>,
     persistence: Arc<dyn SessionRepository>,
+    view_tokens: Arc<dyn ViewTokenRepository>,
     master_data: Arc<MasterDataLoader>,
 }
 
 impl SessionManager {
     /// 新規セッションマネージャーを初期化します
     ///
-    /// `persistence` にはファイル保存・GCS保存など任意の `SessionRepository` 実装を注入できます。
-    pub fn new(
-        persistence: Arc<dyn SessionRepository>,
-        master_data: Arc<MasterDataLoader>,
-    ) -> Self {
+    /// `storage` にはファイル保存・GCS保存など任意の保存先のリポジトリ群を注入できます。
+    pub fn new(storage: SessionStorage, master_data: Arc<MasterDataLoader>) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            persistence,
+            persistence: storage.sessions,
+            view_tokens: storage.view_tokens,
             master_data,
         }
     }
@@ -84,6 +85,33 @@ impl SessionManager {
             self.persistence.save(&data).await?;
         }
         Ok(())
+    }
+
+    /// セッションの閲覧トークンを取得します。未発行または `regenerate` 指定時は新規発行します。
+    ///
+    /// 再発行した場合、以前のトークンは失効します。
+    pub async fn issue_view_token(
+        &self,
+        session_id: &SessionId,
+        regenerate: bool,
+    ) -> Result<ViewToken, anyhow::Error> {
+        let ctx = self.get_or_create(session_id).await?;
+        // 同一セッションで同時に発行されないよう、発行処理中はトークンのロックを保持する
+        let mut current = ctx.view_token.lock().await;
+        if let (Some(token), false) = (current.as_ref(), regenerate) {
+            return Ok(token.clone());
+        }
+
+        // 1. 新しいトークンの対応表を先に保存し、2. セッション側に反映してから、3. 旧トークンを失効させる
+        let new_token = ViewToken::generate();
+        self.view_tokens.register(&new_token, session_id).await?;
+        let old_token = current.replace(new_token.clone());
+        drop(current);
+        self.save_session(session_id).await?;
+        if let Some(old) = old_token {
+            self.view_tokens.revoke(&old).await?;
+        }
+        Ok(new_token)
     }
 
     /// 期限切れのセッションをメモリおよびストレージから削除します

@@ -362,3 +362,86 @@ impl From<String> for SessionId {
         Self(s)
     }
 }
+
+/// 閲覧用トークンの文字数（UUID v4 の16進表記・ハイフンなし）
+const VIEW_TOKEN_LEN: usize = 32;
+
+/// Webアプリ等の外部クライアントがセッションの状況を閲覧するためのトークン
+///
+/// セッションIDはMCP内部で扱う識別子（Chat ID 等）であり外部に公開したくないため、
+/// 推測困難なランダム値を別途発行し、セッションIDの代わりに URL へ含めます。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ViewToken(String);
+
+impl ViewToken {
+    /// 暗号論的に安全な乱数（UUID v4）から新しいトークンを生成します
+    pub fn generate() -> Self {
+        Self(uuid::Uuid::new_v4().simple().to_string())
+    }
+
+    /// 文字列をトークンとして検証します（32桁の小文字16進数のみ許可）
+    ///
+    /// 保存先のキーに使われるため、形式外の値はここで拒否してパス操作を防ぎます。
+    pub fn parse(val: &str) -> Option<Self> {
+        let valid = val.len() == VIEW_TOKEN_LEN
+            && val
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+        valid.then(|| Self(val.to_string()))
+    }
+
+    pub fn value(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ViewToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for ViewToken {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::parse(&s).ok_or_else(|| format!("不正な閲覧トークンです: {}", s))
+    }
+}
+
+impl From<ViewToken> for String {
+    fn from(token: ViewToken) -> Self {
+        token.0
+    }
+}
+
+#[cfg(test)]
+mod view_token_tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_is_valid_and_unique() {
+        let a = ViewToken::generate();
+        let b = ViewToken::generate();
+        assert_eq!(ViewToken::parse(a.value()), Some(a.clone()));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_parse_rejects_invalid_format() {
+        assert!(ViewToken::parse("").is_none());
+        assert!(ViewToken::parse("../../sessions/default").is_none());
+        assert!(ViewToken::parse(&"A".repeat(32)).is_none());
+        assert!(ViewToken::parse(&"a".repeat(31)).is_none());
+        assert!(ViewToken::parse(&"a".repeat(32)).is_some());
+    }
+
+    #[test]
+    fn test_deserialize_validates() {
+        assert!(serde_json::from_str::<ViewToken>("\"../x\"").is_err());
+        let token = ViewToken::generate();
+        let json = serde_json::to_string(&token).unwrap();
+        assert_eq!(serde_json::from_str::<ViewToken>(&json).unwrap(), token);
+    }
+}

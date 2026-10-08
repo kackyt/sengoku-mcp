@@ -18,13 +18,16 @@ async fn main() -> anyhow::Result<()> {
     let master_data = Arc::new(MasterDataLoader);
 
     // セッション永続化先の初期化（環境変数 SENGOKU_STORAGE で file / gcs を切り替え）
-    let storage = SessionStorageConfig::from_env()?;
-    eprintln!("[Sengoku-MCP] Session storage: {}", storage.describe());
-    let persistence = storage.build()?;
+    let storage_config = SessionStorageConfig::from_env()?;
+    eprintln!(
+        "[Sengoku-MCP] Session storage: {}",
+        storage_config.describe()
+    );
+    let storage = storage_config.build()?;
 
     // 起動時に7日以上経過した期限切れセッションをクリーンアップ
     let expired_ttl = Duration::days(7);
-    match persistence.cleanup_expired(expired_ttl).await {
+    match storage.sessions.cleanup_expired(expired_ttl).await {
         Ok(cleaned) if cleaned > 0 => {
             eprintln!("[Sengoku-MCP] Cleaned up {} expired session(s)", cleaned);
         }
@@ -33,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // セッションマネージャーの構築
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = Arc::new(SessionManager::new(storage, master_data));
 
     // バックグラウンドで定期クリーンアップタスク（1時間間隔、7日経過で削除）を開始
     session_manager
@@ -41,7 +44,11 @@ async fn main() -> anyhow::Result<()> {
         .start_cleanup_task(std::time::Duration::from_secs(3600), expired_ttl);
 
     // MCPハンドラーの初期化
-    let handlers = McpHandlers::new(session_manager);
+    // 閲覧URLのテンプレートは SENGOKU_VIEW_URL_TEMPLATE で上書きできる（例: Webアプリのページ）
+    let mut handlers = McpHandlers::new(session_manager);
+    if let Ok(template) = std::env::var("SENGOKU_VIEW_URL_TEMPLATE") {
+        handlers = handlers.with_view_url_template(template);
+    }
 
     // Build the transport (stdio)
     let transport = (stdin(), stdout());

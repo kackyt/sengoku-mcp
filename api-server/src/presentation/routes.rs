@@ -27,6 +27,7 @@ struct ApiError(StatusQueryError);
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self.0 {
+            StatusQueryError::ViewTokenNotFound => (StatusCode::NOT_FOUND, "view_not_found"),
             StatusQueryError::SessionNotFound(_) => (StatusCode::NOT_FOUND, "session_not_found"),
             StatusQueryError::DaimyoNotSelected(_) => (StatusCode::CONFLICT, "daimyo_not_selected"),
             StatusQueryError::Internal(e) => {
@@ -46,11 +47,13 @@ impl IntoResponse for ApiError {
 /// ルーターを構築します
 ///
 /// - `GET /health` : ヘルスチェック
+/// - `GET /api/views/{token}/status` : 閲覧トークン（MCPで発行したURL）に対応する自国の状況
 /// - `GET /api/status` : デフォルトセッションの自国の状況
 /// - `GET /api/sessions/{session_id}/status` : 指定セッションの自国の状況
 pub fn build_router(service: Arc<StatusQueryService>) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/api/views/{token}/status", get(view_status))
         .route("/api/status", get(default_status))
         .route("/api/sessions/{session_id}/status", get(session_status))
         .with_state(service)
@@ -58,6 +61,17 @@ pub fn build_router(service: Arc<StatusQueryService>) -> Router {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+async fn view_status(
+    State(service): State<Arc<StatusQueryService>>,
+    Path(token): Path<String>,
+) -> Result<Json<MyStatusDto>, ApiError> {
+    service
+        .get_my_status_by_token(&token)
+        .await
+        .map(Json)
+        .map_err(ApiError)
 }
 
 async fn default_status(

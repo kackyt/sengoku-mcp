@@ -7,3 +7,4 @@ pub mod kuni_repository;
 pub mod master_data_repository;
 pub mod neighbor_repository;
 pub mod session_repository;
+pub mod view_token_repository;

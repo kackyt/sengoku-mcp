@@ -26,9 +26,17 @@ impl<T, E: std::fmt::Display> ToStringErr<T> for Result<T, E> {
 /// デフォルトのセッションID定数
 const DEFAULT_SESSION_ID: &str = "default";
 
+/// 閲覧URLテンプレート内でトークンに置換されるプレースホルダー
+pub const VIEW_TOKEN_PLACEHOLDER: &str = "{token}";
+
+/// 閲覧URLテンプレートのデフォルト値（ローカルで起動した api-server の閲覧API）
+pub const DEFAULT_VIEW_URL_TEMPLATE: &str = "http://localhost:8080/api/views/{token}/status";
+
 #[derive(Clone)]
 pub struct McpHandlers {
     session_manager: Arc<SessionManager>,
+    /// 閲覧URLのテンプレート（`{token}` を閲覧トークンに置換する）
+    view_url_template: Arc<str>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -128,6 +136,15 @@ pub struct AutoActionParams {
 
 #[derive(Deserialize, JsonSchema, Default)]
 #[serde(default)]
+pub struct ViewUrlParams {
+    /// true の場合は閲覧URLを再発行し、以前のURLを無効化する
+    pub regenerate: bool,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct KuniIdParams {
     /// 対象の国ID
     pub kuni_id: u32,
@@ -148,8 +165,15 @@ impl McpHandlers {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
         Self {
             session_manager,
+            view_url_template: Arc::from(DEFAULT_VIEW_URL_TEMPLATE),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// 閲覧URLのテンプレートを設定します（`{token}` が閲覧トークンに置換されます）
+    pub fn with_view_url_template(mut self, template: impl AsRef<str>) -> Self {
+        self.view_url_template = Arc::from(template.as_ref());
+        self
     }
 
     /// セッションIDを解決し、対応するゲームコンテキストを取得または作成します。
@@ -671,6 +695,32 @@ impl McpHandlers {
             result.push_str(&format!("- [ターン{}] {:?}\n", log.turn.value(), log.event));
         }
         Ok(result)
+    }
+
+    /// 自国の状況をWebで閲覧するためのURLを発行します
+    #[tool(
+        description = "自国の状況をWebアプリ（ブラウザ）で閲覧するためのURLを取得します。URLには推測困難な閲覧トークンが含まれ、セッションIDは含まれません。regenerate=true で再発行すると以前のURLは無効になります。"
+    )]
+    pub async fn get_status_view_url(
+        &self,
+        Parameters(ViewUrlParams {
+            regenerate,
+            session_id,
+        }): Parameters<ViewUrlParams>,
+    ) -> Result<String, String> {
+        let key = resolve_session_id(session_id);
+        let token = self
+            .session_manager
+            .issue_view_token(&key, regenerate)
+            .await
+            .to_str_err()?;
+        let url = self
+            .view_url_template
+            .replace(VIEW_TOKEN_PLACEHOLDER, token.value());
+        Ok(format!(
+            "自国の状況は次のURLで閲覧できます（URLを知っている人は誰でも閲覧できます）:\n{}",
+            url
+        ))
     }
 
     /// ゲームの進行処理（１ステップ）を実行します

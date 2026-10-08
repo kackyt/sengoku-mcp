@@ -1,8 +1,12 @@
+use crate::persistence::view_token_record::{
+    view_token_file_name, ViewTokenRecord, VIEW_TOKEN_DIR,
+};
 use chrono::{DateTime, Duration, Utc};
 use engine::domain::error::DomainError;
 pub use engine::domain::model::session::SessionData;
-use engine::domain::model::value_objects::SessionId;
+use engine::domain::model::value_objects::{SessionId, ViewToken};
 use engine::domain::repository::session_repository::SessionRepository;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -71,22 +75,66 @@ impl SessionPersistenceManager {
         self.storage_dir.join(session_file_name(session_id))
     }
 
-    /// セッションデータをファイルにアトミック保存します
-    pub fn save(&self, data: &SessionData) -> Result<(), SessionPersistenceError> {
-        self.ensure_dir()?;
-        let target_path = self.session_file_path(&data.session_id);
+    /// 一時ファイルへ書き込んでからリネームすることで、ファイルをアトミックに保存します
+    fn write_atomic(target_path: &Path, content: &str) -> Result<(), SessionPersistenceError> {
         let tmp_path = target_path.with_extension("tmp");
-
-        let json = serde_json::to_string_pretty(data)?;
         if let Err(error) =
-            fs::write(&tmp_path, json).and_then(|()| fs::rename(&tmp_path, &target_path))
+            fs::write(&tmp_path, content).and_then(|()| fs::rename(&tmp_path, target_path))
         {
             // 保存失敗時は一時ファイルを可能な限り削除し、元のI/Oエラーを返します。
             let _ = fs::remove_file(&tmp_path);
             return Err(SessionPersistenceError::IoError(error));
         }
-
         Ok(())
+    }
+
+    /// セッションデータをファイルにアトミック保存します
+    pub fn save(&self, data: &SessionData) -> Result<(), SessionPersistenceError> {
+        self.ensure_dir()?;
+        let json = serde_json::to_string_pretty(data)?;
+        Self::write_atomic(&self.session_file_path(&data.session_id), &json)
+    }
+
+    /// 閲覧トークンの対応表ファイルのパスを取得します
+    fn view_token_path(&self, token: &ViewToken) -> PathBuf {
+        self.storage_dir
+            .join(VIEW_TOKEN_DIR)
+            .join(view_token_file_name(token))
+    }
+
+    /// 閲覧トークンとセッションIDの対応を保存します
+    pub fn save_view_token(
+        &self,
+        token: &ViewToken,
+        session_id: &SessionId,
+    ) -> Result<(), SessionPersistenceError> {
+        fs::create_dir_all(self.storage_dir.join(VIEW_TOKEN_DIR))?;
+        let json = serde_json::to_string_pretty(&ViewTokenRecord::new(session_id))?;
+        Self::write_atomic(&self.view_token_path(token), &json)
+    }
+
+    /// 閲覧トークンに対応するセッションIDを取得します
+    pub fn find_view_token(
+        &self,
+        token: &ViewToken,
+    ) -> Result<Option<SessionId>, SessionPersistenceError> {
+        let path = self.view_token_path(token);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let record: ViewTokenRecord = serde_json::from_str(&fs::read_to_string(path)?)?;
+        Ok(Some(record.session_id))
+    }
+
+    /// 閲覧トークンを削除します
+    pub fn delete_view_token(&self, token: &ViewToken) -> Result<bool, SessionPersistenceError> {
+        let path = self.view_token_path(token);
+        if path.exists() {
+            fs::remove_file(path)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// セッションデータをファイルから読み込みます
@@ -184,6 +232,24 @@ impl SessionRepository for SessionPersistenceManager {
 
     async fn cleanup_expired(&self, ttl: Duration) -> Result<usize, DomainError> {
         self.cleanup_expired(ttl)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl ViewTokenRepository for SessionPersistenceManager {
+    async fn register(&self, token: &ViewToken, session_id: &SessionId) -> Result<(), DomainError> {
+        self.save_view_token(token, session_id)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn find_session_id(&self, token: &ViewToken) -> Result<Option<SessionId>, DomainError> {
+        self.find_view_token(token)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn revoke(&self, token: &ViewToken) -> Result<bool, DomainError> {
+        self.delete_view_token(token)
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))
     }
 }
@@ -287,6 +353,26 @@ mod tests {
         }
         assert!(!target_path.exists());
         assert_eq!(fs::read_to_string(&marker_path).unwrap(), "keep");
+    }
+
+    #[test]
+    fn test_view_token_save_find_delete() {
+        let dir = tempdir().unwrap();
+        let manager = SessionPersistenceManager::new(dir.path());
+        let token = ViewToken::generate();
+        let session_id = SessionId::new("chat/123");
+
+        assert!(manager.find_view_token(&token).unwrap().is_none());
+        manager.save_view_token(&token, &session_id).unwrap();
+        assert_eq!(manager.find_view_token(&token).unwrap(), Some(session_id));
+
+        // セッションの期限切れクリーンアップはトークンを削除しない
+        assert_eq!(manager.cleanup_expired(Duration::zero()).unwrap(), 0);
+        assert!(manager.find_view_token(&token).unwrap().is_some());
+
+        assert!(manager.delete_view_token(&token).unwrap());
+        assert!(!manager.delete_view_token(&token).unwrap());
+        assert!(manager.find_view_token(&token).unwrap().is_none());
     }
 
     #[test]
