@@ -3,10 +3,10 @@ name: Web
 on:
   push:
     branches: [ "main" ]
-    paths: [ "web/**", "api-server/openapi.json", ".github/workflows/web.yml" ]
+    paths: [ "web/**", "api-server/openapi.json", "static/master_data/**", ".github/workflows/web.yml" ]
   pull_request:
     branches: [ "main" ]
-    paths: [ "web/**", "api-server/openapi.json", ".github/workflows/web.yml" ]
+    paths: [ "web/**", "api-server/openapi.json", "static/master_data/**", ".github/workflows/web.yml" ]
 
 jobs:
   build:

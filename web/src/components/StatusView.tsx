@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import type { KuniStatus, MyStatus } from "../api/client";
+import { bordersOf } from "../adjacency";
 import { buildTerritories, countByOwner } from "../territory";
-import { JapanMap } from "./JapanMap";
+import { MapPanel } from "./MapPanel";
 
 const numberFormat = new Intl.NumberFormat("ja-JP");
 
@@ -20,6 +21,11 @@ export function StatusView({ status, updatedAt }: Props) {
   const [highlightedOwnerId, setHighlightedOwnerId] = useState<number | null>(null);
   const territories = useMemo(() => buildTerritories(status), [status]);
   const ownerCounts = useMemo(() => countByOwner(territories.values()), [territories]);
+  // 自領に隣接する他国（攻め込める・攻め込まれうる国）
+  const borders = useMemo(
+    () => bordersOf(status.my_kunis.map((k) => k.id)).flatMap((id) => territories.get(id) ?? []),
+    [status, territories],
+  );
 
   const kpis = [
     { label: "領地", value: `${status.my_kunis.length}`, unit: "国" },
@@ -69,9 +75,13 @@ export function StatusView({ status, updatedAt }: Props) {
                 <span className="swatch other" aria-hidden="true" />
                 他家の領地（国名の下に大名名）
               </li>
+              <li>
+                <span className="swatch-line" aria-hidden="true" />
+                隣接（行き来できる国）
+              </li>
             </ul>
           </div>
-          <JapanMap
+          <MapPanel
             territories={territories}
             ownerCounts={ownerCounts}
             highlightedOwnerId={highlightedOwnerId}
@@ -112,6 +122,25 @@ export function StatusView({ status, updatedAt }: Props) {
                 </tbody>
               </table>
             </div>
+            <h3 className="subheading" id="borders-title">
+              隣接する他国
+            </h3>
+            {borders.length === 0 ? (
+              <p className="muted">隣接する他国はありません。</p>
+            ) : (
+              <ul className="borders" aria-labelledby="borders-title">
+                {borders.map((t) => (
+                  <li
+                    key={t.kuniId}
+                    onPointerEnter={() => setHighlightedOwnerId(t.owner.id)}
+                    onPointerLeave={() => setHighlightedOwnerId(null)}
+                  >
+                    {t.kuniName}
+                    <span className="muted">（{t.owner.name}）</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="card" aria-labelledby="others-title">

@@ -2,7 +2,7 @@
 //
 // 入力: Natural Earth の 1:10m Admin-1（都道府県）GeoJSON（パブリックドメイン）
 //   https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_10m_admin_1_states_provinces.geojson
-// 出力: src/map/japanMap.json（投影済みの SVG パスとラベル位置）
+// 出力: src/map/japanMap.json（投影済みの SVG パス・国の中心点・ラベル位置・隣接情報）
 //
 // 使い方:
 //   pnpm gen:map -- <ne_10m_admin_1_states_provinces.geojson のパス>
@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT = resolve(here, "../src/map/japanMap.json");
+const NEIGHBOR_CSV = resolve(here, "../../static/master_data/neighbor.csv");
 
 /** 地図の幅（SVG座標系）。高さは日本列島の縦横比から決める */
 const WIDTH = 800;
@@ -43,10 +44,15 @@ const PREFECTURE_TO_KUNI = {
   12: [45, 46], // 薩摩: 宮崎・鹿児島
 };
 
-/** ラベル位置の微調整（SVG座標系での [dx, dy]）。重心が海上や端に寄る国を補正する */
-const LABEL_OFFSETS = {
+/**
+ * 国の中心点（接続線の端点・ラベルの基準）の微調整（SVG座標系での [dx, dy]）
+ * 重心が端に寄る国や、本州中央でラベル同士が近すぎる国を補正する。
+ */
+const NODE_OFFSETS = {
   2: [0, 10],
+  4: [8, -4],
   5: [8, -6],
+  7: [-6, 2],
   8: [-6, 4],
 };
 
@@ -156,19 +162,72 @@ function project(collection) {
         .map((coordinates) => ({ type: "Polygon", coordinates }))
         .sort((a, b) => path.area(b) - path.area(a))[0];
       const [cx, cy] = path.centroid(largest);
-      const [dx, dy] = LABEL_OFFSETS[kuniId] ?? [0, 0];
-      const anchor = [Math.round(cx + dx), Math.round(cy + dy)];
+      const [dx, dy] = NODE_OFFSETS[kuniId] ?? [0, 0];
       const leader = LEADER_LABELS[kuniId];
       return {
         kuniId,
         d: path.digits(1)(feature),
-        // 引き出し線を使う国は、ラベルを海上に置き、国内の anchor と線で結ぶ
-        ...(leader ? { label: leader, anchor } : { label: anchor }),
+        // 国の中心点（接続線の端点）。ラベルは通常この直下に置く
+        node: [Math.round(cx + dx), Math.round(cy + dy)],
+        // 引き出し線を使う国のみ、海上のラベル位置を持つ
+        ...(leader ? { label: leader } : {}),
       };
     })
     .sort((a, b) => a.kuniId - b.kuniId);
 
   return { width: WIDTH, height, kunis };
+}
+
+/** マスターデータの隣接情報（neighbor.csv）を [国ID, 国ID] の配列で読み込む */
+function readNeighborPairs() {
+  return readFileSync(NEIGHBOR_CSV, "utf8")
+    .trim()
+    .split(/\r?\n/)
+    .slice(1) // ヘッダー行（ID1,ID2）
+    .map((line) => line.split(",").map((v) => Number(v.trim())))
+    .map(([a, b]) => (a < b ? [a, b] : [b, a]))
+    .sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+}
+
+/** 接続線が他の国の中心点にこれ以上近づく場合は、線を曲げて避ける（SVG座標系） */
+const EDGE_CLEARANCE = 30;
+/** 避けるときの曲がり具合（制御点を線分の中点から垂直方向へずらす量） */
+const EDGE_BEND = 60;
+
+/** 点 p と線分 ab の距離と、線分上の最近点の位置（0〜1） */
+function distanceToSegment(p, a, b) {
+  const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+  return { distance: Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy)), t };
+}
+
+/**
+ * 隣接する国同士を結ぶ接続線の SVG パスを生成する
+ *
+ * 直線が別の国の中心点の近くを通ると「その国を経由している」ように見えるため、
+ * そのような線は中心点と反対側へ曲げた二次ベジェ曲線にする。
+ */
+function buildEdges(kunis) {
+  const nodes = new Map(kunis.map((k) => [k.kuniId, k.node]));
+  return readNeighborPairs().map(([a, b]) => {
+    const [pa, pb] = [nodes.get(a), nodes.get(b)];
+    const obstacle = kunis
+      .filter((k) => k.kuniId !== a && k.kuniId !== b)
+      .map((k) => ({ node: k.node, ...distanceToSegment(k.node, pa, pb) }))
+      .filter(({ distance, t }) => distance < EDGE_CLEARANCE && t > 0 && t < 1)
+      .sort((x, y) => x.distance - y.distance)[0];
+
+    if (!obstacle) {
+      return { a, b, d: `M${pa[0]},${pa[1]}L${pb[0]},${pb[1]}` };
+    }
+    // 線分の法線のうち、障害となる中心点から遠ざかる向きへ制御点をずらす
+    const [mx, my] = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2];
+    const length = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+    let [nx, ny] = [-(pb[1] - pa[1]) / length, (pb[0] - pa[0]) / length];
+    if ((obstacle.node[0] - mx) * nx + (obstacle.node[1] - my) * ny > 0) [nx, ny] = [-nx, -ny];
+    const [cx, cy] = [Math.round(mx + nx * EDGE_BEND), Math.round(my + ny * EDGE_BEND)];
+    return { a, b, d: `M${pa[0]},${pa[1]}Q${cx},${cy} ${pb[0]},${pb[1]}` };
+  });
 }
 
 async function main() {
@@ -191,6 +250,8 @@ async function main() {
       {
         source: "Natural Earth 1:10m Admin-1 (public domain), aggregated into game provinces",
         ...map,
+        // 隣接（行き来できる）国の組。海を挟む接続も含む
+        edges: buildEdges(map.kunis),
       },
       null,
       2,

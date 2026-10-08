@@ -68,6 +68,14 @@ describe("App", () => {
     const row = screen.getByRole("row", { name: /甲信 上杉/ });
     expect(within(row).getByText("（2国）")).toBeInTheDocument();
 
+    // 自領（三河・尾張）に隣接する他国を文字でも示す
+    const borders = within(screen.getByRole("list", { name: "隣接する他国" }));
+    expect(borders.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "甲信（上杉）",
+      "武蔵（北条）",
+      "山城（足利）",
+    ]);
+
     // 地図上で他国にホバーすると、支配大名と領地数を表示し、同じ大名の領地を強調する
     const koshin = container.querySelector('path[data-kuni-id="4"]')!;
     fireEvent.pointerMove(koshin, { clientX: 10, clientY: 10 });
@@ -76,6 +84,20 @@ describe("App", () => {
       p.getAttribute("data-kuni-id"),
     );
     expect(highlighted.sort()).toEqual(["3", "4"]);
+
+    // 甲信の接続線（越州・武蔵・三河・尾張・山城）を強調し、隣接国をツールチップに表示する
+    expect(screen.getByRole("status")).toHaveTextContent("隣接：越州・武蔵・三河・尾張・山城");
+    const activeEdges = [...container.querySelectorAll("path.edge.active")].map((p) =>
+      p.getAttribute("data-edge"),
+    );
+    expect(activeEdges.sort()).toEqual(["3-4", "4-5", "4-6", "4-7", "4-8"]);
+    const neighbors = [...container.querySelectorAll("path.kuni.neighbor")].map((p) =>
+      p.getAttribute("data-kuni-id"),
+    );
+    expect(neighbors.sort((x, y) => Number(x) - Number(y))).toEqual(["3", "5", "6", "7", "8"]);
+
+    // 接続線は隣接情報（17組）をすべて描画する
+    expect(container.querySelectorAll("path.edge")).toHaveLength(17);
   });
 
   it("大名未選択・無効なURLをそれぞれ案内する", async () => {

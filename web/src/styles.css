@@ -17,6 +17,7 @@
   --land-other: #d6d5cd;
   --land-other-strong: #b4b3aa;
   --sea: #eef3f8;
+  --edge: #6f6d68;
   --critical: #d03b3b;
   --font: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
 }
@@ -36,6 +37,7 @@
     --land-other: #3d3d39;
     --land-other-strong: #5c5c56;
     --sea: #151a20;
+    --edge: #a3a199;
   }
 }
 
@@ -53,6 +55,7 @@
   --land-other: #3d3d39;
   --land-other-strong: #5c5c56;
   --sea: #151a20;
+  --edge: #a3a199;
 }
 
 *,
@@ -299,6 +302,13 @@ button.secondary {
   display: inline-block;
 }
 
+.swatch-line {
+  width: 1.1rem;
+  height: 2px;
+  background: var(--edge);
+  display: inline-block;
+}
+
 .swatch.mine {
   background: var(--accent);
 }
@@ -322,10 +332,15 @@ button.secondary {
   max-height: 78vh;
 }
 
+/*
+ * 線幅は vector-effect: non-scaling-stroke で画面上の太さを固定する。
+ * 地図を縮小表示（小さな画面・低解像度）しても境界線や接続線が細くなりすぎないようにするため。
+ */
 .kuni {
   stroke: var(--surface);
-  stroke-width: 2;
+  stroke-width: 1.5;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
   transition: opacity 120ms ease;
   cursor: default;
 }
@@ -338,8 +353,8 @@ button.secondary {
   fill: var(--land-other);
 }
 
-/* 強調中は、強調対象以外を沈ませる */
-.has-highlight .kuni:not(.highlighted) {
+/* 強調中は、強調対象（同じ大名の領地・選択中の国の隣接国）以外を沈ませる */
+.has-highlight .kuni:not(.highlighted, .neighbor) {
   opacity: 0.35;
 }
 
@@ -352,6 +367,7 @@ button.secondary {
   stroke: var(--text-primary);
   stroke-width: 2.5;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 
@@ -361,13 +377,60 @@ button.secondary {
   stroke-width: 3;
 }
 
+/* 隣接を表す接続線 */
+.edge {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+/* 国を選択中は、その国の接続線だけを残して強調する */
+.has-active .edge:not(.active) {
+  opacity: 0.2;
+}
+
+.edge.active {
+  stroke: var(--text-primary);
+  stroke-width: 3;
+}
+
+/* 国の中心点 */
+.node {
+  fill: var(--edge);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.node.mine {
+  fill: var(--text-on-accent);
+  stroke: var(--accent-strong);
+}
+
+.node.active {
+  fill: var(--text-primary);
+  stroke: var(--surface);
+}
+
+.leader {
+  stroke: var(--edge);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ラベル（文字の大きさ・縁取りの太さは縮尺に合わせて JS で指定する） */
 .kuni-label {
   pointer-events: none;
   text-anchor: middle;
   fill: var(--text-primary);
   paint-order: stroke;
   stroke: var(--land-other);
-  stroke-width: 3px;
   stroke-linejoin: round;
 }
 
@@ -376,27 +439,13 @@ button.secondary {
   stroke: var(--sea);
 }
 
-.leader line {
-  stroke: var(--text-muted);
-  stroke-width: 1.5;
-}
-
-.leader circle {
-  fill: var(--text-primary);
-}
-
 .kuni-label.on-mine {
   fill: var(--text-on-accent);
   stroke: var(--accent);
 }
 
 .kuni-name {
-  font-size: 19px;
   font-weight: 700;
-}
-
-.kuni-owner {
-  font-size: 15px;
 }
 
 .tooltip {
@@ -413,6 +462,124 @@ button.secondary {
   font-size: 0.85rem;
   white-space: nowrap;
   z-index: 1;
+}
+
+.subheading {
+  font-size: 0.9rem;
+  margin: 1rem 0 0.25rem;
+  color: var(--text-secondary);
+}
+
+.borders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+}
+
+.borders li {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+/* --- 表示切り替え・接続図 --- */
+
+.view-switch {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.view-switch button[aria-pressed="true"] {
+  background: var(--text-primary);
+  color: var(--surface);
+  border-color: var(--text-primary);
+}
+
+.schematic {
+  background: var(--sea);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.schematic svg {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  margin: 0 auto;
+}
+
+/* 海を挟む接続は破線 */
+.schematic .edge.sea {
+  stroke-dasharray: 5 4;
+}
+
+.box {
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.box rect {
+  fill: var(--land-other);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.box.mine rect {
+  fill: var(--accent);
+}
+
+.box text {
+  text-anchor: middle;
+  fill: var(--text-primary);
+  pointer-events: none;
+}
+
+.box.mine text {
+  fill: var(--text-on-accent);
+}
+
+.box-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.box-owner {
+  font-size: 13px;
+}
+
+.box.other.highlighted rect {
+  fill: var(--land-other-strong);
+}
+
+.box.highlighted rect,
+.box.active rect {
+  stroke: var(--text-primary);
+  stroke-width: 2.5;
+}
+
+.has-highlight .box:not(.highlighted, .neighbor) {
+  opacity: 0.35;
+}
+
+.box:focus-visible {
+  outline: none;
+}
+
+.box:focus-visible rect {
+  stroke: var(--accent-strong);
+  stroke-width: 3;
+}
+
+.schematic-detail {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  min-height: 2.8em;
 }
 
 /* --- 表 --- */
@@ -469,5 +636,16 @@ table.others tr.highlighted {
 
   .hero-number {
     font-size: 2.5rem;
+  }
+}
+
+/* とても狭い画面では余白を詰め、図をできるだけ大きく表示する */
+@media (max-width: 480px) {
+  .card {
+    padding: 0.75rem;
+  }
+
+  .schematic {
+    padding: 0.25rem;
   }
 }
