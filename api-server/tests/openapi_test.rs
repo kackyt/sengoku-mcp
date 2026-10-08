@@ -11,14 +11,35 @@ use api_server::application::{GameCreationService, StatusQueryService};
 use api_server::presentation::{build_router, ApiDoc, AppState};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use engine::domain::repository::master_data_repository::MasterDataRepository;
 use game_session::GameLobby;
 use http_body_util::BodyExt;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::{SessionPersistenceManager, SessionStorage};
+use infrastructure::persistence::SessionPersistenceManager;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower::ServiceExt;
 use utoipa::OpenApi;
+
+/// ファイル保存のリポジトリを注入した REST ルーターを組み立てます（テスト用の Composition Root）
+fn build_test_router(dir: &std::path::Path) -> axum::Router {
+    let backend = Arc::new(SessionPersistenceManager::new(dir));
+    let master_data: Arc<dyn MasterDataRepository> = Arc::new(MasterDataLoader);
+    let lobby = GameLobby::new(
+        backend.clone(),
+        backend.clone(),
+        backend.clone(),
+        master_data.clone(),
+    );
+    build_router(AppState {
+        status: Arc::new(StatusQueryService::new(
+            backend.clone(),
+            backend,
+            master_data,
+        )),
+        games: Arc::new(GameCreationService::new(lobby)),
+    })
+}
 
 /// 保存済みの OpenAPI 仕様ファイルのパス
 fn spec_path() -> PathBuf {
@@ -75,19 +96,7 @@ fn test_openapi_contains_all_endpoints() {
 #[tokio::test]
 async fn test_openapi_and_docs_are_served() {
     let dir = tempfile::tempdir().unwrap();
-    let storage =
-        SessionStorage::from_backend(Arc::new(SessionPersistenceManager::new(dir.path())));
-    let master_data = Arc::new(MasterDataLoader);
-    let router = build_router(AppState {
-        status: Arc::new(StatusQueryService::new(
-            storage.clone(),
-            master_data.clone(),
-        )),
-        games: Arc::new(GameCreationService::new(GameLobby::new(
-            storage,
-            master_data,
-        ))),
-    });
+    let router = build_test_router(dir.path());
 
     // GET /openapi.json はコードから生成した仕様を返す
     let response = router
@@ -118,20 +127,8 @@ async fn test_cors_layer() {
     assert!(cors_layer(Some("  ")).is_none());
 
     let dir = tempfile::tempdir().unwrap();
-    let storage =
-        SessionStorage::from_backend(Arc::new(SessionPersistenceManager::new(dir.path())));
-    let master_data = Arc::new(MasterDataLoader);
-    let router = build_router(AppState {
-        status: Arc::new(StatusQueryService::new(
-            storage.clone(),
-            master_data.clone(),
-        )),
-        games: Arc::new(GameCreationService::new(GameLobby::new(
-            storage,
-            master_data,
-        ))),
-    })
-    .layer(cors_layer(Some("http://localhost:5173, https://sengoku.example.com")).unwrap());
+    let router = build_test_router(dir.path())
+        .layer(cors_layer(Some("http://localhost:5173, https://sengoku.example.com")).unwrap());
 
     // 許可したオリジンには Access-Control-Allow-Origin が付く
     let response = router

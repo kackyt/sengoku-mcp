@@ -1,7 +1,8 @@
 use engine::domain::model::value_objects::SessionId;
-use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::{SessionData, SessionPersistenceManager, SessionStorage};
-use mcp_server::application::SessionManager;
+mod common;
+
+use common::new_session_manager;
+use infrastructure::persistence::{SessionData, SessionPersistenceManager};
 use mcp_server::presentation::handlers::{
     McpHandlers, SelectDaimyoParams, SessionParams, ViewUrlParams,
 };
@@ -12,9 +13,9 @@ use tempfile::tempdir;
 
 /// 指定ディレクトリを保存先とする MCPハンドラーを構築します
 fn build_handlers(dir: &Path) -> McpHandlers {
-    let storage = SessionStorage::from_backend(Arc::new(SessionPersistenceManager::new(dir)));
-    let session_manager = Arc::new(SessionManager::new(storage, Arc::new(MasterDataLoader)));
-    McpHandlers::new(session_manager)
+    McpHandlers::new(new_session_manager(Arc::new(
+        SessionPersistenceManager::new(dir),
+    )))
 }
 
 /// 閲覧URLを発行し、メッセージ末尾のURLを返します

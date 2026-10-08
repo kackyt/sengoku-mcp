@@ -16,7 +16,6 @@ use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::repository::kuni_repository::KuniRepository;
 use engine::domain::repository::master_data_repository::MasterDataRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
-use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::{
     InMemoryActionLogRepository, InMemoryBattleRepository, InMemoryDaimyoRepository,
     InMemoryEventDispatcher, InMemoryGameStateRepository, InMemoryKuniRepository,
@@ -138,7 +137,10 @@ pub struct GameContextFactory;
 
 impl GameContextFactory {
     /// リポジトリ群からユースケース群を組み立てる共通ビルダー関数 (DRY原則・引数と戻り値の構造体化)
-    fn build_usecases(repos: &Repositories, master_data: Arc<MasterDataLoader>) -> UseCases {
+    fn build_usecases(
+        repos: &Repositories,
+        master_data: Arc<dyn MasterDataRepository>,
+    ) -> UseCases {
         let turn_progression = Arc::new(TurnProgressionUseCase::new(
             repos.kuni_repo.clone(),
             repos.daimyo_repo.clone(),
@@ -209,7 +211,7 @@ impl GameContextFactory {
 
     /// 新規ゲーム状態として初期化します
     pub async fn create_initial(
-        master_data: Arc<MasterDataLoader>,
+        master_data: Arc<dyn MasterDataRepository>,
     ) -> Result<GameContext, anyhow::Error> {
         let repos = Repositories {
             kuni_repo: Arc::new(InMemoryKuniRepository::new()),
@@ -248,7 +250,7 @@ impl GameContextFactory {
     /// 保存データから復元します
     pub async fn create_from_data(
         data: SessionData,
-        master_data: Arc<MasterDataLoader>,
+        master_data: Arc<dyn MasterDataRepository>,
     ) -> Result<GameContext, anyhow::Error> {
         let kuni_repo = Arc::new(InMemoryKuniRepository::new());
         kuni_repo.init_with_data(data.kunis).await;

@@ -3,8 +3,10 @@ use chrono::{DateTime, Duration, Utc};
 use engine::domain::error::DomainError;
 use engine::domain::model::join_ticket::{JoinCode, JoinTicket};
 use engine::domain::model::value_objects::{SessionId, ViewToken};
-use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionStorage;
+use engine::domain::repository::join_ticket_repository::JoinTicketRepository;
+use engine::domain::repository::master_data_repository::MasterDataRepository;
+use engine::domain::repository::session_repository::SessionRepository;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -57,16 +59,28 @@ pub struct CreatedGame {
 /// ゲームは「参加待ち」のセッションとして保存され、チャット側が参加コードで参加すると
 /// `SessionManager::join_game` によってチャットのセッションIDへ移されます。
 /// 閲覧トークンは移動後も同じゲームを指し続けるため、ブラウザは同じURLを使い続けられます。
+///
+/// 依存はすべてドメイン層のリポジトリ trait で受け取り、具象実装（ファイル / GCS）は
+/// Composition Root（各サーバーの main.rs）で注入する。
 #[derive(Clone)]
 pub struct GameLobby {
-    storage: SessionStorage,
-    master_data: Arc<MasterDataLoader>,
+    sessions: Arc<dyn SessionRepository>,
+    view_tokens: Arc<dyn ViewTokenRepository>,
+    join_tickets: Arc<dyn JoinTicketRepository>,
+    master_data: Arc<dyn MasterDataRepository>,
 }
 
 impl GameLobby {
-    pub fn new(storage: SessionStorage, master_data: Arc<MasterDataLoader>) -> Self {
+    pub fn new(
+        sessions: Arc<dyn SessionRepository>,
+        view_tokens: Arc<dyn ViewTokenRepository>,
+        join_tickets: Arc<dyn JoinTicketRepository>,
+        master_data: Arc<dyn MasterDataRepository>,
+    ) -> Self {
         Self {
-            storage,
+            sessions,
+            view_tokens,
+            join_tickets,
             master_data,
         }
     }
@@ -81,10 +95,10 @@ impl GameLobby {
         ));
         let ctx = GameContextFactory::create_initial(self.master_data.clone()).await?;
         let view_token = ctx
-            .assign_new_view_token(self.storage.view_tokens.as_ref(), &session_id)
+            .assign_new_view_token(self.view_tokens.as_ref(), &session_id)
             .await?;
         let data = ctx.export_session_data(&session_id).await?;
-        self.storage.sessions.save(&data).await?;
+        self.sessions.save(&data).await?;
 
         // 2. 参加コードを発行する（有効なコードと衝突した場合は再生成）
         let ticket = self.issue_ticket(session_id).await?;
@@ -102,7 +116,6 @@ impl GameLobby {
         for _ in 0..MAX_CODE_ATTEMPTS {
             let code = JoinCode::generate();
             let in_use = self
-                .storage
                 .join_tickets
                 .find_ticket(&code)
                 .await?
@@ -110,7 +123,7 @@ impl GameLobby {
             if !in_use {
                 let ticket =
                     JoinTicket::new(code, session_id, Duration::minutes(JOIN_CODE_TTL_MINUTES));
-                self.storage.join_tickets.save_ticket(&ticket).await?;
+                self.join_tickets.save_ticket(&ticket).await?;
                 return Ok(ticket);
             }
         }
@@ -121,7 +134,6 @@ impl GameLobby {
     pub async fn take_ticket(&self, input: &str) -> Result<SessionId, JoinGameError> {
         let code = JoinCode::parse(input).ok_or(JoinGameError::InvalidCode)?;
         let ticket = self
-            .storage
             .join_tickets
             .find_ticket(&code)
             .await?
@@ -129,12 +141,12 @@ impl GameLobby {
 
         // 期限切れのチケットはここで削除しておく
         if ticket.is_expired(Utc::now()) {
-            self.storage.join_tickets.delete_ticket(&code).await?;
+            self.join_tickets.delete_ticket(&code).await?;
             return Err(JoinGameError::CodeExpired);
         }
 
         // 1回限り有効にするため、削除できた場合のみ参加を許可する
-        if !self.storage.join_tickets.delete_ticket(&code).await? {
+        if !self.join_tickets.delete_ticket(&code).await? {
             return Err(JoinGameError::CodeNotFound);
         }
         Ok(ticket.session_id)
@@ -143,7 +155,6 @@ impl GameLobby {
     /// 期限切れの参加チケットを削除します
     pub async fn cleanup_expired_tickets(&self) -> Result<usize, anyhow::Error> {
         Ok(self
-            .storage
             .join_tickets
             .cleanup_expired_tickets(Utc::now())
             .await?)
@@ -153,13 +164,17 @@ impl GameLobby {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use infrastructure::master_data::MasterDataLoader;
     use infrastructure::persistence::SessionPersistenceManager;
     use tempfile::tempdir;
 
+    /// ファイル保存のリポジトリを注入した GameLobby を生成します
     fn lobby(dir: &std::path::Path) -> (Arc<SessionPersistenceManager>, GameLobby) {
         let backend = Arc::new(SessionPersistenceManager::new(dir));
         let lobby = GameLobby::new(
-            SessionStorage::from_backend(backend.clone()),
+            backend.clone(),
+            backend.clone(),
+            backend.clone(),
             Arc::new(MasterDataLoader),
         );
         (backend, lobby)

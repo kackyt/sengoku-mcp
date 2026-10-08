@@ -1,8 +1,9 @@
 use api_server::application::{GameCreationService, StatusQueryService};
 use api_server::presentation::{build_router, cors_layer, AppState, ENV_CORS_ALLOW_ORIGINS};
+use engine::domain::repository::master_data_repository::MasterDataRepository;
 use game_session::GameLobby;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionStorageConfig;
+use infrastructure::persistence::{SessionStorage, SessionStorageConfig};
 use std::sync::Arc;
 
 /// 待ち受けアドレスを解決します
@@ -22,17 +23,23 @@ fn resolve_listen_addr() -> String {
 async fn main() -> anyhow::Result<()> {
     // MCPサーバーと共通の環境変数（SENGOKU_STORAGE 等）から保存先を解決する
     let storage_config = SessionStorageConfig::from_env()?;
-    let storage = storage_config.build()?;
-    let master_data = Arc::new(MasterDataLoader);
+    let SessionStorage {
+        sessions,
+        view_tokens,
+        join_tickets,
+    } = storage_config.build()?;
+    let master_data: Arc<dyn MasterDataRepository> = Arc::new(MasterDataLoader);
+
+    // アプリケーションサービスへ具象リポジトリ（trait オブジェクト）を注入する
+    let lobby = GameLobby::new(
+        sessions.clone(),
+        view_tokens.clone(),
+        join_tickets,
+        master_data.clone(),
+    );
     let state = AppState {
-        status: Arc::new(StatusQueryService::new(
-            storage.clone(),
-            master_data.clone(),
-        )),
-        games: Arc::new(GameCreationService::new(GameLobby::new(
-            storage,
-            master_data,
-        ))),
+        status: Arc::new(StatusQueryService::new(sessions, view_tokens, master_data)),
+        games: Arc::new(GameCreationService::new(lobby)),
     };
 
     let addr = resolve_listen_addr();

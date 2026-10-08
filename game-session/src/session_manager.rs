@@ -2,10 +2,9 @@ use crate::game_context::{GameContext, GameContextFactory};
 use crate::game_lobby::{GameLobby, JoinGameError};
 use chrono::{Duration, Utc};
 use engine::domain::model::value_objects::{SessionId, ViewToken};
+use engine::domain::repository::master_data_repository::MasterDataRepository;
 use engine::domain::repository::session_repository::SessionRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
-use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionStorage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -17,19 +16,25 @@ pub struct SessionManager {
     persistence: Arc<dyn SessionRepository>,
     view_tokens: Arc<dyn ViewTokenRepository>,
     lobby: GameLobby,
-    master_data: Arc<MasterDataLoader>,
+    master_data: Arc<dyn MasterDataRepository>,
 }
 
 impl SessionManager {
     /// 新規セッションマネージャーを初期化します
     ///
-    /// `storage` にはファイル保存・GCS保存など任意の保存先のリポジトリ群を注入できます。
-    pub fn new(storage: SessionStorage, master_data: Arc<MasterDataLoader>) -> Self {
+    /// 依存はドメイン層のリポジトリ trait（ファイル保存・GCS保存など任意の実装）と、
+    /// 参加コードを扱う GameLobby で受け取り、Composition Root（main.rs）で組み立てて注入する。
+    pub fn new(
+        persistence: Arc<dyn SessionRepository>,
+        view_tokens: Arc<dyn ViewTokenRepository>,
+        lobby: GameLobby,
+        master_data: Arc<dyn MasterDataRepository>,
+    ) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            persistence: storage.sessions.clone(),
-            view_tokens: storage.view_tokens.clone(),
-            lobby: GameLobby::new(storage, master_data.clone()),
+            persistence,
+            view_tokens,
+            lobby,
             master_data,
         }
     }

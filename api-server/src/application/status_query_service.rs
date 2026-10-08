@@ -1,12 +1,11 @@
 use crate::application::dto::{DaimyoDto, KuniStatusDto, MyStatusDto, OtherKuniDto};
 use engine::application::dto::player_status_dto::KuniStatusDTO;
 use engine::domain::model::value_objects::{SessionId, ViewToken};
+use engine::domain::repository::master_data_repository::MasterDataRepository;
 use engine::domain::repository::session_repository::SessionRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use game_session::game_lobby::PENDING_SESSION_PREFIX;
 use game_session::GameContextFactory;
-use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionStorage;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -38,14 +37,19 @@ pub enum StatusQueryError {
 pub struct StatusQueryService {
     repository: Arc<dyn SessionRepository>,
     view_tokens: Arc<dyn ViewTokenRepository>,
-    master_data: Arc<MasterDataLoader>,
+    master_data: Arc<dyn MasterDataRepository>,
 }
 
 impl StatusQueryService {
-    pub fn new(storage: SessionStorage, master_data: Arc<MasterDataLoader>) -> Self {
+    /// 依存はドメイン層のリポジトリ trait で受け取る（具象実装は Composition Root で注入する）
+    pub fn new(
+        repository: Arc<dyn SessionRepository>,
+        view_tokens: Arc<dyn ViewTokenRepository>,
+        master_data: Arc<dyn MasterDataRepository>,
+    ) -> Self {
         Self {
-            repository: storage.sessions,
-            view_tokens: storage.view_tokens,
+            repository,
+            view_tokens,
             master_data,
         }
     }

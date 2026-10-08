@@ -6,8 +6,10 @@ extern crate rmcp;
 use crate::application::SessionManager;
 use crate::presentation::handlers::McpHandlers;
 use chrono::Duration;
+use engine::domain::repository::master_data_repository::MasterDataRepository;
+use game_session::GameLobby;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionStorageConfig;
+use infrastructure::persistence::{SessionStorage, SessionStorageConfig};
 use rmcp::ServiceExt;
 use std::sync::Arc;
 use tokio::io::{stdin, stdout};
@@ -15,7 +17,7 @@ use tokio::io::{stdin, stdout};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // マスターデータのローダー初期化
-    let master_data = Arc::new(MasterDataLoader);
+    let master_data: Arc<dyn MasterDataRepository> = Arc::new(MasterDataLoader);
 
     // セッション永続化先の初期化（環境変数 SENGOKU_STORAGE で file / gcs を切り替え）
     let storage_config = SessionStorageConfig::from_env()?;
@@ -23,11 +25,15 @@ async fn main() -> anyhow::Result<()> {
         "[Sengoku-MCP] Session storage: {}",
         storage_config.describe()
     );
-    let storage = storage_config.build()?;
+    let SessionStorage {
+        sessions,
+        view_tokens,
+        join_tickets,
+    } = storage_config.build()?;
 
     // 起動時に7日以上経過した期限切れセッションをクリーンアップ
     let expired_ttl = Duration::days(7);
-    match storage.sessions.cleanup_expired(expired_ttl).await {
+    match sessions.cleanup_expired(expired_ttl).await {
         Ok(cleaned) if cleaned > 0 => {
             eprintln!("[Sengoku-MCP] Cleaned up {} expired session(s)", cleaned);
         }
@@ -35,8 +41,19 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => eprintln!("[Sengoku-MCP] Cleanup error: {}", e),
     }
 
-    // セッションマネージャーの構築
-    let session_manager = Arc::new(SessionManager::new(storage, master_data));
+    // セッションマネージャーの構築（具象リポジトリを trait オブジェクトとして注入する）
+    let lobby = GameLobby::new(
+        sessions.clone(),
+        view_tokens.clone(),
+        join_tickets,
+        master_data.clone(),
+    );
+    let session_manager = Arc::new(SessionManager::new(
+        sessions,
+        view_tokens,
+        lobby,
+        master_data,
+    ));
 
     // バックグラウンドで定期クリーンアップタスク（1時間間隔、7日経過で削除）を開始
     session_manager

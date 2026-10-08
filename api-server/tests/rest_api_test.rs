@@ -8,6 +8,7 @@ use api_server::presentation::{build_router, AppState};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
+use engine::domain::repository::master_data_repository::MasterDataRepository;
 use game_session::GameLobby;
 use http_body_util::BodyExt;
 use infrastructure::master_data::MasterDataLoader;
@@ -25,22 +26,33 @@ use std::sync::Arc;
 use tempfile::tempdir;
 use tower::ServiceExt;
 
-/// 同一の保存先を共有する MCPハンドラーと REST ルーターを構築します
+/// 同一の保存先を共有する MCPハンドラーと REST ルーターを構築します（テスト用の Composition Root）
+///
+/// 保存先の各リポジトリ（trait オブジェクト）を、MCP 側と REST 側のサービスへそれぞれ注入する。
 fn build_servers(storage: SessionStorage) -> (McpHandlers, Router) {
-    let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(storage.clone(), master_data.clone()));
-    let handlers = McpHandlers::new(session_manager);
+    let SessionStorage {
+        sessions,
+        view_tokens,
+        join_tickets,
+    } = storage;
+    let master_data: Arc<dyn MasterDataRepository> = Arc::new(MasterDataLoader);
+    let lobby = GameLobby::new(
+        sessions.clone(),
+        view_tokens.clone(),
+        join_tickets,
+        master_data.clone(),
+    );
+    let session_manager = Arc::new(SessionManager::new(
+        sessions.clone(),
+        view_tokens.clone(),
+        lobby.clone(),
+        master_data.clone(),
+    ));
     let state = AppState {
-        status: Arc::new(StatusQueryService::new(
-            storage.clone(),
-            master_data.clone(),
-        )),
-        games: Arc::new(GameCreationService::new(GameLobby::new(
-            storage,
-            master_data,
-        ))),
+        status: Arc::new(StatusQueryService::new(sessions, view_tokens, master_data)),
+        games: Arc::new(GameCreationService::new(lobby)),
     };
-    (handlers, build_router(state))
+    (McpHandlers::new(session_manager), build_router(state))
 }
 
 /// テスト用のファイル保存先を構築します
