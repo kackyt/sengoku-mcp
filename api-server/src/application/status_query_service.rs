@@ -131,7 +131,7 @@ impl StatusQueryService {
             game: GameProgressDto {
                 turn: status.current_turn,
                 season: snapshot.season_name,
-                phase: format!("{:?}", snapshot.phase),
+                phase: snapshot.phase.into(),
                 current_daimyo_name: status.current_daimyo_name,
                 winner,
             },

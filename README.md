@@ -48,7 +48,7 @@ sengoku-mcp/
 
 | ツール | 用途 | 推奨バージョン |
 | --- | --- | --- |
-| **Rust / cargo** | エンジン・MCPサーバーのビルドと実行 | 1.85 以上（`cli` が edition 2024 を使用） |
+| **Rust / cargo** | エンジン・MCPサーバーのビルドと実行 | 1.88 以上（`api-server` の utoipa が 1.88 を要求、`cli` が edition 2024 を使用） |
 | **Node.js** | pnpm の実行環境 | 20 以上 |
 | **pnpm** | `rulesync` / `openspec` などの開発ツール管理 | 10.x（`package.json` の `packageManager` 参照） |
 | **rulesync** | `.rulesync/` から各AIツール設定を生成 | devDependency で導入 |
@@ -62,7 +62,7 @@ sengoku-mcp/
 ```bash
 # rustup 経由でインストール（既に入っていればスキップ）
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustc --version   # 1.85 以上であることを確認
+rustc --version   # 1.88 以上であることを確認
 ```
 
 ### pnpm のインストール
@@ -334,6 +334,21 @@ SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p 
 | `GET /api/views/{token}/status` | 閲覧トークンに対応するセッションの自国の状況（Webアプリ向け） |
 | `GET /api/status` | `default` セッション（MCPで `session_id` 省略時）の自国の状況 |
 | `GET /api/sessions/{session_id}/status` | 指定セッションの自国の状況（セッションIDを知っているクライアント・デバッグ向け） |
+| `GET /openapi.json` | OpenAPI 3.1 仕様（JSON） |
+| `GET /docs` | APIドキュメント画面（Scalar。画面のJSは CDN から読み込み） |
+
+### OpenAPI 仕様
+
+OpenAPI 仕様は [utoipa](https://github.com/juhaku/utoipa) でコードから生成しています。
+ハンドラー（`api-server/src/presentation/routes.rs`）と DTO（`api-server/src/application/dto.rs`）の
+ドキュメントコメントが、そのままエンドポイント・スキーマの説明になります。
+
+- 生成結果は [api-server/openapi.json](api-server/openapi.json) にコミットしており、クライアントコード生成などに使えます。
+- コードと食い違うと `cargo test` が失敗します。API を変更したら次のコマンドで更新してください。
+
+```bash
+UPDATE_OPENAPI=1 cargo test -p api-server --test openapi_test
+```
 
 `POST /api/games` のレスポンス例:
 
@@ -409,8 +424,8 @@ cargo test
 
 ## トラブルシューティング
 
-- **`edition2024` 関連のビルドエラー** — Rust が古い可能性があります。`rustup update` で
-  1.85 以上に更新してください。
+- **`edition2024` や `rust-version` 関連のビルドエラー** — Rust が古い可能性があります。`rustup update` で
+  1.88 以上に更新してください。
 - **`pnpm: command not found`** — `corepack enable` を実行したか確認してください。
 - **MCPクライアントがサーバーに接続できない** — `.mcp.json` の `--manifest-path` が
   クローン先の絶対パスを指しているか確認してください。初回はビルドに時間がかかるため、
