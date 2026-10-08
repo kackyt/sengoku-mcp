@@ -24,21 +24,3 @@ export const NEIGHBORS: ReadonlyMap<number, readonly number[]> = (() => {
 export function neighborsOf(kuniId: number): readonly number[] {
   return NEIGHBORS.get(kuniId) ?? [];
 }
-
-/** 自領のいずれかに隣接する他国の国ID（国ID順・重複なし） */
-export function bordersOf(myKuniIds: Iterable<number>): number[] {
-  const mine = new Set(myKuniIds);
-  const result = new Set<number>();
-  for (const id of mine) {
-    for (const n of neighborsOf(id)) if (!mine.has(n)) result.add(n);
-  }
-  return [...result].sort((x, y) => x - y);
-}
-
-/** 指定した国の隣接国名を「・」区切りで返す（勢力図に存在する国のみ） */
-export function neighborNames(kuniId: number, kuniNames: ReadonlyMap<number, { kuniName: string }>): string {
-  return neighborsOf(kuniId)
-    .map((id) => kuniNames.get(id)?.kuniName)
-    .filter(Boolean)
-    .join("・");
-}

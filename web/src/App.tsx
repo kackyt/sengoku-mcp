@@ -49,7 +49,7 @@ function NewGameButton({
 
 export function App() {
   const [session, setSession] = useState<StoredSession | null>(() => loadSession());
-  const { result, updatedAt } = useGameStatus(session?.token ?? null);
+  const { result } = useGameStatus(session?.token ?? null);
 
   const changeSession = (next: StoredSession | null) => {
     saveSession(next);
@@ -62,10 +62,6 @@ export function App() {
       <main className="centered">
         <section className="card notice">
           <h1>戦国 勢力図</h1>
-          <p>
-            新しいゲームを作成すると参加コードが表示されます。LLM
-            とのチャットで参加コードを伝えると、ここに自国の状況と勢力図が表示されます。
-          </p>
           <NewGameButton onCreated={changeSession} />
         </section>
       </main>
@@ -85,7 +81,7 @@ export function App() {
 
   switch (result.kind) {
     case "ok":
-      return <StatusView status={result.status} updatedAt={updatedAt} />;
+      return <StatusView status={result.status} />;
     case "waiting_for_join":
       return (
         <main className="centered">
@@ -97,7 +93,6 @@ export function App() {
         <main className="centered">
           <section className="card notice">
             <h1>大名を選んでください</h1>
-            <p>チャットで参加できました。LLM に大名を選んでもらうと、ここに状況が表示されます。</p>
           </section>
         </main>
       );
@@ -105,11 +100,7 @@ export function App() {
       return (
         <main className="centered">
           <section className="card notice">
-            <h1>このURLは無効です</h1>
-            <p>
-              ゲームが期限切れになったか、別のゲームに置き換えられた可能性があります。
-              新しいゲームを始めてください。
-            </p>
+            <h1>このゲームは終了しています</h1>
             <NewGameButton onCreated={changeSession} />
           </section>
         </main>
@@ -118,11 +109,10 @@ export function App() {
       return (
         <main className="centered">
           <section className="card notice">
-            <h1>状況を取得できません</h1>
+            <h1>接続できません</h1>
             <p className="error" role="alert">
               {result.message}
             </p>
-            <p className="muted">自動で再試行しています。</p>
           </section>
         </main>
       );

@@ -42,51 +42,47 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "新しいゲームを始める" }));
 
     expect(await screen.findByText("VQ4X7K")).toBeInTheDocument();
-    expect(screen.getByText("参加コード VQ4X7K でゲームに参加して")).toBeInTheDocument();
-    expect(screen.getByText(/残り \d+分\d{2}秒/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "チャット用の文をコピー" })).toBeInTheDocument();
+    expect(screen.getByRole("timer")).toHaveTextContent(/^\d+:\d{2}$/);
     // 再読み込みしても続きから表示できるよう、URL にトークンを残す
     expect(window.location.search).toBe(`?token=${TOKEN}`);
   });
 
-  it("ターン数・自領の状況・勢力図を表示する", async () => {
+  it("ターン数・自領の状況・大名ごとに色分けした勢力図を表示する", async () => {
     window.history.replaceState(null, "", `/?token=${TOKEN}`);
     mockFetch({ [`GET /api/views/${TOKEN}/status`]: () => jsonResponse(200, sampleStatus) });
     const { container } = render(<App />);
 
     expect(await screen.findByRole("heading", { name: "第3ターン" })).toBeInTheDocument();
-    expect(screen.getByText("織田家")).toBeInTheDocument();
 
-    // 地図: 12国すべてを描画し、自領（三河・尾張）だけアクセント色のクラスを付ける
-    const paths = container.querySelectorAll("path.kuni");
-    expect(paths).toHaveLength(12);
-    const mine = [...container.querySelectorAll("path.kuni.mine")].map((p) =>
-      p.getAttribute("data-kuni-id"),
-    );
-    expect(mine.sort()).toEqual(["6", "7"]);
+    // 地図: 12国を支配大名の色で塗る（上杉の越州・甲信は同じ色、織田の三河・尾張は織田の色）
+    const fillOf = (kuniId: number) =>
+      (container.querySelector(`path.kuni[data-kuni-id="${kuniId}"]`) as SVGPathElement).style.fill;
+    expect(container.querySelectorAll("path.kuni")).toHaveLength(12);
+    expect(fillOf(3)).toBe(fillOf(4));
+    expect(fillOf(6)).toBe(fillOf(7));
+    expect(fillOf(7)).not.toBe(fillOf(4));
+    // 自領は太い輪郭で示す
+    expect(container.querySelectorAll("path.kuni-outline.mine")).toHaveLength(2);
 
-    // 他国の支配大名の一覧（上杉は2国）
-    const row = screen.getByRole("row", { name: /甲信 上杉/ });
-    expect(within(row).getByText("（2国）")).toBeInTheDocument();
+    // 凡例: 自国（織田）を先頭に、領地数の多い順
+    const legend = within(screen.getByRole("list", { name: "大名" }));
+    const items = legend.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items.slice(0, 2)).toEqual(["織田2", "上杉2"]);
+    expect(items).toHaveLength(10);
 
-    // 自領（三河・尾張）に隣接する他国を文字でも示す
-    const borders = within(screen.getByRole("list", { name: "隣接する他国" }));
-    expect(borders.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "甲信（上杉）",
-      "武蔵（北条）",
-      "山城（足利）",
-    ]);
+    // 他国の一覧表・説明文は表示しない
+    expect(screen.queryByText("他国の支配大名")).toBeNull();
+    expect(screen.queryByText("隣接する他国")).toBeNull();
 
-    // 地図上で他国にホバーすると、支配大名と領地数を表示し、同じ大名の領地を強調する
+    // 地図上で他国にホバーすると、支配大名を表示し、同じ大名の領地と隣接国を強調する
     const koshin = container.querySelector('path[data-kuni-id="4"]')!;
     fireEvent.pointerMove(koshin, { clientX: 10, clientY: 10 });
-    expect(screen.getByRole("status")).toHaveTextContent("上杉家の領地数：2国");
+    expect(screen.getByRole("status")).toHaveTextContent("甲信上杉");
     const highlighted = [...container.querySelectorAll("path.kuni.highlighted")].map((p) =>
       p.getAttribute("data-kuni-id"),
     );
     expect(highlighted.sort()).toEqual(["3", "4"]);
-
-    // 甲信の接続線（越州・武蔵・三河・尾張・山城）を強調し、隣接国をツールチップに表示する
-    expect(screen.getByRole("status")).toHaveTextContent("隣接：越州・武蔵・三河・尾張・山城");
     const activeEdges = [...container.querySelectorAll("path.edge.active")].map((p) =>
       p.getAttribute("data-edge"),
     );
@@ -115,7 +111,7 @@ describe("App", () => {
         jsonResponse(404, { code: "view_not_found", message: "" }),
     });
     render(<App />);
-    expect(await screen.findByText("このURLは無効です")).toBeInTheDocument();
+    expect(await screen.findByText("このゲームは終了しています")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新しいゲームを始める" })).toBeInTheDocument();
   });
 });

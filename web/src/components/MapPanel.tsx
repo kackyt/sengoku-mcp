@@ -24,7 +24,6 @@ type ViewMode = "map" | "schematic";
 
 interface Props {
   territories: Map<number, Territory>;
-  ownerCounts: Map<number, number>;
   highlightedOwnerId: number | null;
   onHighlightOwner: (ownerId: number | null) => void;
 }
@@ -76,7 +75,7 @@ export function MapPanel(props: Props) {
           aria-pressed={mode === "map"}
           onClick={() => select("map")}
         >
-          日本地図
+          地図
         </button>
         <button
           type="button"
@@ -84,7 +83,7 @@ export function MapPanel(props: Props) {
           aria-pressed={mode === "schematic"}
           onClick={() => select("schematic")}
         >
-          接続図
+          接続
         </button>
       </div>
       {mode === "map" ? <JapanMap {...props} /> : <SchematicMap {...props} />}

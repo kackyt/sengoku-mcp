@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { NEIGHBOR_PAIRS, neighborNames, neighborsOf } from "../adjacency";
+import { NEIGHBOR_PAIRS, neighborsOf } from "../adjacency";
+import { daimyoColor } from "../daimyoColors";
 import type { Territory } from "../territory";
 
 /**
@@ -28,11 +29,10 @@ const SEA_ROUTES = new Set(["1-2", "9-10", "9-11"]);
 
 const VIEW_WIDTH = 340;
 const VIEW_HEIGHT = 575;
-const BOX = { width: 78, height: 42 };
+const BOX = { width: 72, height: 36 };
 
 interface Props {
   territories: Map<number, Territory>;
-  ownerCounts: Map<number, number>;
   highlightedOwnerId: number | null;
   onHighlightOwner: (ownerId: number | null) => void;
 }
@@ -41,9 +41,9 @@ interface Props {
  * 勢力図を接続図（国を箱、隣接を線で表した模式図）で表示する
  *
  * 小さな画面・低解像度では日本地図上の国名が重なって読めないため、地理的な正確さより
- * 読みやすさを優先した配置で「どの国がどの大名の領地か」「どの国とどの国が隣接しているか」を示す。
+ * 読みやすさを優先した配置で「どの国がどの大名の領地か（色）」「どの国とどの国が隣接しているか（線）」を示す。
  */
-export function SchematicMap({ territories, ownerCounts, highlightedOwnerId, onHighlightOwner }: Props) {
+export function SchematicMap({ territories, highlightedOwnerId, onHighlightOwner }: Props) {
   const [activeKuniId, setActiveKuniId] = useState<number | null>(null);
   const active = activeKuniId === null ? undefined : territories.get(activeKuniId);
   const activeNeighbors = new Set(activeKuniId === null ? [] : neighborsOf(activeKuniId));
@@ -68,9 +68,7 @@ export function SchematicMap({ territories, ownerCounts, highlightedOwnerId, onH
         aria-labelledby="schematic-title"
         className={svgClasses.join(" ").trim() || undefined}
       >
-        <title id="schematic-title">
-          勢力図（接続図）。線で結ばれた国同士が隣接しています。破線は海を挟む接続です。
-        </title>
+        <title id="schematic-title">勢力図（接続図）</title>
 
         {/* 1. 隣接を表す接続線 */}
         {NEIGHBOR_PAIRS.map(([a, b]) => {
@@ -102,7 +100,7 @@ export function SchematicMap({ territories, ownerCounts, highlightedOwnerId, onH
           if (!territory) return null;
           const classes = [
             "box",
-            territory.mine ? "mine" : "other",
+            territory.mine ? "mine" : "",
             territory.owner.id === highlightedOwnerId ? "highlighted" : "",
             activeNeighbors.has(territory.kuniId) ? "neighbor" : "",
             territory.kuniId === activeKuniId ? "active" : "",
@@ -115,7 +113,7 @@ export function SchematicMap({ territories, ownerCounts, highlightedOwnerId, onH
               role="button"
               tabIndex={0}
               aria-pressed={territory.kuniId === activeKuniId}
-              aria-label={`${territory.kuniName}：${territory.owner.name}の領地。隣接：${neighborNames(territory.kuniId, territories)}`}
+              aria-label={`${territory.kuniName}：${territory.owner.name}`}
               onClick={() => toggle(territory)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -130,31 +128,28 @@ export function SchematicMap({ territories, ownerCounts, highlightedOwnerId, onH
                 width={BOX.width}
                 height={BOX.height}
                 rx={8}
+                style={{ fill: daimyoColor(territory.owner.id) }}
               />
-              <text x={cx} y={cy - 4} className="box-name">
+              <text x={cx} y={cy + 6} className="box-name">
                 {territory.kuniName}
-              </text>
-              <text x={cx} y={cy + 13} className="box-owner">
-                {territory.owner.name}
               </text>
             </g>
           );
         })}
       </svg>
 
-      {/* 選択中の国の詳細（タッチ操作でも読めるよう、ツールチップではなく図の下に出す） */}
-      <p className="schematic-detail" role="status">
-        {active ? (
-          <>
-            <strong>{active.kuniName}</strong>：{active.owner.name}家の領地
-            {active.mine ? "（自領）" : ""}・{active.owner.name}家は
-            {ownerCounts.get(active.owner.id) ?? 0}国／隣接：
-            {neighborNames(active.kuniId, territories)}
-          </>
-        ) : (
-          <span className="muted">国をタップすると、隣接する国を強調します。</span>
-        )}
-      </p>
+      {/* 選択中の国の支配大名（タッチ操作でも読めるよう、図の下に出す） */}
+      {active && (
+        <p className="schematic-detail" role="status">
+          <span
+            className="swatch"
+            style={{ background: daimyoColor(active.owner.id) }}
+            aria-hidden="true"
+          />
+          <strong>{active.kuniName}</strong>
+          <span>{active.owner.name}</span>
+        </p>
+      )}
     </div>
   );
 }

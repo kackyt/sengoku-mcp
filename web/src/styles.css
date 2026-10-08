@@ -1,6 +1,6 @@
 /*
  * 配色はロール（役割）のトークンで定義し、ライト/ダークで値だけを切り替える。
- * 地図は「自領＝アクセント色、他家＝無彩色」の強調表現（12家を色で塗り分けない）。
+ * 地図の国は支配大名の色（src/daimyoColors.ts）で塗り、自領は太い輪郭で示す。
  */
 :root {
   color-scheme: light;
@@ -14,11 +14,10 @@
   --gridline: #e1e0d9;
   --accent: #2a78d6;
   --accent-strong: #1c5cab;
-  --land-other: #d6d5cd;
-  --land-other-strong: #b4b3aa;
   --sea: #eef3f8;
   --edge: #6f6d68;
   --critical: #d03b3b;
+  --halo: rgba(255, 255, 255, 0.85);
   --font: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
 }
 
@@ -34,8 +33,6 @@
     --gridline: #2c2c2a;
     --accent: #3987e5;
     --accent-strong: #86b6ef;
-    --land-other: #3d3d39;
-    --land-other-strong: #5c5c56;
     --sea: #151a20;
     --edge: #a3a199;
   }
@@ -52,8 +49,6 @@
   --gridline: #2c2c2a;
   --accent: #3987e5;
   --accent-strong: #86b6ef;
-  --land-other: #3d3d39;
-  --land-other-strong: #5c5c56;
   --sea: #151a20;
   --edge: #a3a199;
 }
@@ -139,14 +134,16 @@ button.secondary {
 }
 
 .notice {
-  max-width: 34rem;
+  max-width: 28rem;
   width: 100%;
   display: grid;
-  gap: 0.75rem;
+  gap: 1rem;
+  justify-items: center;
+  text-align: center;
 }
 
 .notice h1 {
-  font-size: 1.4rem;
+  font-size: 1.3rem;
 }
 
 .notice p {
@@ -156,34 +153,30 @@ button.secondary {
 .new-game {
   display: grid;
   gap: 0.5rem;
-  justify-items: start;
+  justify-items: center;
+}
+
+.swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  display: inline-block;
+  flex: none;
 }
 
 /* --- 参加コード --- */
 
 .join-code {
-  font-size: clamp(2.5rem, 12vw, 4rem);
+  font-size: clamp(2.5rem, 13vw, 4.5rem);
   font-weight: 700;
-  letter-spacing: 0.3em;
-  text-align: center;
+  letter-spacing: 0.25em;
+  margin-right: -0.25em;
   font-variant-numeric: tabular-nums;
-  padding: 0.5rem 0;
+  line-height: 1.1;
 }
 
-.join-message {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.join-message code {
-  flex: 1 1 14rem;
-  background: var(--page);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  font-family: inherit;
+.join [role="timer"] {
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- 状況画面 --- */
@@ -191,39 +184,41 @@ button.secondary {
 .status {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 1.25rem 16px 2rem;
+  padding: 1rem 16px 2rem;
   display: grid;
   gap: 1rem;
 }
 
 .status-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+  align-items: baseline;
   gap: 1rem;
   flex-wrap: wrap;
 }
 
 .eyebrow {
   margin: 0;
-  color: var(--text-secondary);
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.eyebrow .swatch {
+  width: 1rem;
+  height: 1rem;
 }
 
 .hero {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 600;
 }
 
 .hero-number {
-  font-size: 3.25rem;
+  font-size: 2.75rem;
   font-weight: 700;
-  margin: 0 0.15em;
-}
-
-.updated {
-  margin: 0;
-  font-size: 0.85rem;
+  margin: 0 0.1em;
 }
 
 .kpis {
@@ -236,7 +231,7 @@ button.secondary {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   display: grid;
 }
 
@@ -250,12 +245,6 @@ button.secondary {
   font-weight: 700;
 }
 
-.kpi-value small {
-  font-size: 0.9rem;
-  margin-left: 0.15em;
-  color: var(--text-secondary);
-}
-
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
@@ -263,58 +252,38 @@ button.secondary {
   align-items: start;
 }
 
-.side {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
-}
-
-.card-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
+/* 凡例：大名の色と領地数（自国を先頭に太字） */
 .legend {
   list-style: none;
-  margin: 0;
+  margin: 0.75rem 0 0;
   padding: 0;
   display: flex;
-  gap: 0.25rem 1rem;
   flex-wrap: wrap;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
+  gap: 0.35rem;
 }
 
 .legend li {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.9rem;
 }
 
-.swatch {
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 3px;
-  display: inline-block;
+.legend li.mine {
+  font-weight: 700;
+  border-color: var(--text-primary);
 }
 
-.swatch-line {
-  width: 1.1rem;
-  height: 2px;
-  background: var(--edge);
-  display: inline-block;
+.legend li.highlighted {
+  background: var(--page);
 }
 
-.swatch.mine {
-  background: var(--accent);
-}
-
-.swatch.other {
-  background: var(--land-other);
+.legend-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- 地図 --- */
@@ -335,6 +304,7 @@ button.secondary {
 /*
  * 線幅は vector-effect: non-scaling-stroke で画面上の太さを固定する。
  * 地図を縮小表示（小さな画面・低解像度）しても境界線や接続線が細くなりすぎないようにするため。
+ * 国の塗り色は大名ごとの色をインラインで指定する。
  */
 .kuni {
   stroke: var(--surface);
@@ -345,30 +315,23 @@ button.secondary {
   cursor: default;
 }
 
-.kuni.mine {
-  fill: var(--accent);
-}
-
-.kuni.other {
-  fill: var(--land-other);
-}
-
 /* 強調中は、強調対象（同じ大名の領地・選択中の国の隣接国）以外を沈ませる */
 .has-highlight .kuni:not(.highlighted, .neighbor) {
-  opacity: 0.35;
+  opacity: 0.3;
 }
 
-.kuni.other.highlighted {
-  fill: var(--land-other-strong);
-}
-
+/* 自領・強調中の大名の領地の輪郭 */
 .kuni-outline {
   fill: none;
   stroke: var(--text-primary);
-  stroke-width: 2.5;
+  stroke-width: 2;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
+}
+
+.kuni-outline.mine {
+  stroke-width: 3.5;
 }
 
 .kuni:focus-visible {
@@ -390,7 +353,7 @@ button.secondary {
 
 /* 国を選択中は、その国の接続線だけを残して強調する */
 .has-active .edge:not(.active) {
-  opacity: 0.2;
+  opacity: 0.15;
 }
 
 .edge.active {
@@ -400,21 +363,11 @@ button.secondary {
 
 /* 国の中心点 */
 .node {
-  fill: var(--edge);
-  stroke: var(--surface);
+  fill: var(--text-primary);
+  stroke: var(--halo);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
-}
-
-.node.mine {
-  fill: var(--text-on-accent);
-  stroke: var(--accent-strong);
-}
-
-.node.active {
-  fill: var(--text-primary);
-  stroke: var(--surface);
 }
 
 .leader {
@@ -424,28 +377,15 @@ button.secondary {
   vector-effect: non-scaling-stroke;
 }
 
-/* ラベル（文字の大きさ・縁取りの太さは縮尺に合わせて JS で指定する） */
+/* 国名（文字の大きさ・縁取りの太さは縮尺に合わせて JS で指定する）。どの塗り色の上でも読めるよう白で縁取る */
 .kuni-label {
   pointer-events: none;
   text-anchor: middle;
-  fill: var(--text-primary);
-  paint-order: stroke;
-  stroke: var(--land-other);
-  stroke-linejoin: round;
-}
-
-/* 海上のラベルは海の色で縁取る */
-.kuni-label.in-sea {
-  stroke: var(--sea);
-}
-
-.kuni-label.on-mine {
-  fill: var(--text-on-accent);
-  stroke: var(--accent);
-}
-
-.kuni-name {
   font-weight: 700;
+  fill: #0b0b0b;
+  paint-order: stroke;
+  stroke: var(--halo);
+  stroke-linejoin: round;
 }
 
 .tooltip {
@@ -456,34 +396,14 @@ button.secondary {
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 0.4rem 0.6rem;
+  padding: 0.35rem 0.6rem;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  display: grid;
-  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
   white-space: nowrap;
   z-index: 1;
-}
-
-.subheading {
-  font-size: 0.9rem;
-  margin: 1rem 0 0.25rem;
-  color: var(--text-secondary);
-}
-
-.borders {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.5rem;
-}
-
-.borders li {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.1rem 0.6rem;
-  font-size: 0.9rem;
 }
 
 /* --- 表示切り替え・接続図 --- */
@@ -525,36 +445,28 @@ button.secondary {
 }
 
 .box rect {
-  fill: var(--land-other);
   stroke: var(--surface);
   stroke-width: 1.5;
 }
 
 .box.mine rect {
-  fill: var(--accent);
+  stroke: var(--text-primary);
+  stroke-width: 3.5;
 }
 
 .box text {
   text-anchor: middle;
-  fill: var(--text-primary);
+  fill: #0b0b0b;
+  paint-order: stroke;
+  stroke: var(--halo);
+  stroke-width: 3px;
+  stroke-linejoin: round;
   pointer-events: none;
 }
 
-.box.mine text {
-  fill: var(--text-on-accent);
-}
-
 .box-name {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-}
-
-.box-owner {
-  font-size: 13px;
-}
-
-.box.other.highlighted rect {
-  fill: var(--land-other-strong);
 }
 
 .box.highlighted rect,
@@ -563,8 +475,13 @@ button.secondary {
   stroke-width: 2.5;
 }
 
+.box.mine.highlighted rect,
+.box.mine.active rect {
+  stroke-width: 3.5;
+}
+
 .has-highlight .box:not(.highlighted, .neighbor) {
-  opacity: 0.35;
+  opacity: 0.3;
 }
 
 .box:focus-visible {
@@ -578,8 +495,10 @@ button.secondary {
 
 .schematic-detail {
   margin: 0.5rem 0 0;
-  font-size: 0.9rem;
-  min-height: 2.8em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
 }
 
 /* --- 表 --- */
@@ -592,7 +511,6 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
-  margin-top: 0.5rem;
 }
 
 th,
@@ -614,15 +532,6 @@ thead th:first-child {
   text-align: left;
 }
 
-table.others td,
-table.others thead th {
-  text-align: left;
-}
-
-table.others tr.highlighted {
-  background: var(--page);
-}
-
 /* --- 狭い画面（スマートフォン） --- */
 
 @media (max-width: 860px) {
@@ -632,10 +541,6 @@ table.others tr.highlighted {
 
   .kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .hero-number {
-    font-size: 2.5rem;
   }
 }
 

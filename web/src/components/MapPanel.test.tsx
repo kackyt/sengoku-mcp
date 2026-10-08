@@ -1,18 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sampleStatus } from "../test/fixtures";
-import { buildTerritories, countByOwner } from "../territory";
+import { buildTerritories } from "../territory";
 import { effectiveMapWidth, MapPanel } from "./MapPanel";
 
 const territories = buildTerritories(sampleStatus);
-const ownerCounts = countByOwner(territories.values());
 
 function renderPanel() {
   const onHighlightOwner = vi.fn();
   const utils = render(
     <MapPanel
       territories={territories}
-      ownerCounts={ownerCounts}
       highlightedOwnerId={null}
       onHighlightOwner={onHighlightOwner}
     />,
@@ -50,10 +48,10 @@ describe("MapPanel", () => {
   it("狭い画面では既定で接続図を表示し、日本地図にも切り替えられる", () => {
     mockResizeObserver(360);
     const { container } = renderPanel();
-    expect(screen.getByRole("button", { name: "接続図" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "接続" })).toHaveAttribute("aria-pressed", "true");
     expect(container.querySelector(".schematic")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "日本地図" }));
+    fireEvent.click(screen.getByRole("button", { name: "地図" }));
     expect(container.querySelector(".schematic")).toBeNull();
     expect(container.querySelectorAll("path.kuni")).toHaveLength(12);
   });
@@ -62,7 +60,7 @@ describe("MapPanel", () => {
     window.innerHeight = 1000;
     mockResizeObserver(800);
     renderPanel();
-    expect(screen.getByRole("button", { name: "日本地図" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "地図" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("画面の高さが低いと地図は高さで縮むため、実際の表示幅で判定する", () => {
@@ -82,18 +80,26 @@ describe("接続図", () => {
     expect(container.querySelectorAll("line.edge")).toHaveLength(17);
     expect(container.querySelectorAll("line.edge.sea")).toHaveLength(3);
 
-    fireEvent.click(screen.getByRole("button", { name: /^甲信：上杉の領地/ }));
+    // 国の箱は支配大名の色で塗り、自領は太い輪郭のクラスを付ける
+    const fillOf = (kuniId: number) =>
+      (container.querySelector(`g.box[data-kuni-id="${kuniId}"] rect`) as SVGRectElement).style.fill;
+    expect(fillOf(3)).toBe(fillOf(4));
+    expect(fillOf(3)).not.toBe(fillOf(7));
+    expect(container.querySelectorAll("g.box.mine")).toHaveLength(2);
+
+    // 未選択の間は説明文を出さない
+    expect(screen.queryByRole("status")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "甲信：上杉" }));
     expect(onHighlightOwner).toHaveBeenLastCalledWith(3);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "甲信：上杉家の領地・上杉家は2国／隣接：越州・武蔵・三河・尾張・山城",
-    );
+    expect(screen.getByRole("status")).toHaveTextContent("甲信上杉");
     const active = [...container.querySelectorAll("line.edge.active")].map((l) =>
       l.getAttribute("data-edge"),
     );
     expect(active.sort()).toEqual(["3-4", "4-5", "4-6", "4-7", "4-8"]);
 
     // もう一度タップすると選択を解除する
-    fireEvent.click(screen.getByRole("button", { name: /^甲信：上杉の領地/ }));
+    fireEvent.click(screen.getByRole("button", { name: "甲信：上杉" }));
     expect(onHighlightOwner).toHaveBeenLastCalledWith(null);
     expect(container.querySelectorAll("line.edge.active")).toHaveLength(0);
   });
