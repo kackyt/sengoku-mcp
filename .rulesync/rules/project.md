@@ -136,7 +136,7 @@ impl<R: UnitRepository> MoveUnitUseCase<R> {
 │      └─presentation : MCPのプロトコルマッピング。
 │      └─main.ts : **Composition Root**。ユースケースに infrastructure の具象リポジトリを注入して起動。
 ├─game-session
-│  └─src : GameContext（リポジトリ群とユースケース群の組み立て）と SessionManager。mcp-server / api-server で共有。
+│  └─src : GameContext（リポジトリ群とユースケース群の組み立て）、SessionManager、GameLobby（Webでのゲーム作成・参加コード）。mcp-server / api-server で共有。
 ├─api-server
 │  └─src
 │      ├─application : 共有ストレージからセッションを読み込む読み取り専用のクエリサービス。

@@ -9,6 +9,8 @@ infrastructure = { path = "../infrastructure" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync", "time"] }
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
 
 [dev-dependencies]
 tempfile = "3.27"

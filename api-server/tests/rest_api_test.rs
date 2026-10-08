@@ -3,11 +3,12 @@
 //! MCPハンドラーで進めたゲーム状態を、同じストレージを参照する REST API から
 //! 読み取れること（状態の共有）を確認します。
 
-use api_server::application::StatusQueryService;
-use api_server::presentation::build_router;
+use api_server::application::{GameCreationService, StatusQueryService};
+use api_server::presentation::{build_router, AppState};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
+use game_session::GameLobby;
 use http_body_util::BodyExt;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::{
@@ -15,7 +16,7 @@ use infrastructure::persistence::{
 };
 use mcp_server::application::SessionManager;
 use mcp_server::presentation::handlers::{
-    DomesticParams, McpHandlers, SelectDaimyoParams, SessionParams, ViewUrlParams,
+    DomesticParams, JoinGameParams, McpHandlers, SelectDaimyoParams, SessionParams, ViewUrlParams,
 };
 use object_store::memory::InMemory;
 use rmcp::handler::server::wrapper::Parameters;
@@ -29,8 +30,17 @@ fn build_servers(storage: SessionStorage) -> (McpHandlers, Router) {
     let master_data = Arc::new(MasterDataLoader);
     let session_manager = Arc::new(SessionManager::new(storage.clone(), master_data.clone()));
     let handlers = McpHandlers::new(session_manager);
-    let router = build_router(Arc::new(StatusQueryService::new(storage, master_data)));
-    (handlers, router)
+    let state = AppState {
+        status: Arc::new(StatusQueryService::new(
+            storage.clone(),
+            master_data.clone(),
+        )),
+        games: Arc::new(GameCreationService::new(GameLobby::new(
+            storage,
+            master_data,
+        ))),
+    };
+    (handlers, build_router(state))
 }
 
 /// テスト用のファイル保存先を構築します
@@ -57,11 +67,17 @@ async fn issue_view_path(handlers: &McpHandlers, session_id: &str, regenerate: b
 
 /// GET リクエストを送り、ステータスコードとボディを返します
 async fn get(router: &Router, uri: &str) -> (StatusCode, Value) {
-    let response = router
-        .clone()
-        .oneshot(Request::get(uri).body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    send(router, Request::get(uri).body(Body::empty()).unwrap()).await
+}
+
+/// POST リクエストを送り、ステータスコードとボディを返します
+async fn post(router: &Router, uri: &str) -> (StatusCode, Value) {
+    send(router, Request::post(uri).body(Body::empty()).unwrap()).await
+}
+
+/// リクエストを送り、ステータスコードと JSON ボディを返します
+async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
+    let response = router.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
@@ -292,4 +308,136 @@ async fn test_invalid_view_token_returns_404() {
         assert_eq!(status, StatusCode::NOT_FOUND, "path: {path}");
         assert_eq!(body["code"], "view_not_found");
     }
+}
+
+/// MCPツールで参加コードを使ってゲームに参加します
+async fn join(handlers: &McpHandlers, code: &str, session_id: &str) -> Result<String, String> {
+    handlers
+        .join_game(Parameters(JoinGameParams {
+            code: code.to_string(),
+            session_id: Some(session_id.to_string()),
+        }))
+        .await
+}
+
+/// Webでゲームを作成し、(閲覧パス, 参加コード) を返します
+async fn create_game(router: &Router) -> (String, String) {
+    let (status, body) = post(router, "/api/games").await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    assert!(body["join_message"]
+        .as_str()
+        .unwrap()
+        .contains(body["join_code"].as_str().unwrap()));
+    assert!(body["join_code_expires_at"].is_string());
+    (
+        body["status_url"].as_str().unwrap().to_string(),
+        body["join_code"].as_str().unwrap().to_string(),
+    )
+}
+
+/// Webでゲームを作成 → チャットで参加 → 大名選択 の一連の流れを検証する共通シナリオ
+async fn assert_web_created_game_flow(storage: SessionStorage) {
+    let (handlers, router) = build_servers(storage);
+    let chat_id = "discord_98765";
+
+    // 1. Web: 新規ゲームを作成すると、閲覧URLと参加コードが返る
+    let (path, code) = create_game(&router).await;
+
+    // 2. Web: チャット側が参加するまでは「参加待ち」
+    let (status, body) = get(&router, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "waiting_for_join");
+
+    // 3. MCP: プレイヤーが伝えた参加コード（小文字・区切り入り）で参加する
+    let typed = format!("{}-{}", &code[..3], &code[3..]).to_ascii_lowercase();
+    let message = join(&handlers, &typed, chat_id).await.unwrap();
+    assert!(message.contains("select_daimyo"));
+
+    // 4. Web: 参加後、大名選択までは「大名未選択」
+    let (status, body) = get(&router, &path).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "daimyo_not_selected");
+    // エラーメッセージにもセッションIDは含めない
+    assert!(!body.to_string().contains(chat_id), "body: {body}");
+
+    // 5. MCP: 大名を選択すると、Webの同じURLで状況が見られる
+    let message = handlers
+        .select_daimyo(Parameters(SelectDaimyoParams {
+            daimyo_id: 7,
+            session_id: Some(chat_id.to_string()),
+        }))
+        .await
+        .unwrap();
+    assert!(
+        message.contains(&path),
+        "同じ閲覧URLが付与されること: {message}"
+    );
+    let (status, body) = get(&router, &path).await;
+    assert_eq!(status, StatusCode::OK, "body: {body}");
+    assert_eq!(body["daimyo"]["name"], "織田");
+    assert!(!body.to_string().contains(chat_id));
+    assert!(!body.to_string().contains("web_"));
+
+    // 6. MCP: 参加コードは1回限り
+    let err = join(&handlers, &code, chat_id).await.unwrap_err();
+    assert!(err.contains("見つかりません"), "err: {err}");
+}
+
+#[tokio::test]
+async fn test_web_created_game_flow_via_file_storage() {
+    let dir = tempdir().unwrap();
+    assert_web_created_game_flow(file_storage(&dir)).await;
+}
+
+#[tokio::test]
+async fn test_web_created_game_flow_via_object_storage() {
+    let repository = ObjectStoreSessionRepository::new(Arc::new(InMemory::new()), "sessions");
+    assert_web_created_game_flow(SessionStorage::from_backend(Arc::new(repository))).await;
+}
+
+#[tokio::test]
+async fn test_join_replaces_existing_chat_game() {
+    let dir = tempdir().unwrap();
+    let (handlers, router) = build_servers(file_storage(&dir));
+    let chat_id = "discord_1";
+
+    // 1つ目のゲームに参加して大名を選択
+    let (first_path, first_code) = create_game(&router).await;
+    join(&handlers, &first_code, chat_id).await.unwrap();
+    handlers
+        .select_daimyo(Parameters(SelectDaimyoParams {
+            daimyo_id: 7,
+            session_id: Some(chat_id.to_string()),
+        }))
+        .await
+        .unwrap();
+    assert_eq!(get(&router, &first_path).await.0, StatusCode::OK);
+
+    // 同じチャットで2つ目のゲームに参加すると、新しいゲームに置き換わり旧URLは無効になる
+    let (second_path, second_code) = create_game(&router).await;
+    join(&handlers, &second_code, chat_id).await.unwrap();
+    let (status, body) = get(&router, &first_path).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["code"], "view_not_found");
+    let (status, body) = get(&router, &second_path).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["code"], "daimyo_not_selected");
+
+    // 参加待ちだったセッションのファイルは残らない（チャットのセッション1件のみ）
+    let session_files = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter(|e| e.as_ref().unwrap().file_type().unwrap().is_file())
+        .count();
+    assert_eq!(session_files, 1);
+}
+
+#[tokio::test]
+async fn test_join_with_invalid_code() {
+    let dir = tempdir().unwrap();
+    let (handlers, _) = build_servers(file_storage(&dir));
+
+    let err = join(&handlers, "hello", "discord_1").await.unwrap_err();
+    assert!(err.contains("形式"), "err: {err}");
+    let err = join(&handlers, "ABCDEF", "discord_1").await.unwrap_err();
+    assert!(err.contains("見つかりません"), "err: {err}");
 }

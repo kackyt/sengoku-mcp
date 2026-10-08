@@ -1,5 +1,6 @@
-use api_server::application::StatusQueryService;
-use api_server::presentation::build_router;
+use api_server::application::{GameCreationService, StatusQueryService};
+use api_server::presentation::{build_router, AppState};
+use game_session::GameLobby;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::SessionStorageConfig;
 use std::sync::Arc;
@@ -20,21 +21,29 @@ fn resolve_listen_addr() -> String {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // MCPサーバーと共通の環境変数（SENGOKU_STORAGE 等）から保存先を解決する
-    let storage = SessionStorageConfig::from_env()?;
-    let service = Arc::new(StatusQueryService::new(
-        storage.build()?,
-        Arc::new(MasterDataLoader),
-    ));
+    let storage_config = SessionStorageConfig::from_env()?;
+    let storage = storage_config.build()?;
+    let master_data = Arc::new(MasterDataLoader);
+    let state = AppState {
+        status: Arc::new(StatusQueryService::new(
+            storage.clone(),
+            master_data.clone(),
+        )),
+        games: Arc::new(GameCreationService::new(GameLobby::new(
+            storage,
+            master_data,
+        ))),
+    };
 
     let addr = resolve_listen_addr();
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     eprintln!(
         "[Sengoku-API] Listening on http://{} (session storage: {})",
         listener.local_addr()?,
-        storage.describe()
+        storage_config.describe()
     );
 
-    axum::serve(listener, build_router(service))
+    axum::serve(listener, build_router(state))
         .with_graceful_shutdown(async {
             // Ctrl+C で穏やかに停止する
             let _ = tokio::signal::ctrl_c().await;

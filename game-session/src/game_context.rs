@@ -15,6 +15,7 @@ use engine::domain::repository::daimyo_repository::DaimyoRepository;
 use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::repository::kuni_repository::KuniRepository;
 use engine::domain::repository::master_data_repository::MasterDataRepository;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::{
     InMemoryActionLogRepository, InMemoryBattleRepository, InMemoryDaimyoRepository,
@@ -82,6 +83,21 @@ impl fmt::Debug for GameContext {
 }
 
 impl GameContext {
+    /// 新しい閲覧トークンを発行して対応表に登録し、このコンテキストに設定します
+    ///
+    /// 対応表を先に保存し、セッション側から参照される時点で必ず逆引きできるようにします。
+    /// セッション本体の保存は呼び出し側で行います。
+    pub async fn assign_new_view_token(
+        &self,
+        view_tokens: &dyn ViewTokenRepository,
+        session_id: &SessionId,
+    ) -> Result<ViewToken, anyhow::Error> {
+        let token = ViewToken::generate();
+        view_tokens.register(&token, session_id).await?;
+        *self.view_token.lock().await = Some(token.clone());
+        Ok(token)
+    }
+
     /// アクセス日時を現在時刻に更新します
     pub async fn touch(&self) {
         let mut lock = self.last_accessed_at.lock().await;

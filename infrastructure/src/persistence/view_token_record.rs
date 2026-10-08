@@ -1,12 +1,21 @@
 use chrono::{DateTime, Utc};
+use engine::domain::model::join_ticket::JoinCode;
 use engine::domain::model::value_objects::{SessionId, ViewToken};
 use serde::{Deserialize, Serialize};
 
 /// 閲覧トークンの対応表を保存するサブディレクトリ（プレフィックス）名
 ///
-/// セッションJSONと同じ保存先の配下に置きますが、セッションの期限切れ
-/// クリーンアップは直下のファイルのみを対象とするため、ここは対象外になります。
+/// 閲覧トークン・参加チケットはセッションJSONと同じ保存先の配下に置きますが、
+/// セッションの期限切れクリーンアップは直下のファイルのみを対象とするため、ここは対象外になります。
 pub(crate) const VIEW_TOKEN_DIR: &str = "view_tokens";
+
+/// 参加チケットを保存するサブディレクトリ（プレフィックス）名
+pub(crate) const JOIN_TICKET_DIR: &str = "join_codes";
+
+/// 参加チケットの保存先ファイル名を返します（参加コードは形式検証済みのため無害化不要）
+pub(crate) fn join_ticket_file_name(code: &JoinCode) -> String {
+    format!("{}.json", code.value())
+}
 
 /// 閲覧トークンの保存先ファイル名を返します（トークンは形式検証済みのため無害化不要）
 pub(crate) fn view_token_file_name(token: &ViewToken) -> String {

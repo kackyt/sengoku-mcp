@@ -34,8 +34,8 @@ const VIEW_URL_LABEL: &str = "📺 ブラウザで自国の状況を見る: ";
 
 /// MCPクライアント（LLM）へ伝えるサーバーの利用方針
 const SERVER_INSTRUCTIONS: &str =
-    "ツール結果に「📺 ブラウザで自国の状況を見る」のURLが含まれている場合は、\
-プレイヤーにそのURLをそのまま伝えてください。";
+    "プレイヤーから参加コード（6文字）を伝えられたら、最初に join_game を呼び出してください。\
+ツール結果に「📺 ブラウザで自国の状況を見る」のURLが含まれている場合は、プレイヤーにそのURLをそのまま伝えてください。";
 
 /// 閲覧URLテンプレートのデフォルト値（ローカルで起動した api-server の閲覧API）
 pub const DEFAULT_VIEW_URL_TEMPLATE: &str = "http://localhost:8080/api/views/{token}/status";
@@ -138,6 +138,15 @@ pub struct ExecuteDefenseTurnParams {
 pub struct AutoActionParams {
     /// 対象となる国のID
     pub kuni_id: u32,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
+pub struct JoinGameParams {
+    /// プレイヤーから伝えられた参加コード（例: KX7P2Q）
+    pub code: String,
     /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
     pub session_id: Option<String>,
 }
@@ -266,6 +275,24 @@ impl McpHandlers {
 
 #[tool_router(router = tool_router, vis = "pub")]
 impl McpHandlers {
+    /// Webで作成されたゲームに参加コードで参加します
+    #[tool(
+        description = "ブラウザで作成したゲームに参加します。プレイヤーから参加コード（例: KX7P2Q のような6文字）を伝えられたら、まずこのツールを1回だけ呼び出してください。参加後は list_daimyos → select_daimyo で大名を選びます。"
+    )]
+    pub async fn join_game(
+        &self,
+        Parameters(JoinGameParams { code, session_id }): Parameters<JoinGameParams>,
+    ) -> Result<String, String> {
+        let key = resolve_session_id(session_id);
+        self.session_manager
+            .join_game(&code, &key)
+            .await
+            .to_str_err()?;
+        Ok("ゲームに参加しました。ブラウザの画面にもこのゲームの状況が表示されます。\n\
+            次に list_daimyos で大名の一覧を取得し、プレイヤーに選んでもらって select_daimyo を実行してください。"
+            .to_string())
+    }
+
     /// 選択可能な大名の一覧を取得します
     #[tool(description = "選択可能な大名の一覧を取得します")]
     pub async fn list_daimyos(

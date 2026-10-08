@@ -1,4 +1,5 @@
 use crate::game_context::{GameContext, GameContextFactory};
+use crate::game_lobby::{GameLobby, JoinGameError};
 use chrono::{Duration, Utc};
 use engine::domain::model::value_objects::{SessionId, ViewToken};
 use engine::domain::repository::session_repository::SessionRepository;
@@ -15,6 +16,7 @@ pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<SessionId, Arc<GameContext>>>>,
     persistence: Arc<dyn SessionRepository>,
     view_tokens: Arc<dyn ViewTokenRepository>,
+    lobby: GameLobby,
     master_data: Arc<MasterDataLoader>,
 }
 
@@ -25,8 +27,9 @@ impl SessionManager {
     pub fn new(storage: SessionStorage, master_data: Arc<MasterDataLoader>) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            persistence: storage.sessions,
-            view_tokens: storage.view_tokens,
+            persistence: storage.sessions.clone(),
+            view_tokens: storage.view_tokens.clone(),
+            lobby: GameLobby::new(storage, master_data.clone()),
             master_data,
         }
     }
@@ -96,11 +99,8 @@ impl SessionManager {
         ctx: &GameContext,
         session_id: &SessionId,
     ) -> Result<ViewToken, anyhow::Error> {
-        let token = ViewToken::generate();
-        // 対応表を先に保存し、セッション側から参照される時点で必ず逆引きできるようにする
-        self.view_tokens.register(&token, session_id).await?;
-        *ctx.view_token.lock().await = Some(token.clone());
-        Ok(token)
+        ctx.assign_new_view_token(self.view_tokens.as_ref(), session_id)
+            .await
     }
 
     /// セッションの現在状態をストレージに保存します
@@ -140,6 +140,53 @@ impl SessionManager {
         }
     }
 
+    /// Webで作成されたゲームに、参加コードを使ってチャットのセッションとして参加します
+    ///
+    /// 参加待ちのゲームを `session_id`（チャットのセッションID）へ移し、閲覧トークンの
+    /// 向き先も付け替えます。ブラウザは作成時のURLのまま、このチャットのゲームを閲覧できます。
+    /// チャット側で進行中のゲームがあった場合は新しいゲームで置き換え、旧閲覧URLは失効させます。
+    pub async fn join_game(&self, code: &str, session_id: &SessionId) -> Result<(), JoinGameError> {
+        // 1. 参加コードを消費し、参加待ちゲームを読み込む
+        let pending_id = self.lobby.take_ticket(code).await?;
+        let mut data = self
+            .persistence
+            .load(&pending_id)
+            .await?
+            .ok_or(JoinGameError::GameNotFound)?;
+        data.session_id = session_id.clone();
+        data.touch();
+        let new_token = data.view_token.clone();
+
+        // 2. キャッシュの差し替えと保存を、同一セッションへの他操作と競合しないよう書き込みロック中に行う
+        let mut guard = self.sessions.write().await;
+        let old_token = match guard.get(session_id) {
+            Some(ctx) => ctx.view_token.lock().await.clone(),
+            None => self
+                .persistence
+                .load(session_id)
+                .await?
+                .and_then(|d| d.view_token),
+        };
+        let ctx =
+            Arc::new(GameContextFactory::create_from_data(data, self.master_data.clone()).await?);
+        match &new_token {
+            Some(token) => self.view_tokens.register(token, session_id).await?,
+            None => {
+                self.attach_new_view_token(&ctx, session_id).await?;
+            }
+        }
+        self.persist(&ctx, session_id).await?;
+        guard.insert(session_id.clone(), ctx);
+        drop(guard);
+
+        // 3. 移動元の参加待ちセッションと、置き換えられたゲームの閲覧トークンを削除する
+        self.persistence.delete(&pending_id).await?;
+        if let Some(old) = old_token.filter(|old| Some(old) != new_token.as_ref()) {
+            self.view_tokens.revoke(&old).await?;
+        }
+        Ok(())
+    }
+
     /// 期限切れのセッションをメモリおよびストレージから削除します
     pub async fn cleanup_expired(&self, ttl: Duration) -> Result<usize, anyhow::Error> {
         let now = Utc::now();
@@ -163,8 +210,9 @@ impl SessionManager {
             }
         }
 
-        // ストレージのクリーンアップ
+        // ストレージのクリーンアップ（期限切れの参加コードも併せて削除する）
         let file_deleted = self.persistence.cleanup_expired(ttl).await?;
+        self.lobby.cleanup_expired_tickets().await?;
         Ok(file_deleted.max(expired_keys.len()))
     }
 

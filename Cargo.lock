@@ -685,7 +685,9 @@ dependencies = [
  "engine",
  "infrastructure",
  "tempfile",
+ "thiserror",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

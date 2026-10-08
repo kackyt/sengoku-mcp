@@ -192,6 +192,7 @@ cargo run --release -p mcp-server
 | 状況把握 | `get_game_status` | フェーズ・ターン・季節・勝者を取得 |
 | 状況把握 | `get_other_countries_info` | 他国の情報を取得（コマンド権を1消費） |
 | 状況把握 | `get_neighbor_info` | 指定国の隣接国（攻撃・輸送先候補）を取得 |
+| 準備 | `join_game` | ブラウザで作成したゲームに参加コードで参加（プレイヤーからコードを伝えられたら最初に呼ぶ） |
 | 状況把握 | `get_status_view_url` | 閲覧URLを取得（通常は `select_daimyo` / `get_my_status` の結果に自動で付く）。`regenerate=true` で再発行（旧URLは無効化） |
 | 内政 | `domestic_rice_sell` / `domestic_rice_buy` | 米売り / 米買い |
 | 内政 | `domestic_recruit` | 兵の徴募 |
@@ -279,17 +280,32 @@ MCPクライアントから起動する場合は、`.mcp.json` の `env` に同�
 `api-server` は MCPサーバーと同じ保存先を読み込み、自国の状況を JSON で返す読み取り専用の
 HTTPサーバーです。リクエストのたびに保存先から最新の状態を読み込むため、MCPで進めた内容が即座に反映されます。
 
-### Webアプリからの参照方法（閲覧トークン）
+### Webアプリとチャットの連携（ブラウザでゲームを作成 → 参加コードで参加）
 
-セッションIDはMCP内部で扱う値（Chat ID 等）なので、WebアプリはセッションIDを知らない前提で
-**閲覧トークン**を使います。
+セッションIDはMCP内部で扱う値（Chat ID 等）なので、Webアプリは知りません。そこで、
+**ブラウザ側でゲームを作成し、短い参加コードをチャットに伝える**ことで両者を結び付けます。
+LLM が扱うのは参加コードを1回渡すことだけで、URLの中継やセッションIDの受け渡しは不要です。
 
-1. セッション作成時に、MCPサーバーが推測困難なトークン（128bit乱数）を自動発行し、
-   `トークン → セッションID` の対応を保存先に記録します。
-2. `select_daimyo`（ゲーム開始）と `get_my_status` の結果の末尾に、サーバーが自動で
-   `📺 ブラウザで自国の状況を見る: <URL>` を付けます。LLMはURL取得用のツールを選ぶ必要がなく、
-   結果をそのままプレイヤーへ伝えるだけです（サーバーの instructions でも伝えるよう指示しています）。
-3. Webアプリはそのトークンで `GET /api/views/{token}/status` を呼び出します。URLにセッションIDは含まれません。
+```text
+[ブラウザ]  POST /api/games
+            → 閲覧トークン（status_url）と参加コード（例: KX7P2Q、30分有効・1回限り）を受け取る
+            → status_url をポーリング（参加前は 409 waiting_for_join）
+[プレイヤー] チャットで「参加コード KX7P2Q でゲームに参加して」と伝える
+[LLM]       join_game(code="KX7P2Q") を1回呼ぶ
+            → ゲームがチャットのセッションIDへ移り、閲覧トークンもそのゲームを指すようになる
+[LLM]       list_daimyos → select_daimyo（以降は通常どおり、チャットのセッションIDで操作）
+[ブラウザ]  同じ status_url で自国の状況が取得できる（200）
+```
+
+- 参加コードは大文字・小文字やハイフン・空白の有無を問いません（`kx7-p2q` でも可）。
+- 同じチャットで別のゲームに参加すると、進行中のゲームは新しいゲームに置き換わり、旧URLは 404 になります。
+- 参加されなかったゲームは、通常のセッションと同様に7日で削除されます。期限切れの参加コードは定期クリーンアップで削除されます。
+
+#### チャットで開始したゲームの場合（補助的な経路）
+
+ブラウザを使わずチャットだけで開始したゲームにも、閲覧トークンが自動で発行されます。
+`select_daimyo`（ゲーム開始）と `get_my_status` の結果の末尾に、サーバーが
+`📺 ブラウザで自国の状況を見る: <URL>` を付けるので、LLM がそれを伝えればブラウザでも閲覧できます。
 
 トークンはセッションごとに1つで、セッションと一緒に永続化されます（MCPサーバーを再起動しても同じURL）。
 トークン導入前に保存されたセッションには、次回読み込み時に発行されます。
@@ -314,11 +330,24 @@ SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p 
 | メソッド / パス | 説明 |
 | --- | --- |
 | `GET /health` | ヘルスチェック（`ok`） |
+| `POST /api/games` | 新規ゲームを作成し、閲覧トークン（`status_url`）と参加コードを発行（201） |
 | `GET /api/views/{token}/status` | 閲覧トークンに対応するセッションの自国の状況（Webアプリ向け） |
 | `GET /api/status` | `default` セッション（MCPで `session_id` 省略時）の自国の状況 |
 | `GET /api/sessions/{session_id}/status` | 指定セッションの自国の状況（セッションIDを知っているクライアント・デバッグ向け） |
 
-レスポンス例:
+`POST /api/games` のレスポンス例:
+
+```json
+{
+  "view_token": "777fc6d170d94495b49babeba2230e7d",
+  "status_url": "/api/views/777fc6d170d94495b49babeba2230e7d/status",
+  "join_code": "VQ4X7K",
+  "join_code_expires_at": "2026-10-08T04:20:32Z",
+  "join_message": "チャットで「参加コード VQ4X7K でゲームに参加して」と伝えてください"
+}
+```
+
+状況取得（`GET .../status`）のレスポンス例:
 
 ```json
 {
@@ -339,11 +368,15 @@ SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p 
 
 | ステータス | `code` | 意味 |
 | --- | --- | --- |
+| 409 | `waiting_for_join` | Webで作成したゲームに、チャット側がまだ参加していない |
 | 404 | `view_not_found` | 閲覧トークンが不正・未発行・再発行で失効済み、またはセッションが期限切れ |
 | 404 | `session_not_found` | セッションが保存先に存在しない |
 | 409 | `daimyo_not_selected` | セッションはあるが大名が未選択 |
 | 500 | `internal_error` | 保存先へのアクセス失敗など（詳細はサーバーログ） |
 
+> **Note**: `POST /api/games` は認証なしでセッションを作成できるため、公開する場合は
+> Cloud Run の IAM 認証・API Gateway のレート制限などで乱用を防いでください。
+>
 > **Note**: 閲覧トークンのURLは「URLを知っている人なら誰でも見られる」共有リンクです。
 > `/api/status` と `/api/sessions/{session_id}/status` はセッションIDだけで参照できるため、
 > インターネットに公開する場合はこれらを Cloud Run の IAM 認証やリバースプロキシで制限してください。

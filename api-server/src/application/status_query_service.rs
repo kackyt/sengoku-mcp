@@ -5,6 +5,7 @@ use engine::application::dto::player_status_dto::KuniStatusDTO;
 use engine::domain::model::value_objects::{DisplayAmount, SessionId, ViewToken};
 use engine::domain::repository::session_repository::SessionRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
+use game_session::game_lobby::PENDING_SESSION_PREFIX;
 use game_session::GameContextFactory;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::SessionStorage;
@@ -21,8 +22,11 @@ pub enum StatusQueryError {
     #[error("セッション '{0}' が見つかりません")]
     SessionNotFound(SessionId),
     /// セッションは存在するが大名が未選択
-    #[error("セッション '{0}' では大名が選択されていません")]
+    #[error("大名がまだ選択されていません。チャットで大名を選択してください")]
     DaimyoNotSelected(SessionId),
+    /// Webで作成したゲームに、まだチャット側が参加していない
+    #[error("チャット側の参加待ちです。チャットで参加コードを伝えてください")]
+    WaitingForJoin,
     /// ストレージ障害やデータ不整合など
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
@@ -68,6 +72,12 @@ impl StatusQueryService {
         // セッション期限切れ等で本体が消えている場合もトークン無効として扱い、セッションIDは返さない
         match self.get_my_status(&session_id).await {
             Err(StatusQueryError::SessionNotFound(_)) => Err(StatusQueryError::ViewTokenNotFound),
+            // Webで作成した参加待ちのゲームは、大名未選択ではなく「参加待ち」として返す
+            Err(StatusQueryError::DaimyoNotSelected(id))
+                if id.value().starts_with(PENDING_SESSION_PREFIX) =>
+            {
+                Err(StatusQueryError::WaitingForJoin)
+            }
             other => other,
         }
     }

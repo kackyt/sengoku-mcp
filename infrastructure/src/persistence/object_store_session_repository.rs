@@ -1,11 +1,13 @@
 use crate::persistence::session_persistence::session_file_name;
 use crate::persistence::view_token_record::{
-    view_token_file_name, ViewTokenRecord, VIEW_TOKEN_DIR,
+    join_ticket_file_name, view_token_file_name, ViewTokenRecord, JOIN_TICKET_DIR, VIEW_TOKEN_DIR,
 };
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use engine::domain::error::DomainError;
+use engine::domain::model::join_ticket::{JoinCode, JoinTicket};
 use engine::domain::model::session::SessionData;
 use engine::domain::model::value_objects::{SessionId, ViewToken};
+use engine::domain::repository::join_ticket_repository::JoinTicketRepository;
 use engine::domain::repository::session_repository::SessionRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use object_store::gcp::GoogleCloudStorageBuilder;
@@ -73,6 +75,43 @@ impl ObjectStoreSessionRepository {
             .clone()
             .join(VIEW_TOKEN_DIR)
             .join(view_token_file_name(token))
+    }
+
+    /// 参加チケットを保存するプレフィックス
+    fn join_ticket_prefix(&self) -> Path {
+        self.prefix.clone().join(JOIN_TICKET_DIR)
+    }
+
+    /// 参加チケットのオブジェクトキーを取得します
+    fn join_ticket_path(&self, code: &JoinCode) -> Path {
+        self.join_ticket_prefix().join(join_ticket_file_name(code))
+    }
+
+    /// 有効期限切れ（または読み込めない）参加チケットを削除し、削除件数を返します
+    pub async fn cleanup_expired_join_tickets(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<usize, ObjectStoreSessionError> {
+        let objects = self
+            .store
+            .list_with_delimiter(Some(&self.join_ticket_prefix()))
+            .await?
+            .objects;
+        let mut deleted_count = 0;
+        for meta in objects {
+            let expired = match self.get_json::<JoinTicket>(&meta.location).await {
+                Ok(Some(ticket)) => ticket.is_expired(now),
+                // 一覧取得後に削除済み
+                Ok(None) => continue,
+                // 壊れたチケットは使えないため削除対象とする
+                Err(ObjectStoreSessionError::Serialization(_)) => true,
+                Err(e) => return Err(e),
+            };
+            if expired && self.store.delete(&meta.location).await.is_ok() {
+                deleted_count += 1;
+            }
+        }
+        Ok(deleted_count)
     }
 
     /// 値を JSON として保存します（オブジェクトの書き込みはアトミック）
@@ -199,6 +238,27 @@ impl SessionRepository for ObjectStoreSessionRepository {
 }
 
 #[async_trait::async_trait]
+impl JoinTicketRepository for ObjectStoreSessionRepository {
+    async fn save_ticket(&self, ticket: &JoinTicket) -> Result<(), DomainError> {
+        Ok(self
+            .put_json(&self.join_ticket_path(&ticket.code), ticket)
+            .await?)
+    }
+
+    async fn find_ticket(&self, code: &JoinCode) -> Result<Option<JoinTicket>, DomainError> {
+        Ok(self.get_json(&self.join_ticket_path(code)).await?)
+    }
+
+    async fn delete_ticket(&self, code: &JoinCode) -> Result<bool, DomainError> {
+        Ok(self.delete_if_exists(&self.join_ticket_path(code)).await?)
+    }
+
+    async fn cleanup_expired_tickets(&self, now: DateTime<Utc>) -> Result<usize, DomainError> {
+        Ok(self.cleanup_expired_join_tickets(now).await?)
+    }
+}
+
+#[async_trait::async_trait]
 impl ViewTokenRepository for ObjectStoreSessionRepository {
     async fn register(&self, token: &ViewToken, session_id: &SessionId) -> Result<(), DomainError> {
         let record = ViewTokenRecord::new(session_id);
@@ -302,6 +362,39 @@ mod tests {
 
         assert!(repo.revoke(&token).await.unwrap());
         assert!(!repo.revoke(&token).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_join_ticket_save_find_delete_cleanup() {
+        let (_, repo) = in_memory_repo();
+        let ticket = JoinTicket::new(
+            JoinCode::generate(),
+            SessionId::new("web_1"),
+            Duration::minutes(30),
+        );
+        let mut expired = JoinTicket::new(
+            JoinCode::generate(),
+            SessionId::new("web_2"),
+            Duration::minutes(30),
+        );
+        expired.expires_at = Utc::now() - Duration::minutes(1);
+
+        repo.save_ticket(&ticket).await.unwrap();
+        repo.save_ticket(&expired).await.unwrap();
+        assert_eq!(
+            repo.find_ticket(&ticket.code).await.unwrap(),
+            Some(ticket.clone())
+        );
+
+        // セッションのクリーンアップはチケットに影響しない
+        assert_eq!(repo.cleanup_expired(Duration::zero()).await.unwrap(), 0);
+
+        // 期限切れのチケットだけが削除される
+        assert_eq!(repo.cleanup_expired_tickets(Utc::now()).await.unwrap(), 1);
+        assert!(repo.find_ticket(&expired.code).await.unwrap().is_none());
+
+        assert!(repo.delete_ticket(&ticket.code).await.unwrap());
+        assert!(repo.find_ticket(&ticket.code).await.unwrap().is_none());
     }
 
     #[tokio::test]

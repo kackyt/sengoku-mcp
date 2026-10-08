@@ -1,10 +1,12 @@
 use crate::persistence::view_token_record::{
-    view_token_file_name, ViewTokenRecord, VIEW_TOKEN_DIR,
+    join_ticket_file_name, view_token_file_name, ViewTokenRecord, JOIN_TICKET_DIR, VIEW_TOKEN_DIR,
 };
 use chrono::{DateTime, Duration, Utc};
 use engine::domain::error::DomainError;
+use engine::domain::model::join_ticket::{JoinCode, JoinTicket};
 pub use engine::domain::model::session::SessionData;
 use engine::domain::model::value_objects::{SessionId, ViewToken};
+use engine::domain::repository::join_ticket_repository::JoinTicketRepository;
 use engine::domain::repository::session_repository::SessionRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use std::fs;
@@ -128,13 +130,75 @@ impl SessionPersistenceManager {
 
     /// 閲覧トークンを削除します
     pub fn delete_view_token(&self, token: &ViewToken) -> Result<bool, SessionPersistenceError> {
-        let path = self.view_token_path(token);
+        Self::remove_if_exists(&self.view_token_path(token))
+    }
+
+    /// ファイルが存在すれば削除し、削除した場合は `true` を返します
+    fn remove_if_exists(path: &Path) -> Result<bool, SessionPersistenceError> {
         if path.exists() {
             fs::remove_file(path)?;
             Ok(true)
         } else {
             Ok(false)
         }
+    }
+
+    /// 参加チケットの保存先ディレクトリ
+    fn join_ticket_dir(&self) -> PathBuf {
+        self.storage_dir.join(JOIN_TICKET_DIR)
+    }
+
+    /// 参加チケットを保存します
+    pub fn save_join_ticket(&self, ticket: &JoinTicket) -> Result<(), SessionPersistenceError> {
+        fs::create_dir_all(self.join_ticket_dir())?;
+        let json = serde_json::to_string_pretty(ticket)?;
+        let path = self
+            .join_ticket_dir()
+            .join(join_ticket_file_name(&ticket.code));
+        Self::write_atomic(&path, &json)
+    }
+
+    /// 参加コードに対応するチケットを読み込みます
+    pub fn find_join_ticket(
+        &self,
+        code: &JoinCode,
+    ) -> Result<Option<JoinTicket>, SessionPersistenceError> {
+        let path = self.join_ticket_dir().join(join_ticket_file_name(code));
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(serde_json::from_str(&fs::read_to_string(path)?)?))
+    }
+
+    /// 参加チケットを削除します
+    pub fn delete_join_ticket(&self, code: &JoinCode) -> Result<bool, SessionPersistenceError> {
+        Self::remove_if_exists(&self.join_ticket_dir().join(join_ticket_file_name(code)))
+    }
+
+    /// 有効期限切れ（または読み込めない）参加チケットを削除し、削除件数を返します
+    pub fn cleanup_expired_join_tickets(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<usize, SessionPersistenceError> {
+        let dir = self.join_ticket_dir();
+        if !dir.exists() {
+            return Ok(0);
+        }
+        let mut deleted_count = 0;
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            if !path.is_file() || path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
+            let expired = fs::read_to_string(&path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<JoinTicket>(&content).ok())
+                .is_none_or(|ticket| ticket.is_expired(now));
+            if expired && fs::remove_file(&path).is_ok() {
+                deleted_count += 1;
+            }
+        }
+        Ok(deleted_count)
     }
 
     /// セッションデータをファイルから読み込みます
@@ -154,13 +218,7 @@ impl SessionPersistenceManager {
 
     /// セッションファイルを削除します
     pub fn delete(&self, session_id: &SessionId) -> Result<bool, SessionPersistenceError> {
-        let path = self.session_file_path(session_id);
-        if path.exists() {
-            fs::remove_file(path)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Self::remove_if_exists(&self.session_file_path(session_id))
     }
 
     /// 期限切れ（最終アクセスからttl以上経過）したセッションファイルを削除します
@@ -232,6 +290,29 @@ impl SessionRepository for SessionPersistenceManager {
 
     async fn cleanup_expired(&self, ttl: Duration) -> Result<usize, DomainError> {
         self.cleanup_expired(ttl)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+impl JoinTicketRepository for SessionPersistenceManager {
+    async fn save_ticket(&self, ticket: &JoinTicket) -> Result<(), DomainError> {
+        self.save_join_ticket(ticket)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn find_ticket(&self, code: &JoinCode) -> Result<Option<JoinTicket>, DomainError> {
+        self.find_join_ticket(code)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn delete_ticket(&self, code: &JoinCode) -> Result<bool, DomainError> {
+        self.delete_join_ticket(code)
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))
+    }
+
+    async fn cleanup_expired_tickets(&self, now: DateTime<Utc>) -> Result<usize, DomainError> {
+        self.cleanup_expired_join_tickets(now)
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))
     }
 }
@@ -373,6 +454,37 @@ mod tests {
         assert!(manager.delete_view_token(&token).unwrap());
         assert!(!manager.delete_view_token(&token).unwrap());
         assert!(manager.find_view_token(&token).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_join_ticket_save_find_delete_cleanup() {
+        let dir = tempdir().unwrap();
+        let manager = SessionPersistenceManager::new(dir.path());
+        let ticket = JoinTicket::new(
+            JoinCode::generate(),
+            SessionId::new("web_1"),
+            Duration::minutes(30),
+        );
+        let mut expired = JoinTicket::new(
+            JoinCode::generate(),
+            SessionId::new("web_2"),
+            Duration::minutes(30),
+        );
+        expired.expires_at = Utc::now() - Duration::minutes(1);
+
+        manager.save_join_ticket(&ticket).unwrap();
+        manager.save_join_ticket(&expired).unwrap();
+        assert_eq!(
+            manager.find_join_ticket(&ticket.code).unwrap(),
+            Some(ticket.clone())
+        );
+
+        // 期限切れのチケットだけが削除される
+        assert_eq!(manager.cleanup_expired_join_tickets(Utc::now()).unwrap(), 1);
+        assert!(manager.find_join_ticket(&expired.code).unwrap().is_none());
+
+        assert!(manager.delete_join_ticket(&ticket.code).unwrap());
+        assert!(manager.find_join_ticket(&ticket.code).unwrap().is_none());
     }
 
     #[test]

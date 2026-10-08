@@ -80,3 +80,18 @@ pub struct DefenseAlertDto {
     pub defender_kuni_name: String,
     pub enemy_hei: u32,
 }
+
+/// Webで作成したゲームの情報（`POST /api/games` のレスポンス本体）
+#[derive(Debug, Clone, Serialize)]
+pub struct CreatedGameDto {
+    /// 状況取得用の閲覧トークン（ブラウザで保持する）
+    pub view_token: String,
+    /// 状況取得APIのパス
+    pub status_url: String,
+    /// チャット（LLM）に伝える参加コード
+    pub join_code: String,
+    /// 参加コードの有効期限
+    pub join_code_expires_at: DateTime<Utc>,
+    /// プレイヤー向けの案内文
+    pub join_message: String,
+}

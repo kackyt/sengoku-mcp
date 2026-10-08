@@ -4,6 +4,7 @@ pub mod daimyo;
 pub mod daimyo_personality;
 pub mod event;
 pub mod game_state;
+pub mod join_ticket;
 pub mod kuni;
 pub mod resource;
 pub mod session;

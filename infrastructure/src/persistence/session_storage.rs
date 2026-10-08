@@ -2,6 +2,7 @@ use crate::persistence::object_store_session_repository::{
     ObjectStoreSessionError, ObjectStoreSessionRepository,
 };
 use crate::persistence::session_persistence::SessionPersistenceManager;
+use engine::domain::repository::join_ticket_repository::JoinTicketRepository;
 use engine::domain::repository::session_repository::SessionRepository;
 use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use std::path::PathBuf;
@@ -35,17 +36,20 @@ pub struct SessionStorage {
     pub sessions: Arc<dyn SessionRepository>,
     /// 閲覧トークン（トークン → セッションID）のリポジトリ
     pub view_tokens: Arc<dyn ViewTokenRepository>,
+    /// 参加チケット（参加コード → 参加待ちのゲーム）のリポジトリ
+    pub join_tickets: Arc<dyn JoinTicketRepository>,
 }
 
 impl SessionStorage {
     /// 両方のリポジトリを実装する保存先からリポジトリ群を構築します
     pub fn from_backend<B>(backend: Arc<B>) -> Self
     where
-        B: SessionRepository + ViewTokenRepository + 'static,
+        B: SessionRepository + ViewTokenRepository + JoinTicketRepository + 'static,
     {
         Self {
             sessions: backend.clone(),
-            view_tokens: backend,
+            view_tokens: backend.clone(),
+            join_tickets: backend,
         }
     }
 }
