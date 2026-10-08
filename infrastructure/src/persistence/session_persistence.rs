@@ -16,6 +16,25 @@ pub enum SessionPersistenceError {
     SerializationError(#[from] serde_json::Error),
 }
 
+/// セッションIDから保存用のファイル名（`<安全な名前>.json`）を生成します。
+///
+/// 英数字・`_`・`-` 以外の文字は `_` に置換し、ディレクトリトラバーサルや
+/// オブジェクトキーの階層化を防ぎます。ファイル保存・GCS保存の双方で共通利用します。
+pub(crate) fn session_file_name(session_id: &SessionId) -> String {
+    let safe_name: String = session_id
+        .value()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{}.json", safe_name)
+}
+
 /// セッションファイルの永続化・クリーンアップを管理するマネージャー
 #[derive(Debug, Clone)]
 pub struct SessionPersistenceManager {
@@ -49,18 +68,7 @@ impl SessionPersistenceManager {
 
     /// セッションIDから安全なファイルパスを取得します（ディレクトリトラバーサル防止）
     fn session_file_path(&self, session_id: &SessionId) -> PathBuf {
-        let safe_name: String = session_id
-            .value()
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '_' || c == '-' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect();
-        self.storage_dir.join(format!("{}.json", safe_name))
+        self.storage_dir.join(session_file_name(session_id))
     }
 
     /// セッションデータをファイルにアトミック保存します

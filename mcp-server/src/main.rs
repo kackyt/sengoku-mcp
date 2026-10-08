@@ -7,7 +7,7 @@ use crate::application::SessionManager;
 use crate::presentation::handlers::McpHandlers;
 use chrono::Duration;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionPersistenceManager;
+use infrastructure::persistence::SessionStorageConfig;
 use rmcp::ServiceExt;
 use std::sync::Arc;
 use tokio::io::{stdin, stdout};
@@ -17,15 +17,19 @@ async fn main() -> anyhow::Result<()> {
     // マスターデータのローダー初期化
     let master_data = Arc::new(MasterDataLoader);
 
-    // セッション永続化マネージャー初期化（デフォルト: data/sessions/ または環境変数）
-    let persistence = Arc::new(SessionPersistenceManager::default());
+    // セッション永続化先の初期化（環境変数 SENGOKU_STORAGE で file / gcs を切り替え）
+    let storage = SessionStorageConfig::from_env()?;
+    eprintln!("[Sengoku-MCP] Session storage: {}", storage.describe());
+    let persistence = storage.build()?;
 
     // 起動時に7日以上経過した期限切れセッションをクリーンアップ
     let expired_ttl = Duration::days(7);
-    if let Ok(cleaned) = persistence.cleanup_expired(expired_ttl) {
-        if cleaned > 0 {
+    match persistence.cleanup_expired(expired_ttl).await {
+        Ok(cleaned) if cleaned > 0 => {
             eprintln!("[Sengoku-MCP] Cleaned up {} expired session(s)", cleaned);
         }
+        Ok(_) => {}
+        Err(e) => eprintln!("[Sengoku-MCP] Cleanup error: {}", e),
     }
 
     // セッションマネージャーの構築

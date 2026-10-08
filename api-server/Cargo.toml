@@ -1,5 +1,5 @@
 [package]
-name = "mcp-server"
+name = "api-server"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,13 +7,18 @@ edition = "2021"
 engine = { path = "../engine" }
 infrastructure = { path = "../infrastructure" }
 game-session = { path = "../game-session" }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "io-std"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "net", "signal"] }
+axum = "0.8"
 anyhow = "1.0"
-rmcp = { version = "1.6.0", features = ["server", "transport-io", "macros"] }
+thiserror = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-schemars = "1.0"
 
 [dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 tempfile = "3.27"
+mcp-server = { path = "../mcp-server" }
+object_store = "0.14"
+rmcp = { version = "1.6.0", features = ["server"] }

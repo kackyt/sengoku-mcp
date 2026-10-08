@@ -129,12 +129,19 @@ impl<R: UnitRepository> MoveUnitUseCase<R> {
 │          └─service **Domain Service** (例: 複数のモデルにまたがる戦闘計算)。
 ├─infrastructure
 │  └─src
-│      └─persistence: `engine/domain/repository` で定義された **Repositoryの実装（具体例: ファイルI/O, SQLx等）**。
+│      └─persistence: `engine/domain/repository` で定義された **Repositoryの実装（具体例: ファイルI/O, Google Cloud Storage等）**。
 │          ゲーム外の関心事（外部ストレージとのやり取り）を担当。
 ├─mcp-server
 │  └─src
 │      └─presentation : MCPのプロトコルマッピング。
 │      └─main.ts : **Composition Root**。ユースケースに infrastructure の具象リポジトリを注入して起動。
+├─game-session
+│  └─src : GameContext（リポジトリ群とユースケース群の組み立て）と SessionManager。mcp-server / api-server で共有。
+├─api-server
+│  └─src
+│      ├─application : 共有ストレージからセッションを読み込む読み取り専用のクエリサービス。
+│      ├─presentation : REST API（axum）のルーティングとHTTPマッピング。
+│      └─main.rs : **Composition Root**。SessionStorageConfig（file / gcs）からリポジトリを構築して起動。
 ├─ static
 │  └─ master_data: マスターデータ
 └─ Cargo.toml ワークスペース管理

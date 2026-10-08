@@ -1,0 +1,14 @@
+[package]
+name = "game-session"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+engine = { path = "../engine" }
+infrastructure = { path = "../infrastructure" }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync", "time"] }
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3.27"

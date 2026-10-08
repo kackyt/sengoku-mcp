@@ -15,9 +15,11 @@ Rustで実装されたゲームエンジンをMCPサーバーとして公開し�
 3. [セットアップ](#セットアップ)
 4. [ビルドと動作確認](#ビルドと動作確認)
 5. [MCPサーバーを使った戦国シミュレーション](#mcpサーバーを使った戦国シミュレーション)
-6. [TUI版で遊ぶ（おまけ）](#tui版で遊ぶおまけ)
-7. [開発者向け：チェックコマンド](#開発者向けチェックコマンド)
-8. [トラブルシューティング](#トラブルシューティング)
+6. [セッションの保存先（ファイル / Google Cloud Storage）](#セッションの保存先ファイル--google-cloud-storage)
+7. [REST APIで自国の状況を取得する](#rest-apiで自国の状況を取得する)
+8. [TUI版で遊ぶ（おまけ）](#tui版で遊ぶおまけ)
+9. [開発者向け：チェックコマンド](#開発者向けチェックコマンド)
+10. [トラブルシューティング](#トラブルシューティング)
 
 ---
 
@@ -29,7 +31,9 @@ Rustで実装されたゲームエンジンをMCPサーバーとして公開し�
 sengoku-mcp/
 ├─ engine/          ドメイン層・アプリケーション層（ゲームロジック本体）
 ├─ infrastructure/  リポジトリ実装・マスターデータのロード
+├─ game-session/    セッション（GameContext）の構築・管理（MCP / REST で共有）
 ├─ mcp-server/      MCPプロトコルのマッピング（LLMから操作する入口）
+├─ api-server/      自国の状況を返す REST API（読み取り専用）
 ├─ cli/             TUI（ratatui/crossterm）クライアント
 ├─ static/master_data/  マスターデータ（daimyo.csv / kuni.csv / neighbor.csv）
 ├─ .rulesync/       AIツール設定のソース（rulesyncで各ツール向けに展開）
@@ -231,6 +235,86 @@ AIがMCPツールを自律的に呼び出し、状況分析からコマンド実
 
 ※`sengoku-play-ikuo` スキルを使えば某EMがアシスタントとして上記ツール群を適切な順序で呼び出して
 対話的に進行します。
+
+---
+
+## セッションの保存先（ファイル / Google Cloud Storage）
+
+ゲーム状態はセッションごとに JSON として保存されます。MCPサーバーは操作のたびに保存し、
+REST APIサーバーは同じ保存先を読み込むことで状態を共有します。保存先は環境変数で切り替えます。
+
+| 環境変数 | 説明 | デフォルト |
+| --- | --- | --- |
+| `SENGOKU_STORAGE` | `file` または `gcs` | `file` |
+| `SENGOKU_SESSIONS_DIR` | `file` の保存先ディレクトリ | `data/sessions` |
+| `SENGOKU_GCS_BUCKET` | `gcs` のバケット名（`gcs` では必須） | なし |
+| `SENGOKU_GCS_PREFIX` | `gcs` のオブジェクトキーのプレフィックス | `sessions` |
+
+`gcs` の場合、`gs://<バケット>/<プレフィックス>/<セッションID>.json` に保存されます。
+認証情報は次の順で解決されます。
+
+- `GOOGLE_SERVICE_ACCOUNT`（サービスアカウントキーのファイルパス）または
+  `GOOGLE_SERVICE_ACCOUNT_KEY`（キーのJSON文字列）
+- Application Default Credentials（`gcloud auth application-default login` の結果、
+  Cloud Run / GCE のメタデータサーバー）
+
+サービスアカウントには対象バケットのオブジェクト読み書き権限（例: `roles/storage.objectUser`）を付与してください。
+
+```bash
+# 例: MCPサーバーを GCS 保存で起動
+SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p mcp-server
+```
+
+MCPクライアントから起動する場合は、`.mcp.json` の `env` に同じ変数を設定します。
+
+> **Note**: MCPサーバーはセッションをメモリにキャッシュするため、同じ保存先に対して
+> 複数のMCPサーバーを同時に書き込ませる構成は想定していません（REST APIサーバーは読み取り専用なので何台でも可）。
+
+---
+
+## REST APIで自国の状況を取得する
+
+`api-server` は MCPサーバーと同じ保存先を読み込み、自国の状況を JSON で返す読み取り専用の
+HTTPサーバーです。リクエストのたびに保存先から最新の状態を読み込むため、MCPで進めた内容が即座に反映されます。
+
+```bash
+# MCPサーバーと同じ保存先設定で起動（待ち受け: SENGOKU_API_ADDR > PORT > 0.0.0.0:8080）
+SENGOKU_STORAGE=gcs SENGOKU_GCS_BUCKET=my-sengoku-bucket cargo run --release -p api-server
+```
+
+| メソッド / パス | 説明 |
+| --- | --- |
+| `GET /health` | ヘルスチェック（`ok`） |
+| `GET /api/status` | `default` セッション（MCPで `session_id` 省略時）の自国の状況 |
+| `GET /api/sessions/{session_id}/status` | 指定セッションの自国の状況 |
+
+レスポンス例:
+
+```json
+{
+  "session_id": "default",
+  "last_accessed_at": "2026-10-08T12:34:56Z",
+  "daimyo": { "id": 7, "name": "織田" },
+  "game": {
+    "turn": 1, "season": "春", "phase": "Domestic",
+    "current_daimyo_name": "織田", "winner": null
+  },
+  "kunis": [
+    { "id": 7, "name": "尾張", "kin": 100, "kome": 200, "hei": 50,
+      "jinko": 300, "kokudaka": 150, "machi": 10, "tyu": 60 }
+  ],
+  "totals": { "kuni_count": 1, "kin": 100, "kome": 200, "hei": 50, "jinko": 300, "kokudaka": 150 },
+  "defense_alerts": []
+}
+```
+
+| ステータス | `code` | 意味 |
+| --- | --- | --- |
+| 404 | `session_not_found` | セッションが保存先に存在しない |
+| 409 | `daimyo_not_selected` | セッションはあるが大名が未選択 |
+| 500 | `internal_error` | 保存先へのアクセス失敗など（詳細はサーバーログ） |
+
+> **Note**: 認証機能はありません。インターネットに公開する場合は Cloud Run の IAM 認証などで保護してください。
 
 ---
 

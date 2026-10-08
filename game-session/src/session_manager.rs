@@ -1,8 +1,8 @@
-use crate::application::game_context::{GameContext, GameContextFactory};
+use crate::game_context::{GameContext, GameContextFactory};
 use chrono::{Duration, Utc};
 use engine::domain::model::value_objects::SessionId;
+use engine::domain::repository::session_repository::SessionRepository;
 use infrastructure::master_data::MasterDataLoader;
-use infrastructure::persistence::SessionPersistenceManager;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -11,14 +11,16 @@ use tokio::sync::RwLock;
 #[derive(Clone)]
 pub struct SessionManager {
     sessions: Arc<RwLock<HashMap<SessionId, Arc<GameContext>>>>,
-    persistence: Arc<SessionPersistenceManager>,
+    persistence: Arc<dyn SessionRepository>,
     master_data: Arc<MasterDataLoader>,
 }
 
 impl SessionManager {
     /// 新規セッションマネージャーを初期化します
+    ///
+    /// `persistence` にはファイル保存・GCS保存など任意の `SessionRepository` 実装を注入できます。
     pub fn new(
-        persistence: Arc<SessionPersistenceManager>,
+        persistence: Arc<dyn SessionRepository>,
         master_data: Arc<MasterDataLoader>,
     ) -> Self {
         Self {
@@ -30,7 +32,7 @@ impl SessionManager {
 
     /// セッションIDに対応する GameContext を取得または作成します
     /// 1. メモリ内に存在すればそれを返す
-    /// 2. ファイルに存在すれば復元してキャッシュして返す
+    /// 2. ストレージに存在すれば復元してキャッシュして返す
     /// 3. なければ新規初期化して保存・キャッシュして返す
     pub async fn get_or_create(
         &self,
@@ -45,14 +47,14 @@ impl SessionManager {
             }
         }
 
-        // 2. ファイルからの復元確認
+        // 2. ストレージからの復元確認
         let mut write_guard = self.sessions.write().await;
         if let Some(ctx) = write_guard.get(session_id) {
             ctx.touch().await;
             return Ok(ctx.clone());
         }
 
-        let ctx = if let Some(data) = self.persistence.load(session_id)? {
+        let ctx = if let Some(data) = self.persistence.load(session_id).await? {
             let ctx = Arc::new(
                 GameContextFactory::create_from_data(data, self.master_data.clone()).await?,
             );
@@ -62,7 +64,7 @@ impl SessionManager {
             // 3. 新規作成
             let ctx = Arc::new(GameContextFactory::create_initial(self.master_data.clone()).await?);
             let session_data = ctx.export_session_data(session_id).await?;
-            self.persistence.save(&session_data)?;
+            self.persistence.save(&session_data).await?;
             ctx
         };
 
@@ -70,7 +72,7 @@ impl SessionManager {
         Ok(ctx)
     }
 
-    /// セッションの現在状態をファイルに保存します
+    /// セッションの現在状態をストレージに保存します
     pub async fn save_session(&self, session_id: &SessionId) -> Result<(), anyhow::Error> {
         let ctx = {
             let guard = self.sessions.read().await;
@@ -79,12 +81,12 @@ impl SessionManager {
 
         if let Some(ctx) = ctx {
             let data = ctx.export_session_data(session_id).await?;
-            self.persistence.save(&data)?;
+            self.persistence.save(&data).await?;
         }
         Ok(())
     }
 
-    /// 期限切れのセッションをメモリおよびファイルから削除します
+    /// 期限切れのセッションをメモリおよびストレージから削除します
     pub async fn cleanup_expired(&self, ttl: Duration) -> Result<usize, anyhow::Error> {
         let now = Utc::now();
         let mut expired_keys = Vec::new();
@@ -107,8 +109,8 @@ impl SessionManager {
             }
         }
 
-        // ファイルクリーンアップ
-        let file_deleted = self.persistence.cleanup_expired(ttl)?;
+        // ストレージのクリーンアップ
+        let file_deleted = self.persistence.cleanup_expired(ttl).await?;
         Ok(file_deleted.max(expired_keys.len()))
     }
 

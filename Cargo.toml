@@ -1,6 +1,8 @@
 [workspace]
-members = ["cli",
+members = ["api-server",
+    "cli",
     "engine",
+    "game-session",
     "infrastructure",
     "mcp-server",
 ]
