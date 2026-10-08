@@ -34,7 +34,7 @@ sengoku-mcp/
 ├─ game-session/    セッション（GameContext）の構築・管理（MCP / REST で共有）
 ├─ mcp-server/      MCPプロトコルのマッピング（LLMから操作する入口）
 ├─ api-server/      自国の状況を返す REST API
-├─ web/             状況と勢力図（日本地図）を表示するブラウザアプリ（React）
+├─ web/             自国の状況と勢力図（接続図）を表示するブラウザアプリ（React）
 ├─ cli/             TUI（ratatui/crossterm）クライアント
 ├─ static/master_data/  マスターデータ（daimyo.csv / kuni.csv / neighbor.csv）
 ├─ .rulesync/       AIツール設定のソース（rulesyncで各ツール向けに展開）
@@ -394,7 +394,7 @@ Web アプリを API と別オリジンで配信する場合は、`SENGOKU_CORS_
 
 ### ブラウザアプリ（勢力図）
 
-[web/](web/README.md) に、この API を使って自国の状況・ターン数・勢力図（日本地図）を表示する React アプリがあります。
+[web/](web/README.md) に、この API を使って自国の状況・年と季節・勢力図（接続図）を表示する React アプリがあります。
 
 ```bash
 cargo run -p api-server        # API（:8080）

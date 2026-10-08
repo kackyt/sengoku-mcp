@@ -7,6 +7,8 @@ const apiTarget = process.env.SENGOKU_API_URL ?? "http://localhost:8080";
 export default defineConfig({
   plugins: [react()],
   server: {
+    // 隣接情報としてリポジトリ直下の static/master_data/neighbor.csv を読み込むため、親ディレクトリを許可する
+    fs: { allow: [".."] },
     proxy: {
       "/api": { target: apiTarget, changeOrigin: true },
     },

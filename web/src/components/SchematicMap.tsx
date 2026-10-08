@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { NEIGHBOR_PAIRS, neighborsOf } from "../adjacency";
 import { daimyoColor } from "../daimyoColors";
 import type { Territory } from "../territory";
@@ -40,20 +40,25 @@ interface Props {
 /**
  * 勢力図を接続図（国を箱、隣接を線で表した模式図）で表示する
  *
- * 小さな画面・低解像度では日本地図上の国名が重なって読めないため、地理的な正確さより
- * 読みやすさを優先した配置で「どの国がどの大名の領地か（色）」「どの国とどの国が隣接しているか（線）」を示す。
+ * サイドバーの限られた幅でも読めるよう、地理的な正確さより読みやすさを優先した配置で
+ * 「どの国がどの大名の領地か（色）」「どの国とどの国が隣接しているか（線）」を示す。
+ * マウスではホバー、タッチ操作ではタップで国を選ぶと、隣接国と同じ大名の領地を強調する。
  */
 export function SchematicMap({ territories, highlightedOwnerId, onHighlightOwner }: Props) {
   const [activeKuniId, setActiveKuniId] = useState<number | null>(null);
   const active = activeKuniId === null ? undefined : territories.get(activeKuniId);
   const activeNeighbors = new Set(activeKuniId === null ? [] : neighborsOf(activeKuniId));
 
-  // タップ・クリックで選択を切り替える（タッチ操作ではホバーがないため）
-  const toggle = (territory: Territory) => {
-    const next = activeKuniId === territory.kuniId ? null : territory.kuniId;
-    setActiveKuniId(next);
-    onHighlightOwner(next === null ? null : territory.owner.id);
+  // 国を選択（null で解除）し、同じ大名の領地の強調を合わせる
+  const select = (territory: Territory | null) => {
+    setActiveKuniId(territory?.kuniId ?? null);
+    onHighlightOwner(territory?.owner.id ?? null);
   };
+  // タップ・キー操作では選択を切り替える（タッチ操作ではホバーがないため）
+  const toggle = (territory: Territory) =>
+    select(activeKuniId === territory.kuniId ? null : territory);
+  // 直前のポインター種別（マウスのクリックはホバーで選択済みのため、切り替えに使わない）
+  const lastPointerType = useRef<string | null>(null);
 
   const svgClasses = [
     highlightedOwnerId !== null ? "has-highlight" : "",
@@ -114,7 +119,14 @@ export function SchematicMap({ territories, highlightedOwnerId, onHighlightOwner
               tabIndex={0}
               aria-pressed={territory.kuniId === activeKuniId}
               aria-label={`${territory.kuniName}：${territory.owner.name}`}
-              onClick={() => toggle(territory)}
+              onPointerDown={(e) => {
+                lastPointerType.current = e.pointerType;
+              }}
+              onClick={() => {
+                if (lastPointerType.current !== "mouse") toggle(territory);
+              }}
+              onPointerEnter={(e) => e.pointerType === "mouse" && select(territory)}
+              onPointerLeave={(e) => e.pointerType === "mouse" && select(null)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();

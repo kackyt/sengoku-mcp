@@ -135,9 +135,8 @@ impl<R: UnitRepository> MoveUnitUseCase<R> {
 │      ├─application : 共有ストレージからセッションを読み込むクエリサービスと、Webでのゲーム作成サービス。
 │      ├─presentation : REST API（axum）のルーティングとHTTPマッピング。
 │      └─main.rs : **Composition Root**。SessionStorageConfig（file / gcs）からリポジトリを構築して起動。
-├─web : ブラウザアプリ（React + Vite + TypeScript）。api-server の REST API で自国の状況・ターン数・勢力図（日本地図）を表示。
-│  ├─src/api : REST API クライアント。型は api-server/openapi.json から生成（pnpm gen:api）。
-│  └─src/map : 日本地図データ（scripts/build-japan-map.mjs で Natural Earth から生成）。
+├─web : ブラウザアプリ（React + Vite + TypeScript）。api-server の REST API で自国の状況・年と季節・勢力図（接続図）を表示。
+│  └─src/api : REST API クライアント。型は api-server/openapi.json から生成（pnpm gen:api）。
 ├─ static
 │  └─ master_data: マスターデータ
 └─ Cargo.toml ワークスペース管理

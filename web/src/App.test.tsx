@@ -62,15 +62,18 @@ describe("App", () => {
       "尾張",
     ]);
 
-    // 地図: 12国を支配大名の色で塗る（上杉の越州・甲信は同じ色、織田の三河・尾張は織田の色）
+    // 勢力図（接続図）: 12国を支配大名の色で塗る（上杉の越州・甲信は同じ色、織田の三河・尾張は織田の色）
     const fillOf = (kuniId: number) =>
-      (container.querySelector(`path.kuni[data-kuni-id="${kuniId}"]`) as SVGPathElement).style.fill;
-    expect(container.querySelectorAll("path.kuni")).toHaveLength(12);
+      (container.querySelector(`g.box[data-kuni-id="${kuniId}"] rect`) as SVGRectElement).style
+        .fill;
+    expect(container.querySelectorAll("g.box")).toHaveLength(12);
     expect(fillOf(3)).toBe(fillOf(4));
     expect(fillOf(6)).toBe(fillOf(7));
     expect(fillOf(7)).not.toBe(fillOf(4));
-    // 自領は太い輪郭で示す
-    expect(container.querySelectorAll("path.kuni-outline.mine")).toHaveLength(2);
+    // 自領は太い輪郭のクラスを付ける
+    expect(container.querySelectorAll("g.box.mine")).toHaveLength(2);
+    // 日本地図は表示しない
+    expect(container.querySelector("path.kuni")).toBeNull();
 
     // 凡例: 自国（織田）を先頭に、領地数の多い順
     const legend = within(screen.getByRole("list", { name: "大名" }));
@@ -78,29 +81,31 @@ describe("App", () => {
     expect(items.slice(0, 2)).toEqual(["織田2", "上杉2"]);
     expect(items).toHaveLength(10);
 
-    // 他国の一覧表・説明文は表示しない
-    expect(screen.queryByText("他国の支配大名")).toBeNull();
-    expect(screen.queryByText("隣接する他国")).toBeNull();
+    // 自領カードは各国の全項目（兵・金・米・人口・石高・町・忠誠）を表示する
+    const owari = cards.getAllByRole("listitem")[1]!;
+    for (const value of ["80", "200", "120", "350", "60", "100"]) {
+      expect(within(owari).getAllByText(value).length).toBeGreaterThan(0);
+    }
 
-    // 地図上で他国にホバーすると、支配大名を表示し、同じ大名の領地と隣接国を強調する
-    const koshin = container.querySelector('path[data-kuni-id="4"]')!;
-    fireEvent.pointerMove(koshin, { clientX: 10, clientY: 10 });
+    // 国を選ぶと、支配大名を表示し、同じ大名の領地と隣接国・接続線を強調する
+    fireEvent.click(screen.getByRole("button", { name: "甲信：上杉" }));
     expect(screen.getByRole("status")).toHaveTextContent("甲信上杉");
-    const highlighted = [...container.querySelectorAll("path.kuni.highlighted")].map((p) =>
-      p.getAttribute("data-kuni-id"),
+    const highlighted = [...container.querySelectorAll("g.box.highlighted")].map((g) =>
+      g.getAttribute("data-kuni-id"),
     );
     expect(highlighted.sort()).toEqual(["3", "4"]);
-    const activeEdges = [...container.querySelectorAll("path.edge.active")].map((p) =>
-      p.getAttribute("data-edge"),
+    const activeEdges = [...container.querySelectorAll("line.edge.active")].map((l) =>
+      l.getAttribute("data-edge"),
     );
     expect(activeEdges.sort()).toEqual(["3-4", "4-5", "4-6", "4-7", "4-8"]);
-    const neighbors = [...container.querySelectorAll("path.kuni.neighbor")].map((p) =>
-      p.getAttribute("data-kuni-id"),
+    const neighbors = [...container.querySelectorAll("g.box.neighbor")].map((g) =>
+      g.getAttribute("data-kuni-id"),
     );
     expect(neighbors.sort((x, y) => Number(x) - Number(y))).toEqual(["3", "5", "6", "7", "8"]);
 
-    // 接続線は隣接情報（17組）をすべて描画する
-    expect(container.querySelectorAll("path.edge")).toHaveLength(17);
+    // 接続線は隣接情報（17組、うち海路3本は破線）をすべて描画する
+    expect(container.querySelectorAll("line.edge")).toHaveLength(17);
+    expect(container.querySelectorAll("line.edge.sea")).toHaveLength(3);
   });
 
   it("大名未選択・無効なURLをそれぞれ案内する", async () => {

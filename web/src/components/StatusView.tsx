@@ -3,7 +3,7 @@ import type { KuniStatus, MyStatus } from "../api/client";
 import { daimyoColor } from "../daimyoColors";
 import { turnToDate } from "../gameDate";
 import { buildTerritories, countByOwner } from "../territory";
-import { MapPanel } from "./MapPanel";
+import { SchematicMap } from "./SchematicMap";
 
 const numberFormat = new Intl.NumberFormat("ja-JP");
 const fmt = (n: number) => numberFormat.format(n);
@@ -39,7 +39,7 @@ interface Props {
  * 自国の状況・年と季節・勢力図を表示する
  *
  * ブラウザの横半分ほどのサイドバーで使う想定。上部の1行に大名・年月・合計を詰め、
- * 地図は画面の高さに合わせ、自領は小さなカードで地図の横（狭い場合は下）に並べる。
+ * 勢力図（接続図）の横（狭い場合は下）に、自領のカードを折り返して全件表示する。
  */
 export function StatusView({ status }: Props) {
   const [highlightedOwnerId, setHighlightedOwnerId] = useState<number | null>(null);
@@ -94,35 +94,34 @@ export function StatusView({ status }: Props) {
 
       <div className="content">
         <section className="map-card" aria-label="勢力図">
-          <MapPanel
+          <SchematicMap
             territories={territories}
             highlightedOwnerId={highlightedOwnerId}
             onHighlightOwner={setHighlightedOwnerId}
-            overlay={
-              <ul className="legend" aria-label="大名">
-                {legend.map((entry) => (
-                  <li
-                    key={entry.id}
-                    className={
-                      [entry.mine ? "mine" : "", entry.id === highlightedOwnerId ? "highlighted" : ""]
-                        .join(" ")
-                        .trim() || undefined
-                    }
-                    onPointerEnter={() => setHighlightedOwnerId(entry.id)}
-                    onPointerLeave={() => setHighlightedOwnerId(null)}
-                  >
-                    <span
-                      className="swatch"
-                      style={{ background: daimyoColor(entry.id) }}
-                      aria-hidden="true"
-                    />
-                    {entry.name}
-                    <span className="legend-count">{entry.count}</span>
-                  </li>
-                ))}
-              </ul>
-            }
           />
+          {/* 凡例は接続図の右下の空き領域に重ねる */}
+          <ul className="legend map-overlay" aria-label="大名">
+            {legend.map((entry) => (
+              <li
+                key={entry.id}
+                className={
+                  [entry.mine ? "mine" : "", entry.id === highlightedOwnerId ? "highlighted" : ""]
+                    .join(" ")
+                    .trim() || undefined
+                }
+                onPointerEnter={() => setHighlightedOwnerId(entry.id)}
+                onPointerLeave={() => setHighlightedOwnerId(null)}
+              >
+                <span
+                  className="swatch"
+                  style={{ background: daimyoColor(entry.id) }}
+                  aria-hidden="true"
+                />
+                {entry.name}
+                <span className="legend-count">{entry.count}</span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <ul className="kuni-cards" aria-label="自領">

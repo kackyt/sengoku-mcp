@@ -1,18 +1,16 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { NEIGHBOR_PAIRS, neighborsOf } from "./adjacency";
+import { NEIGHBOR_PAIRS, neighborsOf, parseNeighborCsv } from "./adjacency";
 
 describe("adjacency", () => {
-  it("地図データの隣接情報がマスターデータ（neighbor.csv）と一致する", () => {
-    const csv = readFileSync(resolve(__dirname, "../../static/master_data/neighbor.csv"), "utf8");
-    const expected = csv
-      .trim()
-      .split(/\r?\n/)
-      .slice(1)
-      .map((line) => line.split(",").map(Number).sort((a, b) => a - b))
-      .sort((x, y) => x[0]! - y[0]! || x[1]! - y[1]!);
-    expect(NEIGHBOR_PAIRS.map((p) => [...p])).toEqual(expected);
+  it("neighbor.csv を国IDの小さい順の組に変換する", () => {
+    expect(parseNeighborCsv("ID1,ID2\n2,1\r\n3,2\n\n")).toEqual([
+      [1, 2],
+      [2, 3],
+    ]);
+  });
+
+  it("マスターデータの隣接情報（17組）を読み込む", () => {
+    expect(NEIGHBOR_PAIRS).toHaveLength(17);
   });
 
   it("国ごとの隣接国を双方向に引ける", () => {

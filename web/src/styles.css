@@ -1,6 +1,6 @@
 /*
  * 配色はロール（役割）のトークンで定義し、ライト/ダークで値だけを切り替える。
- * 地図の国は支配大名の色（src/daimyoColors.ts）で塗り、自領は太い輪郭で示す。
+ * 勢力図の国は支配大名の色（src/daimyoColors.ts）で塗り、自領は太い輪郭で示す。
  */
 :root {
   color-scheme: light;
@@ -182,7 +182,7 @@ button.secondary {
 /* --- 状況画面（サイドバー想定：ブラウザの横半分ほど） --- */
 
 .status {
-  /* 上部バーと余白の高さ。地図の高さの上限は「画面の高さ - この値」（MapPanel.tsx の CHROME_HEIGHT と揃える） */
+  /* 上部バーと余白の高さ。接続図の高さの上限は「画面の高さ - この値」 */
   --chrome-height: 64px;
   container-type: inline-size;
   padding: 8px 12px 12px;
@@ -249,47 +249,30 @@ button.secondary {
 }
 
 /*
- * 地図と自領カード
- * - 狭い場合：地図の下に自領カードを横スクロールの1行で並べ、その分だけ地図の高さを詰める
- * - 横に余裕がある場合：地図の右に自領カードを縦に並べる
- * --map-reserve は地図の高さの上限から差し引く高さ（MapPanel.tsx でも参照する）
+ * 勢力図（接続図）と自領カード
+ * - 横に余裕がある場合：接続図を左、自領カードを右に折り返して並べる
+ * - 狭い場合：接続図の下に自領カードを折り返して並べる
+ * カードは切れないよう、横スクロールや高さ制限はせず全件を表示する。
  */
 .content {
-  --map-reserve: 100px;
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(0, 1fr);
+  align-items: start;
 }
 
 .kuni-cards {
   list-style: none;
   margin: 0;
-  padding: 0 0 2px;
-  display: flex;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   gap: 6px;
-  overflow-x: auto;
 }
 
-.kuni-cards .kuni-card {
-  flex: 0 0 200px;
-}
-
-@container (min-width: 760px) {
+@container (min-width: 600px) {
   .content {
-    --map-reserve: 0px;
-    grid-template-columns: minmax(0, 1fr) 232px;
-    align-items: start;
-  }
-
-  .kuni-cards {
-    flex-direction: column;
-    overflow-x: visible;
-    overflow-y: auto;
-    max-height: calc(100dvh - var(--chrome-height));
-  }
-
-  .kuni-cards .kuni-card {
-    flex: none;
+    grid-template-columns: minmax(240px, 380px) minmax(0, 1fr);
   }
 }
 
@@ -377,67 +360,20 @@ button.secondary {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- 地図 --- */
+/* --- 勢力図（接続図） --- */
 
-.map {
-  position: relative;
-  background: var(--sea);
-  border-radius: 8px;
-}
-
+/* 凡例を接続図の右下に重ねるための基準 */
 .map-card {
+  position: relative;
   min-width: 0;
 }
 
-/* 切り替えボタン（左上）と凡例（右下）を地図の上に重ねるための基準 */
-.map-panel {
-  position: relative;
-}
-
-.map svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: calc(100dvh - var(--chrome-height, 64px) - var(--map-reserve, 0px));
-}
-
-/*
- * 線幅は vector-effect: non-scaling-stroke で画面上の太さを固定する。
- * 地図を縮小表示（小さな画面・低解像度）しても境界線や接続線が細くなりすぎないようにするため。
- * 国の塗り色は大名ごとの色をインラインで指定する。
- */
-.kuni {
-  stroke: var(--surface);
-  stroke-width: 1.5;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-  transition: opacity 120ms ease;
-  cursor: default;
-}
-
-/* 強調中は、強調対象（同じ大名の領地・選択中の国の隣接国）以外を沈ませる */
-.has-highlight .kuni:not(.highlighted, .neighbor) {
-  opacity: 0.3;
-}
-
-/* 自領・強調中の大名の領地の輪郭 */
-.kuni-outline {
-  fill: none;
-  stroke: var(--text-primary);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-
-.kuni-outline.mine {
-  stroke-width: 3.5;
-}
-
-.kuni:focus-visible {
-  outline: none;
-  stroke: var(--text-primary);
-  stroke-width: 3;
+.map-overlay {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  /* 右下の空き領域に収まる幅に抑える */
+  max-width: 46%;
 }
 
 /* 隣接を表す接続線 */
@@ -461,81 +397,6 @@ button.secondary {
   stroke-width: 3;
 }
 
-/* 国の中心点 */
-.node {
-  fill: var(--text-primary);
-  stroke: var(--halo);
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-
-.leader {
-  stroke: var(--edge);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-  vector-effect: non-scaling-stroke;
-}
-
-/* 国名（文字の大きさ・縁取りの太さは縮尺に合わせて JS で指定する）。どの塗り色の上でも読めるよう白で縁取る */
-.kuni-label {
-  pointer-events: none;
-  text-anchor: middle;
-  font-weight: 700;
-  fill: #0b0b0b;
-  paint-order: stroke;
-  stroke: var(--halo);
-  stroke-linejoin: round;
-}
-
-.tooltip {
-  position: absolute;
-  transform: translate(12px, 12px);
-  pointer-events: none;
-  background: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.35rem 0.6rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.9rem;
-  white-space: nowrap;
-  z-index: 1;
-}
-
-/* --- 表示切り替え・接続図 --- */
-
-.view-switch {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  display: flex;
-  gap: 2px;
-}
-
-.view-switch button {
-  background: var(--surface);
-  padding: 0.15rem 0.6rem;
-  font-size: 0.8rem;
-}
-
-.map-overlay {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  /* 右下の海の上に収まる幅に抑える */
-  max-width: min(46%, 280px);
-}
-
-.view-switch button[aria-pressed="true"] {
-  background: var(--text-primary);
-  color: var(--surface);
-  border-color: var(--text-primary);
-}
-
 .schematic {
   background: var(--sea);
   border-radius: 8px;
@@ -545,7 +406,7 @@ button.secondary {
   display: block;
   width: 100%;
   height: auto;
-  max-height: calc(100dvh - var(--chrome-height, 64px) - var(--map-reserve, 0px));
+  max-height: calc(100dvh - var(--chrome-height, 64px));
   margin: 0 auto;
 }
 
@@ -608,10 +469,10 @@ button.secondary {
   stroke-width: 3;
 }
 
-/* 選択中の国の支配大名：接続図の左上（切り替えボタンの下）の空き領域に重ねる */
+/* 選択中の国の支配大名：接続図の左上の空き領域に重ねる */
 .schematic-detail {
   position: absolute;
-  top: 40px;
+  top: 6px;
   left: 6px;
   margin: 0;
   display: flex;
