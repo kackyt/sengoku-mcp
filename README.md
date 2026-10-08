@@ -33,7 +33,8 @@ sengoku-mcp/
 ├─ infrastructure/  リポジトリ実装・マスターデータのロード
 ├─ game-session/    セッション（GameContext）の構築・管理（MCP / REST で共有）
 ├─ mcp-server/      MCPプロトコルのマッピング（LLMから操作する入口）
-├─ api-server/      自国の状況を返す REST API（読み取り専用）
+├─ api-server/      自国の状況を返す REST API
+├─ web/             状況と勢力図（日本地図）を表示するブラウザアプリ（React）
 ├─ cli/             TUI（ratatui/crossterm）クライアント
 ├─ static/master_data/  マスターデータ（daimyo.csv / kuni.csv / neighbor.csv）
 ├─ .rulesync/       AIツール設定のソース（rulesyncで各ツール向けに展開）
@@ -362,22 +363,21 @@ UPDATE_OPENAPI=1 cargo test -p api-server --test openapi_test
 }
 ```
 
-状況取得（`GET .../status`）のレスポンス例:
+状況取得（`GET .../status`）のレスポンス例。返すのは **自国の状況・ターン数・他国の支配大名のみ** で、
+他国の資源（兵・金など）は含みません。
 
 ```json
 {
-  "last_accessed_at": "2026-10-08T12:34:56Z",
+  "turn": 3,
   "daimyo": { "id": 7, "name": "織田" },
-  "game": {
-    "turn": 1, "season": "春", "phase": "Domestic",
-    "current_daimyo_name": "織田", "winner": null
-  },
-  "kunis": [
-    { "id": 7, "name": "尾張", "kin": 100, "kome": 200, "hei": 50,
-      "jinko": 300, "kokudaka": 150, "machi": 10, "tyu": 60 }
+  "my_kunis": [
+    { "id": 7, "name": "尾張", "kin": 200, "kome": 120, "hei": 80,
+      "jinko": 350, "kokudaka": 60, "machi": 100, "tyu": 80 }
   ],
-  "totals": { "kuni_count": 1, "kin": 100, "kome": 200, "hei": 50, "jinko": 300, "kokudaka": 150 },
-  "defense_alerts": []
+  "other_kunis": [
+    { "id": 6, "name": "三河", "daimyo": { "id": 6, "name": "徳川" } },
+    { "id": 8, "name": "山城", "daimyo": { "id": 8, "name": "足利" } }
+  ]
 }
 ```
 
@@ -388,6 +388,21 @@ UPDATE_OPENAPI=1 cargo test -p api-server --test openapi_test
 | 404 | `session_not_found` | セッションが保存先に存在しない |
 | 409 | `daimyo_not_selected` | セッションはあるが大名が未選択 |
 | 500 | `internal_error` | 保存先へのアクセス失敗など（詳細はサーバーログ） |
+
+Web アプリを API と別オリジンで配信する場合は、`SENGOKU_CORS_ALLOW_ORIGINS` に許可するオリジンを
+カンマ区切りで指定してください（例: `https://sengoku.example.com`。`*` で全許可）。
+
+### ブラウザアプリ（勢力図）
+
+[web/](web/README.md) に、この API を使って自国の状況・ターン数・勢力図（日本地図）を表示する React アプリがあります。
+
+```bash
+cargo run -p api-server        # API（:8080）
+cd web && pnpm install && pnpm dev   # Web（:5173、/api を :8080 へプロキシ）
+```
+
+MCP ツールの結果に付く閲覧URLを Web アプリに向けるには、MCP サーバーに
+`SENGOKU_VIEW_URL_TEMPLATE='http://localhost:5173/?token={token}'` を設定します。
 
 > **Note**: `POST /api/games` は認証なしでセッションを作成できるため、公開する場合は
 > Cloud Run の IAM 認証・API Gateway のレート制限などで乱用を防いでください。

@@ -1,3 +1,4 @@
+use crate::application::dto::territory_dto::TerritoryDTO;
 use crate::domain::model::action_log::{ActionLogCategory, ActionLogEntry};
 use crate::domain::model::daimyo::Daimyo;
 use crate::domain::model::kuni::Kuni;
@@ -123,6 +124,34 @@ impl KuniQueryUseCase {
         }
 
         Ok(snapshot)
+    }
+
+    /// 全国の勢力図（各国の支配大名）を国ID順に取得します
+    ///
+    /// 他国の資源などは含まず、「どの国がどの大名の領地か」のみを返します。
+    pub async fn get_territories(&self) -> anyhow::Result<Vec<TerritoryDTO>> {
+        let kunis = self.kuni_repo.find_all().await?;
+        let daimyos = self.daimyo_repo.find_all().await?;
+        Ok(Self::build_territories(&kunis, &daimyos))
+    }
+
+    /// 国と大名の一覧から勢力図を組み立てます（国ID順）
+    fn build_territories(kunis: &[Kuni], daimyos: &[Daimyo]) -> Vec<TerritoryDTO> {
+        let daimyo_names: HashMap<DaimyoId, &str> =
+            daimyos.iter().map(|d| (d.id, d.name.0.as_str())).collect();
+        let mut territories: Vec<TerritoryDTO> = kunis
+            .iter()
+            .map(|k| TerritoryDTO {
+                kuni_id: k.id,
+                kuni_name: k.name.0.clone(),
+                daimyo_id: k.daimyo_id,
+                daimyo_name: daimyo_names
+                    .get(&k.daimyo_id)
+                    .map_or_else(|| "不明".to_string(), |name| name.to_string()),
+            })
+            .collect();
+        territories.sort_by_key(|t| t.kuni_id);
+        territories
     }
 
     /// 指定した大名が支配する国の一覧を取得します
@@ -282,5 +311,57 @@ impl KuniQueryUseCase {
                 defense_alerts,
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod territory_tests {
+    use super::*;
+    use crate::domain::model::daimyo_personality::DaimyoPersonality;
+    use crate::domain::model::resource::{DevelopmentStats, Resource};
+    use crate::domain::model::value_objects::IninFlag;
+
+    /// テスト用の国を生成します（資源は勢力図に無関係なので最小値）
+    fn kuni(id: u32, name: &str, daimyo_id: u32) -> Kuni {
+        Kuni::new(
+            KuniId(id),
+            name,
+            DaimyoId(daimyo_id),
+            Resource::new(0, 0, 0, 0),
+            DevelopmentStats::new(0, 0, 0),
+            IninFlag(false),
+        )
+    }
+
+    #[test]
+    fn test_build_territories_sorted_with_owner_names() {
+        let daimyos = vec![
+            Daimyo::new(DaimyoId(7), "織田", DaimyoPersonality::default()),
+            Daimyo::new(DaimyoId(6), "徳川", DaimyoPersonality::default()),
+        ];
+        // 織田が三河を攻略済み、存在しない大名IDの国も含む
+        let kunis = vec![kuni(7, "尾張", 7), kuni(6, "三河", 7), kuni(8, "山城", 99)];
+
+        let territories = KuniQueryUseCase::build_territories(&kunis, &daimyos);
+
+        let summary: Vec<_> = territories
+            .iter()
+            .map(|t| {
+                (
+                    t.kuni_id.0,
+                    t.kuni_name.as_str(),
+                    t.daimyo_id.0,
+                    t.daimyo_name.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (6, "三河", 7, "織田"),
+                (7, "尾張", 7, "織田"),
+                (8, "山城", 99, "不明"),
+            ]
+        );
     }
 }

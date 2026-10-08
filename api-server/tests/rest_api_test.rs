@@ -86,7 +86,7 @@ async fn send(router: &Router, request: Request<Body>) -> (StatusCode, Value) {
 
 /// 尾張（ID: 7）の兵数を取得します
 fn owari_hei(body: &Value) -> u64 {
-    body["kunis"]
+    body["my_kunis"]
         .as_array()
         .unwrap()
         .iter()
@@ -125,12 +125,25 @@ async fn assert_state_is_shared(storage: SessionStorage) {
     assert_eq!(status, StatusCode::OK, "body: {before}");
     assert_eq!(before["daimyo"]["id"], 7);
     assert_eq!(before["daimyo"]["name"], "織田");
-    assert_eq!(
-        before["totals"]["kuni_count"].as_u64().unwrap() as usize,
-        before["kunis"].as_array().unwrap().len()
-    );
-    assert!(before["game"]["turn"].as_u64().unwrap() >= 1);
-    assert!(before["defense_alerts"].is_array());
+    assert!(before["turn"].as_u64().unwrap() >= 1);
+    // 返すのは「自国の状況」「ターン数」「他国の支配大名」のみ
+    let mut keys: Vec<_> = before.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, ["daimyo", "my_kunis", "other_kunis", "turn"]);
+    // 自領と他国で全12国を網羅し、他国は支配大名のみ（資源は含まない）
+    let my_count = before["my_kunis"].as_array().unwrap().len();
+    let others = before["other_kunis"].as_array().unwrap();
+    assert_eq!(my_count + others.len(), 12);
+    let mikawa = others
+        .iter()
+        .find(|k| k["id"] == 6)
+        .expect("三河が他国に含まれること");
+    assert_eq!(mikawa["name"], "三河");
+    assert_eq!(mikawa["daimyo"]["name"], "徳川");
+    let mut other_keys: Vec<_> = mikawa.as_object().unwrap().keys().cloned().collect();
+    other_keys.sort();
+    assert_eq!(other_keys, ["daimyo", "id", "name"]);
+    assert!(others.iter().all(|k| k["daimyo"]["id"] != 7));
 
     // MCP: 尾張で兵を徴募する
     handlers

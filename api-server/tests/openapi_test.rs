@@ -108,3 +108,59 @@ async fn test_openapi_and_docs_are_served() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn test_cors_layer() {
+    use api_server::presentation::cors_layer;
+
+    // 未指定・空なら CORS レイヤーなし
+    assert!(cors_layer(None).is_none());
+    assert!(cors_layer(Some("  ")).is_none());
+
+    let dir = tempfile::tempdir().unwrap();
+    let storage =
+        SessionStorage::from_backend(Arc::new(SessionPersistenceManager::new(dir.path())));
+    let master_data = Arc::new(MasterDataLoader);
+    let router = build_router(AppState {
+        status: Arc::new(StatusQueryService::new(
+            storage.clone(),
+            master_data.clone(),
+        )),
+        games: Arc::new(GameCreationService::new(GameLobby::new(
+            storage,
+            master_data,
+        ))),
+    })
+    .layer(cors_layer(Some("http://localhost:5173, https://sengoku.example.com")).unwrap());
+
+    // 許可したオリジンには Access-Control-Allow-Origin が付く
+    let response = router
+        .clone()
+        .oneshot(
+            Request::get("/health")
+                .header("Origin", "https://sengoku.example.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response.headers()["access-control-allow-origin"],
+        "https://sengoku.example.com"
+    );
+
+    // 許可していないオリジンには付かない
+    let response = router
+        .oneshot(
+            Request::get("/health")
+                .header("Origin", "https://evil.example.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response
+        .headers()
+        .get("access-control-allow-origin")
+        .is_none());
+}

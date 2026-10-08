@@ -1,6 +1,5 @@
 use crate::application::dto::{
-    CreatedGameDto, DaimyoDto, DefenseAlertDto, GamePhaseDto, GameProgressDto, KuniStatusDto,
-    MyStatusDto, ResourceTotalsDto,
+    CreatedGameDto, DaimyoDto, KuniStatusDto, MyStatusDto, OtherKuniDto,
 };
 use crate::presentation::routes::{self, ErrorCode, ErrorResponse};
 use utoipa::OpenApi;
@@ -33,11 +32,8 @@ LLM（MCP）側のゲームと連携します。状況の取得には閲覧ト�
     components(schemas(
         MyStatusDto,
         DaimyoDto,
-        GamePhaseDto,
-        GameProgressDto,
         KuniStatusDto,
-        ResourceTotalsDto,
-        DefenseAlertDto,
+        OtherKuniDto,
         CreatedGameDto,
         ErrorResponse,
         ErrorCode,

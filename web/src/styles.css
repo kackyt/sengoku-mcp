@@ -1,0 +1,473 @@
+/*
+ * 配色はロール（役割）のトークンで定義し、ライト/ダークで値だけを切り替える。
+ * 地図は「自領＝アクセント色、他家＝無彩色」の強調表現（12家を色で塗り分けない）。
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #6f6d68;
+  --text-on-accent: #ffffff;
+  --border: rgba(11, 11, 11, 0.1);
+  --gridline: #e1e0d9;
+  --accent: #2a78d6;
+  --accent-strong: #1c5cab;
+  --land-other: #d6d5cd;
+  --land-other-strong: #b4b3aa;
+  --sea: #eef3f8;
+  --critical: #d03b3b;
+  --font: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #9c9a92;
+    --border: rgba(255, 255, 255, 0.1);
+    --gridline: #2c2c2a;
+    --accent: #3987e5;
+    --accent-strong: #86b6ef;
+    --land-other: #3d3d39;
+    --land-other-strong: #5c5c56;
+    --sea: #151a20;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #9c9a92;
+  --border: rgba(255, 255, 255, 0.1);
+  --gridline: #2c2c2a;
+  --accent: #3987e5;
+  --accent-strong: #86b6ef;
+  --land-other: #3d3d39;
+  --land-other-strong: #5c5c56;
+  --sea: #151a20;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: var(--font);
+  line-height: 1.6;
+}
+
+h1,
+h2 {
+  margin: 0;
+  line-height: 1.3;
+}
+
+h2 {
+  font-size: 1rem;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.error {
+  color: var(--critical);
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 0.7rem 1.4rem;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.8rem;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- カード・中央寄せの画面 --- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+}
+
+.centered {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.notice {
+  max-width: 34rem;
+  width: 100%;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.notice h1 {
+  font-size: 1.4rem;
+}
+
+.notice p {
+  margin: 0;
+}
+
+.new-game {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
+/* --- 参加コード --- */
+
+.join-code {
+  font-size: clamp(2.5rem, 12vw, 4rem);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding: 0.5rem 0;
+}
+
+.join-message {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.join-message code {
+  flex: 1 1 14rem;
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-family: inherit;
+}
+
+/* --- 状況画面 --- */
+
+.status {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.25rem 16px 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.hero {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.hero-number {
+  font-size: 3.25rem;
+  font-weight: 700;
+  margin: 0 0.15em;
+}
+
+.updated {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: grid;
+}
+
+.kpi-label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.kpi-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.kpi-value small {
+  font-size: 0.9rem;
+  margin-left: 0.15em;
+  color: var(--text-secondary);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.25rem 1rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.swatch.mine {
+  background: var(--accent);
+}
+
+.swatch.other {
+  background: var(--land-other);
+}
+
+/* --- 地図 --- */
+
+.map {
+  position: relative;
+  background: var(--sea);
+  border-radius: 8px;
+}
+
+.map svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 78vh;
+}
+
+.kuni {
+  stroke: var(--surface);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition: opacity 120ms ease;
+  cursor: default;
+}
+
+.kuni.mine {
+  fill: var(--accent);
+}
+
+.kuni.other {
+  fill: var(--land-other);
+}
+
+/* 強調中は、強調対象以外を沈ませる */
+.has-highlight .kuni:not(.highlighted) {
+  opacity: 0.35;
+}
+
+.kuni.other.highlighted {
+  fill: var(--land-other-strong);
+}
+
+.kuni-outline {
+  fill: none;
+  stroke: var(--text-primary);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.kuni:focus-visible {
+  outline: none;
+  stroke: var(--text-primary);
+  stroke-width: 3;
+}
+
+.kuni-label {
+  pointer-events: none;
+  text-anchor: middle;
+  fill: var(--text-primary);
+  paint-order: stroke;
+  stroke: var(--land-other);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* 海上のラベルは海の色で縁取る */
+.kuni-label.in-sea {
+  stroke: var(--sea);
+}
+
+.leader line {
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+}
+
+.leader circle {
+  fill: var(--text-primary);
+}
+
+.kuni-label.on-mine {
+  fill: var(--text-on-accent);
+  stroke: var(--accent);
+}
+
+.kuni-name {
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.kuni-owner {
+  font-size: 15px;
+}
+
+.tooltip {
+  position: absolute;
+  transform: translate(12px, 12px);
+  pointer-events: none;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  display: grid;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+/* --- 表 --- */
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+th,
+td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--gridline);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+thead th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+th[scope="row"],
+thead th:first-child {
+  text-align: left;
+}
+
+table.others td,
+table.others thead th {
+  text-align: left;
+}
+
+table.others tr.highlighted {
+  background: var(--page);
+}
+
+/* --- 狭い画面（スマートフォン） --- */
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-number {
+    font-size: 2.5rem;
+  }
+}

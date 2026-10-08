@@ -102,6 +102,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower",
+ "tower-http",
  "utoipa",
  "utoipa-scalar",
 ]

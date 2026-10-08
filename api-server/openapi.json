@@ -314,31 +314,6 @@
           }
         }
       },
-      "DefenseAlertDto": {
-        "type": "object",
-        "description": "侵攻検知の情報（自領が攻め込まれている合戦）",
-        "required": [
-          "attacker_kuni_name",
-          "defender_kuni_name",
-          "enemy_hei"
-        ],
-        "properties": {
-          "attacker_kuni_name": {
-            "type": "string",
-            "description": "攻め込んできた国の名前"
-          },
-          "defender_kuni_name": {
-            "type": "string",
-            "description": "攻め込まれている自領の名前"
-          },
-          "enemy_hei": {
-            "type": "integer",
-            "format": "int32",
-            "description": "敵軍の兵数",
-            "minimum": 0
-          }
-        }
-      },
       "ErrorCode": {
         "type": "string",
         "description": "機械判定用のエラーコード",
@@ -366,56 +341,6 @@
             "type": "string",
             "description": "人間向けのメッセージ（日本語）",
             "example": "チャット側の参加待ちです。チャットで参加コードを伝えてください"
-          }
-        }
-      },
-      "GamePhaseDto": {
-        "type": "string",
-        "description": "ゲームの進行フェーズ",
-        "enum": [
-          "Domestic",
-          "Battle",
-          "GameOver",
-          "GameClear"
-        ]
-      },
-      "GameProgressDto": {
-        "type": "object",
-        "description": "ゲームの進行状況",
-        "required": [
-          "turn",
-          "season",
-          "phase",
-          "current_daimyo_name"
-        ],
-        "properties": {
-          "current_daimyo_name": {
-            "type": "string",
-            "description": "現在手番の大名名",
-            "example": "織田"
-          },
-          "phase": {
-            "$ref": "#/components/schemas/GamePhaseDto",
-            "description": "進行フェーズ"
-          },
-          "season": {
-            "type": "string",
-            "description": "季節名（春 / 夏 / 秋 / 冬）",
-            "example": "春"
-          },
-          "turn": {
-            "type": "integer",
-            "format": "int32",
-            "description": "現在のターン（1始まり）",
-            "example": 1,
-            "minimum": 0
-          },
-          "winner": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "勝者の大名名（決着していない場合は null）"
           }
         }
       },
@@ -492,95 +417,65 @@
       },
       "MyStatusDto": {
         "type": "object",
-        "description": "自国の状況",
+        "description": "自国の状況\n\n返すのは「自国の状況」「ターン数」「他国がどの大名の領地か」のみです。\n他国の資源（兵・金など）は含みません。",
         "required": [
-          "last_accessed_at",
+          "turn",
           "daimyo",
-          "game",
-          "kunis",
-          "totals",
-          "defense_alerts"
+          "my_kunis",
+          "other_kunis"
         ],
         "properties": {
           "daimyo": {
             "$ref": "#/components/schemas/DaimyoDto",
-            "description": "プレイヤーが選択している大名"
+            "description": "プレイヤーが選択している大名（自国）"
           },
-          "defense_alerts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DefenseAlertDto"
-            },
-            "description": "自領に攻め込まれている合戦の一覧（空なら侵攻なし）"
-          },
-          "game": {
-            "$ref": "#/components/schemas/GameProgressDto",
-            "description": "ゲーム全体の進行状況"
-          },
-          "kunis": {
+          "my_kunis": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/KuniStatusDto"
             },
             "description": "自領の一覧（国ID順）"
           },
-          "last_accessed_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "セッションの最終更新日時（MCP側で最後に保存された時刻, UTC）"
+          "other_kunis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OtherKuniDto"
+            },
+            "description": "他国の一覧（国ID順）。どの大名の領地かのみを示す"
           },
-          "totals": {
-            "$ref": "#/components/schemas/ResourceTotalsDto",
-            "description": "自領全体の資源合計"
+          "turn": {
+            "type": "integer",
+            "format": "int32",
+            "description": "現在のターン（1始まり）",
+            "example": 1,
+            "minimum": 0
           }
         }
       },
-      "ResourceTotalsDto": {
+      "OtherKuniDto": {
         "type": "object",
-        "description": "自領全体の資源合計",
+        "description": "他国1国分の情報（支配大名のみ）",
         "required": [
-          "kuni_count",
-          "kin",
-          "kome",
-          "hei",
-          "jinko",
-          "kokudaka"
+          "id",
+          "name",
+          "daimyo"
         ],
         "properties": {
-          "hei": {
+          "daimyo": {
+            "$ref": "#/components/schemas/DaimyoDto",
+            "description": "この国を支配している大名"
+          },
+          "id": {
             "type": "integer",
             "format": "int32",
-            "description": "兵の合計",
+            "description": "国ID",
+            "example": 6,
             "minimum": 0
           },
-          "jinko": {
-            "type": "integer",
-            "format": "int32",
-            "description": "人口の合計",
-            "minimum": 0
-          },
-          "kin": {
-            "type": "integer",
-            "format": "int32",
-            "description": "金の合計",
-            "minimum": 0
-          },
-          "kokudaka": {
-            "type": "integer",
-            "format": "int32",
-            "description": "石高の合計",
-            "minimum": 0
-          },
-          "kome": {
-            "type": "integer",
-            "format": "int32",
-            "description": "米の合計",
-            "minimum": 0
-          },
-          "kuni_count": {
-            "type": "integer",
-            "description": "領地数",
-            "minimum": 0
+          "name": {
+            "type": "string",
+            "description": "国名",
+            "example": "三河"
           }
         }
       }

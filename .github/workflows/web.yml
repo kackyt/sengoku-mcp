@@ -1,0 +1,45 @@
+name: Web
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "web/**", "api-server/openapi.json", ".github/workflows/web.yml" ]
+  pull_request:
+    branches: [ "main" ]
+    paths: [ "web/**", "api-server/openapi.json", ".github/workflows/web.yml" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: pnpm/action-setup@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: web/pnpm-lock.yaml
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    # OpenAPI 仕様から生成した型が最新であることを確認する
+    - name: Check generated API types
+      run: |
+        pnpm gen:api
+        git diff --exit-code -- src/api/schema.d.ts
+
+    - name: Typecheck
+      run: pnpm typecheck
+
+    - name: Test
+      run: pnpm test
+
+    - name: Build
+      run: pnpm build

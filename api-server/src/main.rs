@@ -1,5 +1,5 @@
 use api_server::application::{GameCreationService, StatusQueryService};
-use api_server::presentation::{build_router, AppState};
+use api_server::presentation::{build_router, cors_layer, AppState, ENV_CORS_ALLOW_ORIGINS};
 use game_session::GameLobby;
 use infrastructure::master_data::MasterDataLoader;
 use infrastructure::persistence::SessionStorageConfig;
@@ -43,7 +43,13 @@ async fn main() -> anyhow::Result<()> {
         storage_config.describe()
     );
 
-    axum::serve(listener, build_router(state))
+    // Webアプリを別オリジンで配信する場合は SENGOKU_CORS_ALLOW_ORIGINS で許可オリジンを指定する
+    let mut router = build_router(state);
+    if let Some(layer) = cors_layer(std::env::var(ENV_CORS_ALLOW_ORIGINS).ok().as_deref()) {
+        router = router.layer(layer);
+    }
+
+    axum::serve(listener, router)
         .with_graceful_shutdown(async {
             // Ctrl+C で穏やかに停止する
             let _ = tokio::signal::ctrl_c().await;
