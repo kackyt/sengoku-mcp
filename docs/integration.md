@@ -251,7 +251,7 @@ curl http://localhost:8080/openapi.json    # OpenAPI 3.1
 | ブラウザが参加コードの画面のまま | LLM がまだ `join_game` を呼んでいない、または保存先が違う | チャットに参加コードを伝え直す。保存先の設定を確認 |
 | ブラウザが「大名を選んでください」のまま | 参加済みだが大名が未選択 | LLM に大名を選んでもらう（`select_daimyo`） |
 | ブラウザが「このゲームは終了しています」 | 閲覧トークンが無効（別ゲームに置き換え・7 日以上放置で削除・URL の誤り） | 新しいゲームを作成 |
-| ブラウザが「接続できません」 | api-server が起動していない、または `SENGOKU_API_URL`／`VITE_API_BASE_URL` の誤り | api-server の起動とURLを確認 |
+| ブラウザが「接続できません」（一時的なエラーは自動で2回まで再試行した後に表示） | api-server が起動していない、または `SENGOKU_API_URL`／`VITE_API_BASE_URL` の誤り | api-server の起動とURLを確認 |
 | ブラウザのコンソールに CORS エラー | Web と api-server が別オリジンで、許可されていない | api-server に `SENGOKU_CORS_ALLOW_ORIGINS` を指定 |
 | api-server が `SENGOKU_STORAGE=gcs の場合は SENGOKU_GCS_BUCKET を指定してください` で終了 | バケット名が未指定 | `SENGOKU_GCS_BUCKET` を指定 |
 | GCS 使用時に 500（ログに `Error performing token request`） | 認証情報が見つからない、または権限不足 | [2.2](#22-gcs-の認証sengoku_storagegcs-の場合)の認証方法とバケット権限を確認 |

@@ -29,11 +29,12 @@ jobs:
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
-    # OpenAPI 仕様から生成した型が最新であることを確認する
-    - name: Check generated API types
+    # OpenAPI 仕様から生成した API クライアントが最新であることを確認する（追加・削除されたファイルも検出）
+    - name: Check generated API client
       run: |
         pnpm gen:api
-        git diff --exit-code -- src/api/schema.d.ts
+        git add --intent-to-add src/api/generated
+        git diff --exit-code -- src/api/generated
 
     - name: Typecheck
       run: pnpm typecheck

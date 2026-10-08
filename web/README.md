@@ -60,6 +60,16 @@ SENGOKU_VIEW_URL_TEMPLATE='http://localhost:5173/?token={token}'
 | `pnpm test` | ユニットテスト（Vitest + Testing Library） |
 | `pnpm typecheck` | 型チェック |
 | `pnpm build` | 本番ビルド（`dist/`）。API が別オリジンなら `VITE_API_BASE_URL` を指定 |
-| `pnpm gen:api` | `api-server/openapi.json` から API の型（`src/api/schema.d.ts`）を再生成 |
+| `pnpm gen:api` | `api-server/openapi.json` から API クライアント（`src/api/generated/`）を再生成 |
+
+### API クライアント
+
+`src/api/generated/` は [@hey-api/openapi-ts](https://heyapi.dev/) が `api-server/openapi.json` から生成する
+fetch ベースのクライアント・型・SDK 関数です（設定は `openapi-ts.config.ts`、手で編集しない）。
+API 仕様を変えたら `pnpm gen:api` で再生成してコミットしてください（CI で差分を検査します）。
+
+画面からは `src/api/client.ts` 経由で呼び出します。通信部分は [ky](https://github.com/sindresorhus/ky) に差し替えており、
+GET は通信失敗と一時的なエラー（408 / 429 / 500 / 502 / 503 / 504）を最大2回まで再試行します。
+ゲーム作成（POST）は二重作成を避けるため再試行しません。
 
 API と別オリジンで配信する場合は、`api-server` 側で `SENGOKU_CORS_ALLOW_ORIGINS`（カンマ区切り）を指定してください。

@@ -1,14 +1,14 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { jsonResponse, sampleStatus } from "./test/fixtures";
+import { jsonResponse, requestKey, sampleStatus } from "./test/fixtures";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 
 /** URL・メソッドごとにレスポンスを返す fetch モックを登録する */
 function mockFetch(routes: Record<string, () => Response>) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const key = `${init?.method ?? "GET"} ${String(input)}`;
+    const key = requestKey(input, init);
     const route = routes[key];
     if (!route) throw new Error(`想定外のリクエスト: ${key}`);
     return route();

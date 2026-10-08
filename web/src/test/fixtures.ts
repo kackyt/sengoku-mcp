@@ -29,3 +29,13 @@ export function jsonResponse(status: number, body: unknown): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+/**
+ * fetch に渡されたリクエストを「メソッド パス」の形にする（モックの振り分け・検証用）
+ *
+ * API クライアントは Request オブジェクトで呼び出すため、URL 文字列・Request のどちらも受け付ける。
+ */
+export function requestKey(input: RequestInfo | URL, init?: RequestInit): string {
+  const request = input instanceof Request ? input : new Request(new URL(String(input), location.href), init);
+  return `${init?.method ?? request.method} ${new URL(request.url, location.href).pathname}`;
+}
