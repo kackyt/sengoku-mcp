@@ -95,6 +95,7 @@ fn owari_hei(body: &Value) -> u64 {
 async fn assert_state_is_shared(storage: SessionStorage) {
     let (handlers, router) = build_servers(storage);
     let session_id = "shared_session".to_string();
+    start_game(&router, &handlers, &session_id).await;
 
     // MCP: 織田（ID: 7）を選択してプレイヤーの手番まで進める
     handlers
@@ -179,6 +180,8 @@ async fn test_default_session_endpoint() {
     let dir = tempdir().unwrap();
     let (handlers, router) = build_servers(file_storage(&dir));
 
+    start_game(&router, &handlers, "default").await;
+
     // MCP: session_id 省略（default セッション）で武田（ID: 4）を選択
     handlers
         .select_daimyo(Parameters(SelectDaimyoParams {
@@ -212,7 +215,8 @@ async fn test_session_without_daimyo_returns_409() {
     let dir = tempdir().unwrap();
     let (handlers, router) = build_servers(file_storage(&dir));
 
-    // MCP: 大名一覧の取得だけ行い、大名は選択しない（セッションは作成される）
+    // MCP: 参加して大名一覧の取得だけ行い、大名は選択しない
+    start_game(&router, &handlers, "no_daimyo").await;
     handlers
         .list_daimyos(Parameters(SessionParams {
             session_id: Some("no_daimyo".to_string()),
@@ -262,6 +266,12 @@ async fn join(handlers: &McpHandlers, code: &str, session_id: &str) -> Result<St
             session_id: Some(session_id.to_string()),
         }))
         .await
+}
+
+/// Webでゲームを作成し、指定セッションに参加させます（未参加セッションはツール呼び出しがエラーになるため）
+async fn start_game(router: &Router, handlers: &McpHandlers, session_id: &str) {
+    let (_, code) = create_game(router).await;
+    join(handlers, &code, session_id).await.unwrap();
 }
 
 /// Webでゲームを作成し、(閲覧パス, 参加コード) を返します
