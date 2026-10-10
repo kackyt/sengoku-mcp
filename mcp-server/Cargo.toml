@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 engine = { path = "../engine" }
 infrastructure = { path = "../infrastructure" }
+game-session = { path = "../game-session" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "io-std"] }
 anyhow = "1.0"
 rmcp = { version = "1.6.0", features = ["server", "transport-io", "macros"] }

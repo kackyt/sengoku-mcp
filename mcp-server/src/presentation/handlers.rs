@@ -26,9 +26,25 @@ impl<T, E: std::fmt::Display> ToStringErr<T> for Result<T, E> {
 /// デフォルトのセッションID定数
 const DEFAULT_SESSION_ID: &str = "default";
 
+/// 閲覧URLテンプレート内でトークンに置換されるプレースホルダー
+pub const VIEW_TOKEN_PLACEHOLDER: &str = "{token}";
+
+/// ツール結果に付与する閲覧URLの見出し
+const VIEW_URL_LABEL: &str = "📺 ブラウザで自国の状況を見る: ";
+
+/// MCPクライアント（LLM）へ伝えるサーバーの利用方針
+const SERVER_INSTRUCTIONS: &str =
+    "プレイヤーから参加コード（6文字）を伝えられたら、最初に join_game を呼び出してください。\
+ツール結果に「📺 ブラウザで自国の状況を見る」のURLが含まれている場合は、プレイヤーにそのURLをそのまま伝えてください。";
+
+/// 閲覧URLテンプレートのデフォルト値（ローカルで起動した api-server の閲覧API）
+pub const DEFAULT_VIEW_URL_TEMPLATE: &str = "http://localhost:8080/api/views/{token}/status";
+
 #[derive(Clone)]
 pub struct McpHandlers {
     session_manager: Arc<SessionManager>,
+    /// 閲覧URLのテンプレート（`{token}` を閲覧トークンに置換する）
+    view_url_template: Arc<str>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
@@ -128,6 +144,24 @@ pub struct AutoActionParams {
 
 #[derive(Deserialize, JsonSchema, Default)]
 #[serde(default)]
+pub struct JoinGameParams {
+    /// プレイヤーから伝えられた参加コード（例: KX7P2Q）
+    pub code: String,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
+pub struct ViewUrlParams {
+    /// true の場合は閲覧URLを再発行し、以前のURLを無効化する
+    pub regenerate: bool,
+    /// 会話セッションID（PicoClawのChat IDやSender ID。省略時は "default"）
+    pub session_id: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema, Default)]
+#[serde(default)]
 pub struct KuniIdParams {
     /// 対象の国ID
     pub kuni_id: u32,
@@ -148,8 +182,39 @@ impl McpHandlers {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
         Self {
             session_manager,
+            view_url_template: Arc::from(DEFAULT_VIEW_URL_TEMPLATE),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// 閲覧URLのテンプレートを設定します（`{token}` が閲覧トークンに置換されます）
+    pub fn with_view_url_template(mut self, template: impl AsRef<str>) -> Self {
+        self.view_url_template = Arc::from(template.as_ref());
+        self
+    }
+
+    /// セッションの閲覧URLを取得します（`regenerate` 指定時は再発行）
+    async fn view_url(&self, key: &SessionId, regenerate: bool) -> Result<String, String> {
+        let token = self
+            .session_manager
+            .issue_view_token(key, regenerate)
+            .await
+            .to_str_err()?;
+        Ok(self
+            .view_url_template
+            .replace(VIEW_TOKEN_PLACEHOLDER, token.value()))
+    }
+
+    /// ツール結果の末尾に閲覧URLを付与します
+    ///
+    /// LLMがURL取得用のツールを選ばなくても、プレイヤーがブラウザで状況を確認できるよう
+    /// サーバー側で自動的に付与します。URL取得に失敗してもツール本来の結果は返します。
+    async fn append_view_url(&self, key: &SessionId, mut result: String) -> String {
+        match self.view_url(key, false).await {
+            Ok(url) => result.push_str(&format!("\n\n{}{}", VIEW_URL_LABEL, url)),
+            Err(e) => eprintln!("[Sengoku-MCP] 閲覧URLの取得に失敗しました: {}", e),
+        }
+        result
     }
 
     /// セッションIDを解決し、対応するゲームコンテキストを取得または作成します。
@@ -210,6 +275,24 @@ impl McpHandlers {
 
 #[tool_router(router = tool_router, vis = "pub")]
 impl McpHandlers {
+    /// Webで作成されたゲームに参加コードで参加します
+    #[tool(
+        description = "ブラウザで作成したゲームに参加します。プレイヤーから参加コード（例: KX7P2Q のような6文字）を伝えられたら、まずこのツールを1回だけ呼び出してください。参加後は list_daimyos → select_daimyo で大名を選びます。"
+    )]
+    pub async fn join_game(
+        &self,
+        Parameters(JoinGameParams { code, session_id }): Parameters<JoinGameParams>,
+    ) -> Result<String, String> {
+        let key = resolve_session_id(session_id);
+        self.session_manager
+            .join_game(&code, &key)
+            .await
+            .to_str_err()?;
+        Ok("ゲームに参加しました。ブラウザの画面にもこのゲームの状況が表示されます。\n\
+            次に list_daimyos で大名の一覧を取得し、プレイヤーに選んでもらって select_daimyo を実行してください。"
+            .to_string())
+    }
+
     /// 選択可能な大名の一覧を取得します
     #[tool(description = "選択可能な大名の一覧を取得します")]
     pub async fn list_daimyos(
@@ -256,10 +339,13 @@ impl McpHandlers {
             // 状態保存
             self.session_manager.save_session(&key).await.to_str_err()?;
 
-            Ok(format!(
+            let message = format!(
                 "大名「{}」を選択しました。ゲームを初期状態から開始します。",
                 d.name
-            ))
+            );
+            let mut message = self.append_view_url(&key, message).await;
+            message.push_str("\n（このURLをプレイヤーにそのまま伝えてください）");
+            Ok(message)
         } else {
             Err(format!("ID: {} の大名が見つかりません。", daimyo_id))
         }
@@ -271,7 +357,7 @@ impl McpHandlers {
         &self,
         Parameters(SessionParams { session_id }): Parameters<SessionParams>,
     ) -> Result<String, String> {
-        let (_, ctx) = self.get_context(session_id).await?;
+        let (key, ctx) = self.get_context(session_id).await?;
         let player_id = self.get_player_id(&ctx).await?;
         let status = ctx
             .kuni_query_usecase
@@ -310,7 +396,7 @@ impl McpHandlers {
             result.push_str("直ちに battle_execute_defense_turn で防衛戦術を指示してください。\n");
         }
 
-        Ok(result)
+        Ok(self.append_view_url(&key, result).await)
     }
 
     /// 他国の情報を一覧で取得します
@@ -673,6 +759,25 @@ impl McpHandlers {
         Ok(result)
     }
 
+    /// 自国の状況をWebで閲覧するためのURLを発行します
+    #[tool(
+        description = "自国の状況をWebアプリ（ブラウザ）で閲覧するためのURLを取得します。URLは select_daimyo や get_my_status の結果にも自動で含まれます。regenerate=true で再発行すると以前のURLは無効になります（URLが漏れた場合に使用）。"
+    )]
+    pub async fn get_status_view_url(
+        &self,
+        Parameters(ViewUrlParams {
+            regenerate,
+            session_id,
+        }): Parameters<ViewUrlParams>,
+    ) -> Result<String, String> {
+        let key = resolve_session_id(session_id);
+        let url = self.view_url(&key, regenerate).await?;
+        Ok(format!(
+            "自国の状況は次のURLで閲覧できます（URLを知っている人は誰でも閲覧できます）:\n{}",
+            url
+        ))
+    }
+
     /// ゲームの進行処理（１ステップ）を実行します
     #[tool(
         description = "ゲームの進行処理を実行します。選択中の大名の手番になるか、1ターン終了するまで進みます。"
@@ -902,6 +1007,7 @@ impl ServerHandler for McpHandlers {
         let mut info = ServerInfo::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.server_info = Implementation::new("sengoku-mcp-server", env!("CARGO_PKG_VERSION"));
+        info.instructions = Some(SERVER_INSTRUCTIONS.to_string());
         info
     }
 }

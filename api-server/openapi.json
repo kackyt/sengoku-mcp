@@ -1,0 +1,501 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sengoku REST API",
+    "description": "MCPサーバー（sengoku-mcp）と保存先を共有し、自国の状況を返す REST API です。\n\nWebアプリは `POST /api/games` でゲームを作成し、発行された参加コードをプレイヤーがチャットで伝えることで、LLM（MCP）側のゲームと連携します。状況の取得には閲覧トークンを使用します。",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "ローカル起動時のデフォルト"
+    }
+  ],
+  "paths": {
+    "/api/games": {
+      "post": {
+        "tags": [
+          "games"
+        ],
+        "summary": "新規ゲームを作成する",
+        "description": "参加待ちのゲームを作成し、ブラウザ用の閲覧トークン（`status_url`）と、\nチャット（LLM）に伝える参加コード（6文字・30分有効・1回限り）を発行します。\n\n1. ブラウザは `status_url` を保持してポーリングします（参加前は 409 `waiting_for_join`）。\n2. プレイヤーがチャットで参加コードを伝えると、LLM が MCP ツール `join_game` を呼び出します。\n3. 大名が選択されると、`status_url` で自国の状況が取得できるようになります（200）。",
+        "operationId": "create_game",
+        "responses": {
+          "201": {
+            "description": "ゲームを作成しました",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedGameDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "保存先へのアクセスに失敗しました（`internal_error`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{session_id}/status": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "summary": "セッションIDで自国の状況を取得する",
+        "description": "セッションID（MCPツールの `session_id` と同じ値）を知っているクライアント・デバッグ向けです。\nWebアプリからは閲覧トークン（`/api/views/{token}/status`）を使用してください。",
+        "operationId": "session_status",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "セッションID（前後の空白は除去。空なら `default`）",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "discord_12345"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "自国の状況",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyStatusDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "セッションが存在しません（`session_not_found`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "大名が未選択です（`daimyo_not_selected`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "サーバー内部のエラー（`internal_error`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/status": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "summary": "defaultセッションの自国の状況を取得する",
+        "description": "MCPツールで `session_id` を省略して遊んでいる場合（`default` セッション）の自国の状況を返します。\nセッションIDだけで参照できるため、公開環境ではアクセス制限を推奨します。",
+        "operationId": "default_status",
+        "responses": {
+          "200": {
+            "description": "自国の状況",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyStatusDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "セッションが存在しません（`session_not_found`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "大名が未選択です（`daimyo_not_selected`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "サーバー内部のエラー（`internal_error`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/views/{token}/status": {
+      "get": {
+        "tags": [
+          "status"
+        ],
+        "summary": "閲覧トークンで自国の状況を取得する",
+        "description": "Webアプリ向けのエンドポイントです。`POST /api/games` で発行された閲覧トークン、\nまたはMCPツールの結果に付与された閲覧URLのトークンで、対応するゲームの自国の状況を返します。\nレスポンスにはセッションID（チャットID等）は含まれません。",
+        "operationId": "view_status",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "閲覧トークン（32桁の16進数）",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "777fc6d170d94495b49babeba2230e7d"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "自国の状況",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyStatusDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "閲覧トークンが無効です（`view_not_found`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "チャット側の参加待ち（`waiting_for_join`）、または大名が未選択（`daimyo_not_selected`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "サーバー内部のエラー（`internal_error`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "ヘルスチェック",
+        "description": "サーバーが起動していれば `ok` を返します。保存先への疎通は確認しません。",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "稼働中",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "ok"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreatedGameDto": {
+        "type": "object",
+        "description": "Webで作成したゲームの情報",
+        "required": [
+          "view_token",
+          "status_url",
+          "join_code",
+          "join_code_expires_at",
+          "join_message"
+        ],
+        "properties": {
+          "join_code": {
+            "type": "string",
+            "description": "チャット（LLM）に伝える参加コード（6文字・1回限り）",
+            "example": "VQ4X7K"
+          },
+          "join_code_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "参加コードの有効期限（UTC）"
+          },
+          "join_message": {
+            "type": "string",
+            "description": "プレイヤー向けの案内文",
+            "example": "チャットで「参加コード VQ4X7K でゲームに参加して」と伝えてください"
+          },
+          "status_url": {
+            "type": "string",
+            "description": "状況取得APIのパス（`GET` でポーリングする）",
+            "example": "/api/views/777fc6d170d94495b49babeba2230e7d/status"
+          },
+          "view_token": {
+            "type": "string",
+            "description": "状況取得用の閲覧トークン（32桁の16進数）。ブラウザで保持してください。",
+            "example": "777fc6d170d94495b49babeba2230e7d"
+          }
+        }
+      },
+      "DaimyoDto": {
+        "type": "object",
+        "description": "大名の概要",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "大名ID",
+            "example": 7,
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "大名名",
+            "example": "織田"
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "機械判定用のエラーコード",
+        "enum": [
+          "view_not_found",
+          "session_not_found",
+          "daimyo_not_selected",
+          "waiting_for_join",
+          "internal_error"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "エラーレスポンス",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode",
+            "description": "機械判定用のエラーコード"
+          },
+          "message": {
+            "type": "string",
+            "description": "人間向けのメッセージ（日本語）",
+            "example": "チャット側の参加待ちです。チャットで参加コードを伝えてください"
+          }
+        }
+      },
+      "KuniStatusDto": {
+        "type": "object",
+        "description": "自領1国分の状況",
+        "required": [
+          "id",
+          "name",
+          "kin",
+          "kome",
+          "hei",
+          "jinko",
+          "kokudaka",
+          "machi",
+          "tyu"
+        ],
+        "properties": {
+          "hei": {
+            "type": "integer",
+            "format": "int32",
+            "description": "兵",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "国ID",
+            "example": 7,
+            "minimum": 0
+          },
+          "jinko": {
+            "type": "integer",
+            "format": "int32",
+            "description": "人口",
+            "minimum": 0
+          },
+          "kin": {
+            "type": "integer",
+            "format": "int32",
+            "description": "金",
+            "minimum": 0
+          },
+          "kokudaka": {
+            "type": "integer",
+            "format": "int32",
+            "description": "石高",
+            "minimum": 0
+          },
+          "kome": {
+            "type": "integer",
+            "format": "int32",
+            "description": "米",
+            "minimum": 0
+          },
+          "machi": {
+            "type": "integer",
+            "format": "int32",
+            "description": "町",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "国名",
+            "example": "尾張"
+          },
+          "tyu": {
+            "type": "integer",
+            "format": "int32",
+            "description": "忠誠度（0〜100）",
+            "minimum": 0
+          }
+        }
+      },
+      "MyStatusDto": {
+        "type": "object",
+        "description": "自国の状況\n\n返すのは「自国の状況」「ターン数」「他国がどの大名の領地か」のみです。\n他国の資源（兵・金など）は含みません。",
+        "required": [
+          "turn",
+          "daimyo",
+          "my_kunis",
+          "other_kunis"
+        ],
+        "properties": {
+          "daimyo": {
+            "$ref": "#/components/schemas/DaimyoDto",
+            "description": "プレイヤーが選択している大名（自国）"
+          },
+          "my_kunis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KuniStatusDto"
+            },
+            "description": "自領の一覧（国ID順）"
+          },
+          "other_kunis": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OtherKuniDto"
+            },
+            "description": "他国の一覧（国ID順）。どの大名の領地かのみを示す"
+          },
+          "turn": {
+            "type": "integer",
+            "format": "int32",
+            "description": "現在のターン（1始まり）",
+            "example": 1,
+            "minimum": 0
+          }
+        }
+      },
+      "OtherKuniDto": {
+        "type": "object",
+        "description": "他国1国分の情報（支配大名のみ）",
+        "required": [
+          "id",
+          "name",
+          "daimyo"
+        ],
+        "properties": {
+          "daimyo": {
+            "$ref": "#/components/schemas/DaimyoDto",
+            "description": "この国を支配している大名"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "国ID",
+            "example": 6,
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "国名",
+            "example": "三河"
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {}
+  ],
+  "tags": [
+    {
+      "name": "games",
+      "description": "Webでのゲーム作成"
+    },
+    {
+      "name": "status",
+      "description": "自国の状況の取得"
+    },
+    {
+      "name": "system",
+      "description": "運用"
+    }
+  ]
+}

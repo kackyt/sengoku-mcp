@@ -1,0 +1,33 @@
+{
+  "name": "sengoku-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "sengoku-mcp の自国の状況と勢力図（接続図）を表示するブラウザアプリ",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "gen:api": "openapi-ts"
+  },
+  "dependencies": {
+    "ky": "^2.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "jsdom": "^27.0.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^5.0.3"
+  },
+  "packageManager": "pnpm@10.19.0"
+}

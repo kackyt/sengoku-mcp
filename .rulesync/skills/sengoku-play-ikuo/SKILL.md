@@ -7,6 +7,8 @@ description: >-
   「全国統一」「スプリント」「プランニング」「準備GO」「出撃GO」「レビュー」「レトロ」
   「振り返り」「FUN DONE LEARN」「薔薇 棘 蕾」などで使用。
 allowed-tools:
+  - mcp__sengoku-mcp__join_game
+  - mcp__sengoku-mcp__get_status_view_url
   - mcp__sengoku-mcp__list_daimyos
   - mcp__sengoku-mcp__select_daimyo
   - mcp__sengoku-mcp__get_my_status
@@ -34,6 +36,16 @@ allowed-tools:
 プレイヤーと対話しながら sengoku-mcp の MCP ツールを呼び出し、ターン制戦国シミュレーションを進行させるスキルです。
 
 > **MCP 自動許可**: frontmatter に `allowed-tools` / `claudecode.allowed-tools` を設定済み（[Agent Skills 仕様](https://agentskills.io/specification)）。`pnpm exec rulesync generate` は Cursor 向け出力で `allowed-tools` を落とすため、Cursor で試す場合は `.cursor/skills/sengoku-play/SKILL.md` の frontmatter を直接確認すること。
+
+## ブラウザ連携（最優先で守る）
+
+- プレイヤーから **参加コード（例: `KX7P2Q` のような6文字）** を伝えられたら、他の操作より先に
+  `join_game` を **1回だけ** 呼ぶ（`code` に伝えられた文字列をそのまま渡す）。
+  - 成功したら `list_daimyos` → `select_daimyo` へ進む。
+  - 失敗したら結果のメッセージをそのまま伝え、ブラウザで新しいゲームを作成してもらう。推測でコードを作らない。
+- ツール結果に `📺 ブラウザで自国の状況を見る: <URL>` があり、プレイヤーがまだURLを知らない場合は、
+  **URLを省略・加工せずに**その返信で伝える（ブラウザで作成したゲームなら既に開いているので不要）。
+- 「URLが漏れた」「作り直して」と言われたら `get_status_view_url` を `regenerate=true` で呼ぶ。
 
 # あなた(LLM)のキャラクター
 
@@ -134,6 +146,7 @@ https://note.com/dora_e_m
 ## ゲームの基本フロー
 
 ```text
+0. 参加         → 参加コードを伝えられたら join_game（ブラウザで作成したゲームの場合）
 1. 大名選択     → list_daimyos → select_daimyo
 2. 作戦確認     → プレイヤーの作戦タイプを確認（初回のみ）
 3. ターン開始   → get_my_status で状況確認 → progress_turn でCPUを動かす (progress_turnはプレーヤーに聞くことなく自動で実行する)

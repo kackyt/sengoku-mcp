@@ -8,14 +8,14 @@ use engine::application::usecase::kuni_query_usecase::KuniQueryUseCase;
 use engine::application::usecase::turn_progression_usecase::TurnProgressionUseCase;
 use engine::domain::model::action_log::ActionLogCategory;
 use engine::domain::model::session::SessionData;
-use engine::domain::model::value_objects::{DaimyoId, SessionId};
+use engine::domain::model::value_objects::{DaimyoId, SessionId, ViewToken};
 use engine::domain::repository::action_log_repository::ActionLogRepository;
 use engine::domain::repository::battle_repository::BattleRepository;
 use engine::domain::repository::daimyo_repository::DaimyoRepository;
 use engine::domain::repository::game_state_repository::GameStateRepository;
 use engine::domain::repository::kuni_repository::KuniRepository;
 use engine::domain::repository::master_data_repository::MasterDataRepository;
-use infrastructure::master_data::MasterDataLoader;
+use engine::domain::repository::view_token_repository::ViewTokenRepository;
 use infrastructure::persistence::{
     InMemoryActionLogRepository, InMemoryBattleRepository, InMemoryDaimyoRepository,
     InMemoryEventDispatcher, InMemoryGameStateRepository, InMemoryKuniRepository,
@@ -67,6 +67,8 @@ pub struct GameContext {
 
     pub selected_daimyo_id: Arc<Mutex<Option<DaimyoId>>>,
     pub last_accessed_at: Arc<Mutex<DateTime<Utc>>>,
+    /// 外部クライアント向けに発行済みの閲覧トークン
+    pub view_token: Arc<Mutex<Option<ViewToken>>>,
 }
 
 impl fmt::Debug for GameContext {
@@ -74,11 +76,27 @@ impl fmt::Debug for GameContext {
         f.debug_struct("GameContext")
             .field("selected_daimyo_id", &"<Mutex<Option<DaimyoId>>>")
             .field("last_accessed_at", &"<Mutex<DateTime<Utc>>>")
+            .field("view_token", &"<Mutex<Option<ViewToken>>>")
             .finish()
     }
 }
 
 impl GameContext {
+    /// 新しい閲覧トークンを発行して対応表に登録し、このコンテキストに設定します
+    ///
+    /// 対応表を先に保存し、セッション側から参照される時点で必ず逆引きできるようにします。
+    /// セッション本体の保存は呼び出し側で行います。
+    pub async fn assign_new_view_token(
+        &self,
+        view_tokens: &dyn ViewTokenRepository,
+        session_id: &SessionId,
+    ) -> Result<ViewToken, anyhow::Error> {
+        let token = ViewToken::generate();
+        view_tokens.register(&token, session_id).await?;
+        *self.view_token.lock().await = Some(token.clone());
+        Ok(token)
+    }
+
     /// アクセス日時を現在時刻に更新します
     pub async fn touch(&self) {
         let mut lock = self.last_accessed_at.lock().await;
@@ -109,6 +127,7 @@ impl GameContext {
             action_logs,
         );
         data.last_accessed_at = *self.last_accessed_at.lock().await;
+        data.view_token = self.view_token.lock().await.clone();
         Ok(data)
     }
 }
@@ -118,7 +137,10 @@ pub struct GameContextFactory;
 
 impl GameContextFactory {
     /// リポジトリ群からユースケース群を組み立てる共通ビルダー関数 (DRY原則・引数と戻り値の構造体化)
-    fn build_usecases(repos: &Repositories, master_data: Arc<MasterDataLoader>) -> UseCases {
+    fn build_usecases(
+        repos: &Repositories,
+        master_data: Arc<dyn MasterDataRepository>,
+    ) -> UseCases {
         let turn_progression = Arc::new(TurnProgressionUseCase::new(
             repos.kuni_repo.clone(),
             repos.daimyo_repo.clone(),
@@ -189,7 +211,7 @@ impl GameContextFactory {
 
     /// 新規ゲーム状態として初期化します
     pub async fn create_initial(
-        master_data: Arc<MasterDataLoader>,
+        master_data: Arc<dyn MasterDataRepository>,
     ) -> Result<GameContext, anyhow::Error> {
         let repos = Repositories {
             kuni_repo: Arc::new(InMemoryKuniRepository::new()),
@@ -221,13 +243,14 @@ impl GameContextFactory {
             daimyo_query_usecase: usecases.daimyo_query,
             selected_daimyo_id: Arc::new(Mutex::new(None)),
             last_accessed_at: Arc::new(Mutex::new(Utc::now())),
+            view_token: Arc::new(Mutex::new(None)),
         })
     }
 
     /// 保存データから復元します
     pub async fn create_from_data(
         data: SessionData,
-        master_data: Arc<MasterDataLoader>,
+        master_data: Arc<dyn MasterDataRepository>,
     ) -> Result<GameContext, anyhow::Error> {
         let kuni_repo = Arc::new(InMemoryKuniRepository::new());
         kuni_repo.init_with_data(data.kunis).await;
@@ -283,6 +306,7 @@ impl GameContextFactory {
             daimyo_query_usecase: usecases.daimyo_query,
             selected_daimyo_id: Arc::new(Mutex::new(data.selected_daimyo_id)),
             last_accessed_at: Arc::new(Mutex::new(data.last_accessed_at)),
+            view_token: Arc::new(Mutex::new(data.view_token)),
         })
     }
 }

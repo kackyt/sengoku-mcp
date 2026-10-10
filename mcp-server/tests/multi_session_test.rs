@@ -1,8 +1,9 @@
 use chrono::{Duration, Utc};
 use engine::domain::model::value_objects::SessionId;
-use infrastructure::master_data::MasterDataLoader;
+mod common;
+
+use common::new_session_manager;
 use infrastructure::persistence::{SessionData, SessionPersistenceManager};
-use mcp_server::application::SessionManager;
 use mcp_server::presentation::handlers::{
     DomesticParams, McpHandlers, SelectDaimyoParams, SessionParams,
 };
@@ -14,8 +15,7 @@ use tempfile::tempdir;
 async fn test_backward_compatibility_default_session() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = new_session_manager(persistence);
     let handlers = McpHandlers::new(session_manager);
 
     // 1. session_id: None で大名一覧取得
@@ -47,8 +47,7 @@ async fn test_backward_compatibility_default_session() {
 async fn test_multi_session_isolation() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = new_session_manager(persistence);
     let handlers = McpHandlers::new(session_manager);
 
     // セッションA (織田 ID: 7)
@@ -108,8 +107,7 @@ async fn test_session_persistence_and_restoration() {
     // 1. セッションを作成してプレイヤー手番まで進めて内政を実行
     {
         let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-        let master_data = Arc::new(MasterDataLoader);
-        let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+        let session_manager = new_session_manager(persistence);
         let handlers = McpHandlers::new(session_manager);
 
         handlers
@@ -142,8 +140,7 @@ async fn test_session_persistence_and_restoration() {
     // 2. メモリがリセットされた新しい SessionManager で同じセッションをロード
     {
         let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-        let master_data = Arc::new(MasterDataLoader);
-        let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+        let session_manager = new_session_manager(persistence);
         let handlers = McpHandlers::new(session_manager);
 
         // 状態が復元され、織田が選択された状態であること
@@ -161,8 +158,7 @@ async fn test_session_persistence_and_restoration() {
 async fn test_cleanup_expired_sessions() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence.clone(), master_data));
+    let session_manager = new_session_manager(persistence.clone());
 
     // 1. 8日前のセッションを作成してファイル保存
     let mut old_data = SessionData::new(
@@ -211,8 +207,7 @@ async fn test_cleanup_expired_sessions() {
 async fn test_path_traversal_safety() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence.clone(), master_data));
+    let session_manager = new_session_manager(persistence.clone());
     let handlers = McpHandlers::new(session_manager);
 
     // パストラバーサル文字を含むセッションID
@@ -228,14 +223,14 @@ async fn test_path_traversal_safety() {
     assert!(res.is_ok());
 
     // 保存先ディレクトリ外にファイルが作られていないこと（storage_dir内にサニタイズされたファイル名で作成されること）
-    let entries: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
-    assert_eq!(entries.len(), 1);
-    let filename = entries[0]
-        .as_ref()
+    // ※ 閲覧トークンの対応表は storage_dir 内の view_tokens/ サブディレクトリに保存される
+    let entries: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
-        .file_name()
-        .into_string()
-        .unwrap();
+        .map(|e| e.unwrap())
+        .filter(|e| e.file_type().unwrap().is_file())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    let filename = entries[0].file_name().into_string().unwrap();
     assert!(!filename.contains('/'));
     assert!(!filename.contains('\\'));
     assert!(filename.ends_with(".json"));
@@ -245,8 +240,7 @@ async fn test_path_traversal_safety() {
 async fn test_concurrent_sessions() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let master_data = Arc::new(MasterDataLoader);
-    let session_manager = Arc::new(SessionManager::new(persistence, master_data));
+    let session_manager = new_session_manager(persistence);
     let handlers = Arc::new(McpHandlers::new(session_manager));
 
     let mut handles = Vec::new();
