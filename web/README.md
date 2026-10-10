@@ -22,11 +22,6 @@ pnpm dev   # http://localhost:5173
 3. LLM が大名を選ぶと、ターン数・自領の状況・勢力図が表示されます。
 
 ページの URL（`?token=...`）を開けば、別のブラウザからも同じゲームを表示できます。
-MCP ツールの結果に付く閲覧 URL をこのアプリに向けるには、MCP サーバーに次を設定します。
-
-```bash
-SENGOKU_VIEW_URL_TEMPLATE='http://localhost:5173/?token={token}'
-```
 
 ## 画面の方針
 

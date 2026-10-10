@@ -121,30 +121,6 @@ impl SessionManager {
         Ok(())
     }
 
-    /// セッションの閲覧トークンを取得します。`regenerate` 指定時は再発行します。
-    ///
-    /// 閲覧トークンはセッション作成時に自動発行されます。再発行した場合、以前のトークンは失効します。
-    pub async fn issue_view_token(
-        &self,
-        session_id: &SessionId,
-        regenerate: bool,
-    ) -> Result<ViewToken, anyhow::Error> {
-        let ctx = self.get_or_create(session_id).await?;
-        let current = ctx.view_token.lock().await.clone();
-        match (current, regenerate) {
-            (Some(token), false) => Ok(token),
-            (old_token, _) => {
-                // 1. 新トークンを登録・保存してから、2. 旧トークンを失効させる
-                let new_token = self.attach_new_view_token(&ctx, session_id).await?;
-                self.persist(&ctx, session_id).await?;
-                if let Some(old) = old_token {
-                    self.view_tokens.revoke(&old).await?;
-                }
-                Ok(new_token)
-            }
-        }
-    }
-
     /// Webで作成されたゲームに、参加コードを使ってチャットのセッションとして参加します
     ///
     /// 参加待ちのゲームを `session_id`（チャットのセッションID）へ移し、閲覧トークンの

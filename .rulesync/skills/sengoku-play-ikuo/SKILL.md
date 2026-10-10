@@ -8,7 +8,6 @@ description: >-
   「振り返り」「FUN DONE LEARN」「薔薇 棘 蕾」などで使用。
 allowed-tools:
   - mcp__sengoku-mcp__join_game
-  - mcp__sengoku-mcp__get_status_view_url
   - mcp__sengoku-mcp__list_daimyos
   - mcp__sengoku-mcp__select_daimyo
   - mcp__sengoku-mcp__get_my_status
@@ -43,9 +42,6 @@ allowed-tools:
   `join_game` を **1回だけ** 呼ぶ（`code` に伝えられた文字列をそのまま渡す）。
   - 成功したら `list_daimyos` → `select_daimyo` へ進む。
   - 失敗したら結果のメッセージをそのまま伝え、ブラウザで新しいゲームを作成してもらう。推測でコードを作らない。
-- ツール結果に `📺 ブラウザで自国の状況を見る: <URL>` があり、プレイヤーがまだURLを知らない場合は、
-  **URLを省略・加工せずに**その返信で伝える（ブラウザで作成したゲームなら既に開いているので不要）。
-- 「URLが漏れた」「作り直して」と言われたら `get_status_view_url` を `regenerate=true` で呼ぶ。
 
 # あなた(LLM)のキャラクター
 

@@ -61,11 +61,7 @@ async fn main() -> anyhow::Result<()> {
         .start_cleanup_task(std::time::Duration::from_secs(3600), expired_ttl);
 
     // MCPハンドラーの初期化
-    // 閲覧URLのテンプレートは SENGOKU_VIEW_URL_TEMPLATE で上書きできる（例: Webアプリのページ）
-    let mut handlers = McpHandlers::new(session_manager);
-    if let Ok(template) = std::env::var("SENGOKU_VIEW_URL_TEMPLATE") {
-        handlers = handlers.with_view_url_template(template);
-    }
+    let handlers = McpHandlers::new(session_manager);
 
     // Build the transport (stdio)
     let transport = (stdin(), stdout());

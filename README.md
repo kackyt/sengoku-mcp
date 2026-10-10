@@ -194,7 +194,6 @@ cargo run --release -p mcp-server
 | 状況把握 | `get_other_countries_info` | 他国の情報を取得（コマンド権を1消費） |
 | 状況把握 | `get_neighbor_info` | 指定国の隣接国（攻撃・輸送先候補）を取得 |
 | 準備 | `join_game` | ブラウザで作成したゲームに参加コードで参加（プレイヤーからコードを伝えられたら最初に呼ぶ） |
-| 状況把握 | `get_status_view_url` | 閲覧URLを取得（通常は `select_daimyo` / `get_my_status` の結果に自動で付く）。`regenerate=true` で再発行（旧URLは無効化） |
 | 内政 | `domestic_rice_sell` / `domestic_rice_buy` | 米売り / 米買い |
 | 内政 | `domestic_recruit` | 兵の徴募 |
 | 内政 | `domestic_develop_land` | 開墾（石高アップ） |
@@ -304,25 +303,6 @@ LLM が扱うのは参加コードを1回渡すことだけで、URLの中継や
 - 同じチャットで別のゲームに参加すると、進行中のゲームは新しいゲームに置き換わり、旧URLは 404 になります。
 - 参加されなかったゲームは、通常のセッションと同様に7日で削除されます。期限切れの参加コードは定期クリーンアップで削除されます。
 
-#### チャットで開始したゲームの場合（補助的な経路）
-
-ブラウザを使わずチャットだけで開始したゲームにも、閲覧トークンが自動で発行されます。
-`select_daimyo`（ゲーム開始）と `get_my_status` の結果の末尾に、サーバーが
-`📺 ブラウザで自国の状況を見る: <URL>` を付けるので、LLM がそれを伝えればブラウザでも閲覧できます。
-
-トークンはセッションごとに1つで、セッションと一緒に永続化されます（MCPサーバーを再起動しても同じURL）。
-トークン導入前に保存されたセッションには、次回読み込み時に発行されます。
-URLが漏れた場合は `get_status_view_url` を `regenerate=true` で呼ぶと再発行され、以前のURLは 404 になります。
-
-MCPツールが返すURLは `SENGOKU_VIEW_URL_TEMPLATE`（MCPサーバー側の環境変数）で変更できます。
-`{token}` がトークンに置換されます。
-
-```bash
-# デフォルト: http://localhost:8080/api/views/{token}/status
-# 例: Webアプリのページを返す（Webアプリは token クエリを使って REST API を呼ぶ）
-SENGOKU_VIEW_URL_TEMPLATE='https://sengoku.example.com/status?token={token}'
-```
-
 ### エンドポイント
 
 ```bash
@@ -402,9 +382,6 @@ Web アプリを API と別オリジンで配信する場合は、`SENGOKU_CORS_
 cargo run -p api-server        # API（:8080）
 cd web && pnpm install && pnpm dev   # Web（:5173、/api を :8080 へプロキシ）
 ```
-
-MCP ツールの結果に付く閲覧URLを Web アプリに向けるには、MCP サーバーに
-`SENGOKU_VIEW_URL_TEMPLATE='http://localhost:5173/?token={token}'` を設定します。
 
 > **Note**: `POST /api/games` は認証なしでセッションを作成できるため、公開する場合は
 > Cloud Run の IAM 認証・API Gateway のレート制限などで乱用を防いでください。

@@ -56,7 +56,7 @@ impl StatusQueryService {
 
     /// 閲覧トークンから対応するセッションの自国の状況を取得します
     ///
-    /// WebアプリはセッションIDを知らなくても、MCPの `get_status_view_url` で発行された
+    /// WebアプリはセッションIDを知らなくても、ゲーム作成時に発行された
     /// URL（トークン）だけで状況を取得できます。
     pub async fn get_my_status_by_token(
         &self,

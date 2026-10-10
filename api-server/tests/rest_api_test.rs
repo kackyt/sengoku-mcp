@@ -17,7 +17,7 @@ use infrastructure::persistence::{
 };
 use mcp_server::application::SessionManager;
 use mcp_server::presentation::handlers::{
-    DomesticParams, JoinGameParams, McpHandlers, SelectDaimyoParams, SessionParams, ViewUrlParams,
+    DomesticParams, JoinGameParams, McpHandlers, SelectDaimyoParams, SessionParams,
 };
 use object_store::memory::InMemory;
 use rmcp::handler::server::wrapper::Parameters;
@@ -58,23 +58,6 @@ fn build_servers(storage: SessionStorage) -> (McpHandlers, Router) {
 /// テスト用のファイル保存先を構築します
 fn file_storage(dir: &tempfile::TempDir) -> SessionStorage {
     SessionStorage::from_backend(Arc::new(SessionPersistenceManager::new(dir.path())))
-}
-
-/// MCPツールで閲覧URLを発行し、REST API のパス部分を返します
-async fn issue_view_path(handlers: &McpHandlers, session_id: &str, regenerate: bool) -> String {
-    let message = handlers
-        .get_status_view_url(Parameters(ViewUrlParams {
-            regenerate,
-            session_id: Some(session_id.to_string()),
-        }))
-        .await
-        .unwrap();
-    let url = message.lines().last().unwrap();
-    // URLにはセッションIDを含めない
-    assert!(!url.contains(session_id), "url: {url}");
-    url.strip_prefix("http://localhost:8080")
-        .expect("デフォルトの閲覧URLテンプレートであること")
-        .to_string()
 }
 
 /// GET リクエストを送り、ステータスコードとボディを返します
@@ -255,70 +238,6 @@ async fn test_health() {
 }
 
 #[tokio::test]
-async fn test_view_url_flow() {
-    let dir = tempdir().unwrap();
-    let (handlers, router) = build_servers(file_storage(&dir));
-    let session_id = "chat-12345";
-
-    // MCP: 大名を選択すると、LLMがツールを選ばなくても結果に閲覧URLが自動で付く
-    let message = handlers
-        .select_daimyo(Parameters(SelectDaimyoParams {
-            daimyo_id: 7,
-            session_id: Some(session_id.to_string()),
-        }))
-        .await
-        .unwrap();
-    let url = message
-        .split_whitespace()
-        .find(|w| w.starts_with("http://"))
-        .expect("大名選択の結果に閲覧URLが含まれること");
-    let path = url
-        .strip_prefix("http://localhost:8080")
-        .unwrap()
-        .to_string();
-    assert!(path.starts_with("/api/views/") && path.ends_with("/status"));
-    assert!(!url.contains(session_id));
-
-    // 明示的な取得ツールでも同じURLが返る
-    assert_eq!(issue_view_path(&handlers, session_id, false).await, path);
-
-    // REST: セッションIDを知らなくてもトークンだけで自国の状況を取得できる
-    let (status, body) = get(&router, &path).await;
-    assert_eq!(status, StatusCode::OK, "body: {body}");
-    assert_eq!(body["daimyo"]["name"], "織田");
-    assert!(!body.to_string().contains(session_id));
-
-    // MCP: 再発行すると旧URLは無効になり、新URLで取得できる
-    let new_path = issue_view_path(&handlers, session_id, true).await;
-    assert_ne!(new_path, path);
-    let (status, body) = get(&router, &path).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert_eq!(body["code"], "view_not_found");
-    let (status, _) = get(&router, &new_path).await;
-    assert_eq!(status, StatusCode::OK);
-}
-
-#[tokio::test]
-async fn test_view_url_via_object_storage() {
-    // GCS と同じ ObjectStore 実装でもトークン経由で取得できること
-    let repository = ObjectStoreSessionRepository::new(Arc::new(InMemory::new()), "sessions");
-    let (handlers, router) = build_servers(SessionStorage::from_backend(Arc::new(repository)));
-
-    handlers
-        .select_daimyo(Parameters(SelectDaimyoParams {
-            daimyo_id: 4,
-            session_id: Some("gcs_user".to_string()),
-        }))
-        .await
-        .unwrap();
-    let path = issue_view_path(&handlers, "gcs_user", false).await;
-
-    let (status, body) = get(&router, &path).await;
-    assert_eq!(status, StatusCode::OK, "body: {body}");
-    assert_eq!(body["daimyo"]["id"], 4);
-}
-
-#[tokio::test]
 async fn test_invalid_view_token_returns_404() {
     let dir = tempdir().unwrap();
     let (_, router) = build_servers(file_storage(&dir));
@@ -394,8 +313,8 @@ async fn assert_web_created_game_flow(storage: SessionStorage) {
         .await
         .unwrap();
     assert!(
-        message.contains(&path),
-        "同じ閲覧URLが付与されること: {message}"
+        !message.contains("http"),
+        "URLは付与されないこと: {message}"
     );
     let (status, body) = get(&router, &path).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");

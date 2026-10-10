@@ -66,7 +66,6 @@ flowchart LR
 
 | 変数 | 必須 | 既定値 | 説明 |
 | --- | --- | --- | --- |
-| `SENGOKU_VIEW_URL_TEMPLATE` | - | `http://localhost:8080/api/views/{token}/status` | ツール結果（`select_daimyo`・`get_my_status`・`get_status_view_url`）に付ける閲覧 URL の形式。`{token}` が閲覧トークンに置き換わる。Web アプリを開かせたい場合は `http://localhost:5173/?token={token}` のように Web の URL を指定 |
 
 ### 2.4 api-server のみ
 
@@ -114,9 +113,7 @@ MCP サーバーの設定（`.rulesync/mcp.json` から生成した `.mcp.json`�
       "command": "cargo",
       "args": ["run", "--release", "--manifest-path", "/path/to/sengoku-mcp/Cargo.toml", "-p", "mcp-server"],
       "env": {
-        "SENGOKU_SESSIONS_DIR": "/Users/you/sengoku-data",
-        // 任意：ツール結果の閲覧 URL を Web アプリに向ける
-        "SENGOKU_VIEW_URL_TEMPLATE": "http://localhost:5173/?token={token}"
+        "SENGOKU_SESSIONS_DIR": "/Users/you/sengoku-data"
       }
     }
   }
@@ -188,8 +185,6 @@ VITE_API_BASE_URL=https://api.sengoku.example.com pnpm build
 | api-server と同一オリジン（リバースプロキシで `/api` を api-server へ転送） | `VITE_API_BASE_URL` は不要 |
 | api-server と別オリジン | web: `VITE_API_BASE_URL`、api-server: `SENGOKU_CORS_ALLOW_ORIGINS` に web のオリジン |
 
-本番の Web の URL が決まったら、mcp-server の `SENGOKU_VIEW_URL_TEMPLATE` を `https://<webのURL>/?token={token}` にするとツール結果の URL から直接開けます。
-
 ---
 
 ## 6. ゲーム開始の流れ（参加コード）
@@ -219,7 +214,6 @@ sequenceDiagram
 
 - 参加コードは 6 文字、**30 分有効・1 回限り**。大文字小文字・ハイフン・空白は区別しません。
 - 同じチャットで別のゲームに参加すると、進行中のゲームは置き換わり、古い閲覧 URL は 404 になります。
-- チャットだけで始めたゲームにも閲覧トークンが自動で発行され、`select_daimyo`・`get_my_status` の結果に閲覧 URL が付きます。
 
 ---
 
@@ -281,5 +275,5 @@ REST API のエラーコード（`code`）の一覧は `http://localhost:8080/do
 
 - api-server には認証機能がありません。インターネットに公開する場合は Cloud Run の IAM 認証やリバースプロキシで保護してください。
 - `POST /api/games` は誰でもゲーム（保存先のファイル）を作成できるため、公開時はレート制限を検討してください。
-- 閲覧 URL（トークン）は「知っている人なら誰でも見られる」共有リンクです。漏れた場合は LLM に `get_status_view_url` を `regenerate=true` で呼んでもらうと再発行され、古い URL は無効になります。
+- 閲覧 URL（トークン）は「知っている人なら誰でも見られる」共有リンクです。
 - `GET /api/status`・`GET /api/sessions/{session_id}/status` はセッション ID だけで参照できるため、公開環境ではアクセスを制限してください。
