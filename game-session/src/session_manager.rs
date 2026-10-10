@@ -47,6 +47,23 @@ impl SessionManager {
         &self,
         session_id: &SessionId,
     ) -> Result<Arc<GameContext>, anyhow::Error> {
+        self.load_context(session_id, true).await
+    }
+
+    /// セッションIDに対応する GameContext を取得します（存在しない場合は新規作成せずエラー）
+    /// 1. メモリ内に存在すればそれを返す
+    /// 2. ストレージに存在すれば復元してキャッシュして返す
+    /// 3. なければエラーを返す
+    pub async fn get(&self, session_id: &SessionId) -> Result<Arc<GameContext>, anyhow::Error> {
+        self.load_context(session_id, false).await
+    }
+
+    /// `get` / `get_or_create` の共通処理。`create` が false の場合、未存在ならエラーにする
+    async fn load_context(
+        &self,
+        session_id: &SessionId,
+        create: bool,
+    ) -> Result<Arc<GameContext>, anyhow::Error> {
         // 1. メモリ内キャッシュ確認
         {
             let guard = self.sessions.read().await;
@@ -75,6 +92,12 @@ impl SessionManager {
                 self.persist(&ctx, session_id).await?;
             }
             ctx
+        } else if !create {
+            // 3'. 新規作成しない呼び出しでは、未存在をエラーとして返す
+            return Err(anyhow::anyhow!(
+                "セッション「{}」のゲームが存在しません。join_game で参加するか、list_daimyos → select_daimyo でゲームを開始してください。",
+                session_id.value()
+            ));
         } else {
             // 3. 新規作成（Webアプリから閲覧できるよう、閲覧トークンも同時に発行する）
             let ctx = Arc::new(GameContextFactory::create_initial(self.master_data.clone()).await?);

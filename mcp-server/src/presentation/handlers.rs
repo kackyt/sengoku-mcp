@@ -165,17 +165,14 @@ impl McpHandlers {
         }
     }
 
-    /// セッションIDを解決し、対応するゲームコンテキストを取得または作成します。
+    /// セッションIDを解決し、対応するゲームコンテキストを取得します。
+    /// セッションが存在しない場合は新規作成せずエラーを返します。
     async fn get_context(
         &self,
         session_id: Option<String>,
     ) -> Result<(SessionId, Arc<GameContext>), String> {
         let key = resolve_session_id(session_id);
-        let ctx = self
-            .session_manager
-            .get_or_create(&key)
-            .await
-            .to_str_err()?;
+        let ctx = self.session_manager.get(&key).await.to_str_err()?;
         Ok((key, ctx))
     }
 

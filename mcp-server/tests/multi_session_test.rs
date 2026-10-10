@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use engine::domain::model::value_objects::SessionId;
 mod common;
 
-use common::new_session_manager;
+use common::{new_lobby_and_manager, new_session_manager, start_game};
 use infrastructure::persistence::{SessionData, SessionPersistenceManager};
 use mcp_server::presentation::handlers::{
     DomesticParams, McpHandlers, SelectDaimyoParams, SessionParams,
@@ -15,8 +15,11 @@ use tempfile::tempdir;
 async fn test_backward_compatibility_default_session() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let session_manager = new_session_manager(persistence);
+    let (lobby, session_manager) = new_lobby_and_manager(persistence);
     let handlers = McpHandlers::new(session_manager);
+
+    // 0. 参加コードでデフォルトセッション（session_id: None）に参加
+    start_game(&lobby, &handlers, "default").await;
 
     // 1. session_id: None で大名一覧取得
     let list_res = handlers
@@ -44,11 +47,39 @@ async fn test_backward_compatibility_default_session() {
 }
 
 #[tokio::test]
-async fn test_multi_session_isolation() {
+async fn test_get_my_status_does_not_create_session() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
     let session_manager = new_session_manager(persistence);
     let handlers = McpHandlers::new(session_manager);
+
+    // 未作成のセッションに対する照会は、セッションを作らずエラーになる
+    let err = handlers
+        .get_my_status(Parameters(SessionParams {
+            session_id: Some("no-such-session".to_string()),
+        }))
+        .await
+        .unwrap_err();
+    assert!(err.contains("存在しません"), "unexpected error: {err}");
+
+    // 再度照会しても同じエラー（初期コンテキストが保存されていない）
+    let err2 = handlers
+        .get_my_status(Parameters(SessionParams {
+            session_id: Some("no-such-session".to_string()),
+        }))
+        .await
+        .unwrap_err();
+    assert!(err2.contains("存在しません"), "unexpected error: {err2}");
+}
+
+#[tokio::test]
+async fn test_multi_session_isolation() {
+    let dir = tempdir().unwrap();
+    let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
+    let (lobby, session_manager) = new_lobby_and_manager(persistence);
+    let handlers = McpHandlers::new(session_manager);
+    start_game(&lobby, &handlers, "session_oda").await;
+    start_game(&lobby, &handlers, "session_takeda").await;
 
     // セッションA (織田 ID: 7)
     handlers
@@ -107,8 +138,9 @@ async fn test_session_persistence_and_restoration() {
     // 1. セッションを作成してプレイヤー手番まで進めて内政を実行
     {
         let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-        let session_manager = new_session_manager(persistence);
+        let (lobby, session_manager) = new_lobby_and_manager(persistence);
         let handlers = McpHandlers::new(session_manager);
+        start_game(&lobby, &handlers, "persistent_session").await;
 
         handlers
             .select_daimyo(Parameters(SelectDaimyoParams {
@@ -207,11 +239,12 @@ async fn test_cleanup_expired_sessions() {
 async fn test_path_traversal_safety() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let session_manager = new_session_manager(persistence.clone());
+    let (lobby, session_manager) = new_lobby_and_manager(persistence.clone());
     let handlers = McpHandlers::new(session_manager);
 
     // パストラバーサル文字を含むセッションID
     let malicious_id = "../../etc/passwd_test";
+    start_game(&lobby, &handlers, malicious_id).await;
 
     // 大名選択
     let res = handlers
@@ -240,8 +273,13 @@ async fn test_path_traversal_safety() {
 async fn test_concurrent_sessions() {
     let dir = tempdir().unwrap();
     let persistence = Arc::new(SessionPersistenceManager::new(dir.path()));
-    let session_manager = new_session_manager(persistence);
+    let (lobby, session_manager) = new_lobby_and_manager(persistence);
     let handlers = Arc::new(McpHandlers::new(session_manager));
+
+    // 各セッションを事前に作成して参加させる
+    for i in 1..=5 {
+        start_game(&lobby, &handlers, &format!("concurrent_user_{}", i)).await;
+    }
 
     let mut handles = Vec::new();
 
